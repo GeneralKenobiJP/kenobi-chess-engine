@@ -4,22 +4,24 @@ use crate::piece::Piece;
 use crate::piece::Colour;
 use crate::piece::Colour::{BLACK, WHITE};
 
-const START_POSITION: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0";
+const START_POSITION: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 pub struct Board {
     main_bitboard: u64,
     colour_bitboards: [u64; 2], // W B
     piece_bitboards: [u64; 12], // white and black separately, kpqrbn wb
-    active_player: Colour
+    active_player: Colour,
+    castling_rights: [bool; 4] // White: KQ, Black: kq
 }
 
 impl Board {
     pub fn new() -> Board {
         Board {
             main_bitboard: 0,
-            colour_bitboards: [0;2],
-            piece_bitboards: [0;12],
-            active_player: WHITE
+            colour_bitboards: [0; 2],
+            piece_bitboards: [0; 12],
+            active_player: WHITE,
+            castling_rights: [false; 4]
         }
     }
 
@@ -36,6 +38,7 @@ impl Board {
         println!("{:?}", self.colour_bitboards);
         println!("{:?}", self.piece_bitboards);
         println!("{:?}", self.active_player);
+        println!("{:?}", self.castling_rights);
     }
 }
 
@@ -76,6 +79,18 @@ pub fn read_fen(board: &mut Board, fen: &str) {
     }
     else {
         board.active_player = WHITE;
+    }
+
+    let castling = scanner.next().unwrap_or_default().unwrap_or_default();
+    board.castling_rights = [false; 4];
+    for char in castling.chars() {
+        match char {
+            'K' => board.castling_rights[0] = true,
+            'Q' => board.castling_rights[1] = true,
+            'k' => board.castling_rights[2] = true,
+            'q' => board.castling_rights[3] = true,
+            _ => { break; }
+        }
     }
 
     board.print_board();
