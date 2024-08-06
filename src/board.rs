@@ -12,7 +12,10 @@ pub struct Board {
     piece_bitboards: [u64; 12], // white and black separately, kpqrbn wb
     active_player: Colour,
     castling_rights: [bool; 4], // White: KQ, Black: kq
-    en_passant_possibility: u16 // Tile, where en passant can be made. 64 if no such tile exists
+    en_passant_possibility: u32, // Tile, where en passant can be made. 64 if no such tile exists
+    half_moves: u32, // The halfmove clock specifies a decimal number of half moves with respect to the 50 move draw rule.
+    // It is reset to zero after a capture or a pawn move and incremented otherwise.
+    full_moves: u32
 }
 
 impl Board {
@@ -23,7 +26,9 @@ impl Board {
             piece_bitboards: [0; 12],
             active_player: WHITE,
             castling_rights: [false; 4],
-            en_passant_possibility: 64
+            en_passant_possibility: 64,
+            half_moves: 0,
+            full_moves: 1
         }
     }
 
@@ -42,6 +47,8 @@ impl Board {
         println!("{:?}", self.active_player);
         println!("{:?}", self.castling_rights);
         println!("{}", self.en_passant_possibility);
+        println!("{}", self.half_moves);
+        println!("{}", self.full_moves);
     }
 }
 
@@ -101,9 +108,15 @@ pub fn read_fen(board: &mut Board, fen: &str) {
         board.en_passant_possibility = 64;
     }
     else {
-        let tile = en_passant.parse::<u16>().unwrap_or_default();
+        let tile = en_passant.parse::<u32>().unwrap_or_default();
         board.en_passant_possibility = tile;
     }
+
+    let half_moves = scanner.next().unwrap_or_default().unwrap_or_default().parse().unwrap_or_default();
+    board.half_moves = half_moves;
+
+    let full_moves = scanner.next().unwrap_or_default().unwrap_or_default().parse().unwrap_or_default();
+    board.full_moves = full_moves;
 
     board.print_board();
 }
