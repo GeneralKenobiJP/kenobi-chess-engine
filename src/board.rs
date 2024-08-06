@@ -11,7 +11,8 @@ pub struct Board {
     colour_bitboards: [u64; 2], // W B
     piece_bitboards: [u64; 12], // white and black separately, kpqrbn wb
     active_player: Colour,
-    castling_rights: [bool; 4] // White: KQ, Black: kq
+    castling_rights: [bool; 4], // White: KQ, Black: kq
+    en_passant_possibility: u16 // Tile, where en passant can be made. 64 if no such tile exists
 }
 
 impl Board {
@@ -21,7 +22,8 @@ impl Board {
             colour_bitboards: [0; 2],
             piece_bitboards: [0; 12],
             active_player: WHITE,
-            castling_rights: [false; 4]
+            castling_rights: [false; 4],
+            en_passant_possibility: 64
         }
     }
 
@@ -39,6 +41,7 @@ impl Board {
         println!("{:?}", self.piece_bitboards);
         println!("{:?}", self.active_player);
         println!("{:?}", self.castling_rights);
+        println!("{}", self.en_passant_possibility);
     }
 }
 
@@ -91,6 +94,15 @@ pub fn read_fen(board: &mut Board, fen: &str) {
             'q' => board.castling_rights[3] = true,
             _ => { break; }
         }
+    }
+
+    let en_passant = scanner.next().unwrap_or_default().unwrap_or_default();
+    if en_passant == "-" {
+        board.en_passant_possibility = 64;
+    }
+    else {
+        let tile = en_passant.parse::<u16>().unwrap_or_default();
+        board.en_passant_possibility = tile;
     }
 
     board.print_board();
