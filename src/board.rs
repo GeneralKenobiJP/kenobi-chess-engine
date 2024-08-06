@@ -1,15 +1,16 @@
-use std::ops::Add;
 use scanner_rust::ScannerStr;
 
 use crate::piece::Piece;
 use crate::piece::Colour;
+use crate::piece::Colour::{BLACK, WHITE};
 
 const START_POSITION: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0";
 
 pub struct Board {
     main_bitboard: u64,
     colour_bitboards: [u64; 2], // W B
-    piece_bitboards: [u64; 12] // white and black separately, kpqrbn wb
+    piece_bitboards: [u64; 12], // white and black separately, kpqrbn wb
+    active_player: Colour
 }
 
 impl Board {
@@ -17,7 +18,8 @@ impl Board {
         Board {
             main_bitboard: 0,
             colour_bitboards: [0;2],
-            piece_bitboards: [0;12]
+            piece_bitboards: [0;12],
+            active_player: WHITE
         }
     }
 
@@ -33,6 +35,7 @@ impl Board {
         println!("{}", self.main_bitboard);
         println!("{:?}", self.colour_bitboards);
         println!("{:?}", self.piece_bitboards);
+        println!("{:?}", self.active_player);
     }
 }
 
@@ -61,8 +64,18 @@ pub fn read_fen(board: &mut Board, fen: &str) {
                     tile -= digit - 1 } }
             }
 
-            tile -= 1;
+            if tile > 0 {
+                tile -= 1;
+            }
         }
+    }
+
+    let player = scanner.next().unwrap_or_default().unwrap_or_default();
+    if player == "b" {
+        board.active_player = BLACK;
+    }
+    else {
+        board.active_player = WHITE;
     }
 
     board.print_board();
