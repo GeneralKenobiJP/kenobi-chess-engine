@@ -52,6 +52,13 @@ impl Board {
     }
 }
 
+/// Read in the FEN (Forsyth-Edwards Notation) and adjust the board's attributes accordingly
+/// ```rust
+/// let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+/// let mut board = Board::new();
+/// read_fen(&mut board, fen);
+/// assert_eq!(board.main_bitboard,
+/// ```
 pub fn read_fen(board: &mut Board, fen: &str) {
     let fen = if fen == "" {START_POSITION} else {fen};
     println!("Received fen: {}", fen);
@@ -73,7 +80,7 @@ pub fn read_fen(board: &mut Board, fen: &str) {
                 'b' => board.put_piece(Piece::BISHOP, colour, tile),
                 'n' => board.put_piece(Piece::KNIGHT, colour, tile),
                 _ => { if char.is_ascii_digit() {
-                    let mut digit = char.to_digit(10).unwrap_or_default();
+                    let digit = char.to_digit(10).unwrap_or_default();
                     tile -= digit - 1 } }
             }
 
@@ -119,4 +126,20 @@ pub fn read_fen(board: &mut Board, fen: &str) {
     board.full_moves = full_moves;
 
     board.print_board();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn start_position() {
+        let mut board = Board::new();
+        let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        assert_eq!(fen, START_POSITION);
+        read_fen(&mut board, fen);
+        assert_eq!(board.main_bitboard, 0b1111111111111111000000000000000000000000000000001111111111111111);
+        assert_eq!(board.colour_bitboards[0], 0b0000000000000000000000000000000000000000000000001111111111111111);
+        assert_eq!(board.colour_bitboards[1], 0b1111111111111111000000000000000000000000000000000000000000000000);
+    }
 }
