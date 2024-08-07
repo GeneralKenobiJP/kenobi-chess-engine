@@ -141,5 +141,39 @@ mod tests {
         assert_eq!(board.main_bitboard, 0b1111111111111111000000000000000000000000000000001111111111111111);
         assert_eq!(board.colour_bitboards[0], 0b0000000000000000000000000000000000000000000000001111111111111111);
         assert_eq!(board.colour_bitboards[1], 0b1111111111111111000000000000000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[0], 0b0000000000000000000000000000000000000000000000000000000000001000);
+        assert_eq!(board.piece_bitboards[1], 0b0000000000000000000000000000000000000000000000001111111100000000);
+        assert_eq!(board.piece_bitboards[2], 0b0000000000000000000000000000000000000000000000000000000000010000);
+        assert_eq!(board.piece_bitboards[3], 0b0000000000000000000000000000000000000000000000000000000010000001);
+        assert_eq!(board.piece_bitboards[4], 0b0000000000000000000000000000000000000000000000000000000000100100);
+        assert_eq!(board.piece_bitboards[5], 0b0000000000000000000000000000000000000000000000000000000001000010);
+        assert_eq!(board.piece_bitboards[6], 0b0000100000000000000000000000000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[7], 0b0000000011111111000000000000000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[8], 0b0001000000000000000000000000000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[9], 0b1000000100000000000000000000000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[10], 0b0010010000000000000000000000000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[11], 0b0100001000000000000000000000000000000000000000000000000000000000);
+        assert_eq!(board.castling_rights, [true; 4]);
+        assert_eq!(board.en_passant_possibility, 64);
+        assert_eq!(board.half_moves, 0);
+        assert_eq!(board.full_moves, 1);
+    }
+
+    #[test]
+    fn no_castling() {
+        let mut board = Board::new();
+        let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w - - 0 1";
+        read_fen(&mut board, fen);
+
+        assert_eq!(board.castling_rights, [false; 4]);
+    }
+
+    #[test]
+    fn qw_kb_castling() {
+        let mut board = Board::new();
+        let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w Qk - 0 1";
+        read_fen(&mut board, fen);
+
+        assert_eq!(board.castling_rights, [false, true, true, false]);
     }
 }
