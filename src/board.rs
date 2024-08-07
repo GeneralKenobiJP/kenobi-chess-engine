@@ -70,7 +70,7 @@ pub fn read_fen(board: &mut Board, fen: &str) {
     let mut tile = 63;
     for rank in pieces {
         for mut char in rank.chars() {
-            let colour = if char.is_lowercase() {Colour::BLACK} else {Colour::WHITE};
+            let colour = if char.is_lowercase() {BLACK} else {WHITE};
             char.make_ascii_lowercase();
             match char {
                 'k' => board.put_piece(Piece::KING, colour, tile),
@@ -115,7 +115,11 @@ pub fn read_fen(board: &mut Board, fen: &str) {
         board.en_passant_possibility = 64;
     }
     else {
-        let tile = en_passant.parse::<u32>().unwrap_or_default();
+        // let tile = en_passant.parse::<u32>().unwrap_or_default();
+        let mut chars = en_passant.chars();
+        let file = chars.next().unwrap_or_default() as u32 - 'a' as u32;
+        let rank = chars.next().unwrap_or_default().to_digit(10).unwrap_or_default() - 1;
+        let tile = file + rank * 8;
         board.en_passant_possibility = tile;
     }
 
@@ -153,6 +157,7 @@ mod tests {
         assert_eq!(board.piece_bitboards[9], 0b1000000100000000000000000000000000000000000000000000000000000000);
         assert_eq!(board.piece_bitboards[10], 0b0010010000000000000000000000000000000000000000000000000000000000);
         assert_eq!(board.piece_bitboards[11], 0b0100001000000000000000000000000000000000000000000000000000000000);
+        assert_eq!(board.active_player, WHITE);
         assert_eq!(board.castling_rights, [true; 4]);
         assert_eq!(board.en_passant_possibility, 64);
         assert_eq!(board.half_moves, 0);
@@ -175,5 +180,68 @@ mod tests {
         read_fen(&mut board, fen);
 
         assert_eq!(board.castling_rights, [false, true, true, false]);
+    }
+
+    #[test]
+    fn check_en_passant() {
+        let mut board = Board::new();
+        let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w - f2 0 1";
+        read_fen(&mut board, fen);
+
+        assert_eq!(board.en_passant_possibility, 13);
+    }
+
+    #[test]
+    fn position_2() {
+        let mut board = Board::new();
+        let fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
+        read_fen(&mut board, fen);
+        assert_eq!(board.main_bitboard,       0b1111111111111111000000000000000000001000000000001111011111111111);
+        assert_eq!(board.colour_bitboards[0], 0b0000000000000000000000000000000000001000000000001111011111111111);
+        assert_eq!(board.colour_bitboards[1], 0b1111111111111111000000000000000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[0], 0b0000000000000000000000000000000000000000000000000000000000001000);
+        assert_eq!(board.piece_bitboards[1],  0b0000000000000000000000000000000000001000000000001111011100000000);
+        assert_eq!(board.piece_bitboards[2], 0b0000000000000000000000000000000000000000000000000000000000010000);
+        assert_eq!(board.piece_bitboards[3], 0b0000000000000000000000000000000000000000000000000000000010000001);
+        assert_eq!(board.piece_bitboards[4], 0b0000000000000000000000000000000000000000000000000000000000100100);
+        assert_eq!(board.piece_bitboards[5], 0b0000000000000000000000000000000000000000000000000000000001000010);
+        assert_eq!(board.piece_bitboards[6], 0b0000100000000000000000000000000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[7], 0b0000000011111111000000000000000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[8], 0b0001000000000000000000000000000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[9], 0b1000000100000000000000000000000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[10], 0b0010010000000000000000000000000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[11], 0b0100001000000000000000000000000000000000000000000000000000000000);
+        assert_eq!(board.active_player, BLACK);
+        assert_eq!(board.castling_rights, [true; 4]);
+        assert_eq!(board.en_passant_possibility, 20);
+        assert_eq!(board.half_moves, 0);
+        assert_eq!(board.full_moves, 1);
+    }
+
+    #[test]
+    fn position_3() {
+        let mut board = Board::new();
+        let fen = "rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b K - 1 2";
+        read_fen(&mut board, fen);
+        assert_eq!(board.main_bitboard,       0b1111111111011111000000000010000000001000000001001111011111111101);
+        assert_eq!(board.colour_bitboards[0], 0b0000000000000000000000000000000000001000000001001111011111111101);
+        assert_eq!(board.colour_bitboards[1], 0b1111111111011111000000000010000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[0],  0b0000000000000000000000000000000000000000000000000000000000001000);
+        assert_eq!(board.piece_bitboards[1],  0b0000000000000000000000000000000000001000000000001111011100000000);
+        assert_eq!(board.piece_bitboards[2],  0b0000000000000000000000000000000000000000000000000000000000010000);
+        assert_eq!(board.piece_bitboards[3],  0b0000000000000000000000000000000000000000000000000000000010000001);
+        assert_eq!(board.piece_bitboards[4],  0b0000000000000000000000000000000000000000000000000000000000100100);
+        assert_eq!(board.piece_bitboards[5],  0b0000000000000000000000000000000000000000000001000000000001000000);
+        assert_eq!(board.piece_bitboards[6],  0b0000100000000000000000000000000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[7],  0b0000000011011111000000000010000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[8],  0b0001000000000000000000000000000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[9],  0b1000000100000000000000000000000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[10], 0b0010010000000000000000000000000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[11], 0b0100001000000000000000000000000000000000000000000000000000000000);
+        assert_eq!(board.active_player, BLACK);
+        assert_eq!(board.castling_rights, [true, false, false, false]);
+        assert_eq!(board.en_passant_possibility, 64);
+        assert_eq!(board.half_moves, 1);
+        assert_eq!(board.full_moves, 2);
     }
 }

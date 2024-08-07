@@ -1,20 +1,16 @@
+use crate::piece::Colour::WHITE;
+#[derive(PartialEq)]
 pub enum Piece {
-    KING,
-    PAWN,
-    QUEEN,
-    ROOK,
-    BISHOP,
-    KNIGHT
+    KING = 0,
+    PAWN = 1,
+    QUEEN = 2,
+    ROOK = 3,
+    BISHOP = 4,
+    KNIGHT = 5
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Colour {
-    WHITE,
-    BLACK
-}
-
-impl PartialEq for Colour {
-    fn eq(&self, other: &Self) -> bool {
-        return other == self;
-    }
+    WHITE = 0,
+    BLACK = 1
 }
