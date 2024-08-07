@@ -1,3 +1,7 @@
+//! Enums that define pieces and players
+//! Piece (piece type)
+//! Colour (piece colour / player colour)
+
 use crate::piece::Colour::WHITE;
 #[derive(PartialEq)]
 pub enum Piece {

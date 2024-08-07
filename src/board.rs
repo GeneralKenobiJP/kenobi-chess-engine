@@ -1,3 +1,9 @@
+//! Board representation and FEN utility
+//! Defines the Board struct that holds all the information about current situation on the board
+//! i.e. bitboards, active player, castling rights, en passant possibility, etc.
+//! Defines some methods for board
+//! Implements FEN utility that allows to convert input FEN string into attributes of Board
+
 use scanner_rust::ScannerStr;
 
 use crate::piece::Piece;
@@ -53,12 +59,9 @@ impl Board {
 }
 
 /// Read in the FEN (Forsyth-Edwards Notation) and adjust the board's attributes accordingly
-/// ```rust
-/// let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-/// let mut board = Board::new();
-/// read_fen(&mut board, fen);
-/// assert_eq!(board.main_bitboard,
-/// ```
+/// parameters:
+///     board - Board object we are considering
+///     fen - FEN string holding board position
 pub fn read_fen(board: &mut Board, fen: &str) {
     let fen = if fen == "" {START_POSITION} else {fen};
     println!("Received fen: {}", fen);
