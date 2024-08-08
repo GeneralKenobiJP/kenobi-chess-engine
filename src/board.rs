@@ -18,6 +18,7 @@ pub struct Board {
     pub colour_bitboards: [u64; 2], // W B
     pub piece_bitboards: [u64; 12], // white and black separately, kpqrbn wb
     pub active_player: Colour,
+    pub inactive_player: Colour,
     pub castling_rights: [bool; 4], // White: KQ, Black: kq
     pub en_passant_possibility: u32, // Tile, where en passant can be made. 64 if no such tile exists
     pub half_moves: u32, // The halfmove clock specifies a decimal number of half moves with respect to the 50 move draw rule.
@@ -33,6 +34,7 @@ impl Board {
             colour_bitboards: [0; 2],
             piece_bitboards: [0; 12],
             active_player: WHITE,
+            inactive_player: BLACK,
             castling_rights: [false; 4],
             en_passant_possibility: 64,
             half_moves: 0,
@@ -99,9 +101,11 @@ pub fn read_fen(board: &mut Board, fen: &str) {
     let player = scanner.next().unwrap_or_default().unwrap_or_default();
     if player == "b" {
         board.active_player = BLACK;
+        board.inactive_player = WHITE;
     }
     else {
         board.active_player = WHITE;
+        board.inactive_player = BLACK;
     }
 
     let castling = scanner.next().unwrap_or_default().unwrap_or_default();
@@ -165,6 +169,7 @@ mod tests {
         assert_eq!(board.piece_bitboards[10], 0b0010010000000000000000000000000000000000000000000000000000000000);
         assert_eq!(board.piece_bitboards[11], 0b0100001000000000000000000000000000000000000000000000000000000000);
         assert_eq!(board.active_player, WHITE);
+        assert_eq!(board.inactive_player, BLACK);
         assert_eq!(board.castling_rights, [true; 4]);
         assert_eq!(board.en_passant_possibility, 64);
         assert_eq!(board.half_moves, 0);
@@ -220,6 +225,7 @@ mod tests {
         assert_eq!(board.piece_bitboards[10], 0b0010010000000000000000000000000000000000000000000000000000000000);
         assert_eq!(board.piece_bitboards[11], 0b0100001000000000000000000000000000000000000000000000000000000000);
         assert_eq!(board.active_player, BLACK);
+        assert_eq!(board.inactive_player, WHITE);
         assert_eq!(board.castling_rights, [true; 4]);
         assert_eq!(board.en_passant_possibility, 20);
         assert_eq!(board.half_moves, 0);
@@ -248,6 +254,7 @@ mod tests {
         assert_eq!(board.piece_bitboards[10], 0b0010010000000000000000000000000000000000000000000000000000000000);
         assert_eq!(board.piece_bitboards[11], 0b0100001000000000000000000000000000000000000000000000000000000000);
         assert_eq!(board.active_player, BLACK);
+        assert_eq!(board.inactive_player, WHITE);
         assert_eq!(board.castling_rights, [true, false, false, false]);
         assert_eq!(board.en_passant_possibility, 64);
         assert_eq!(board.half_moves, 1);

@@ -23,21 +23,43 @@ impl<'a> MoveList<'a> {
         }
     }
 
-    fn generate_pawn_moves(&self) -> u64 {
+    fn generate_white_pawn_moves(&self) -> u64 {
+        let index = Piece::PAWN as usize;
         let push_bitboard: u64 =
-            self.board.piece_bitboards[Piece::PAWN as usize + 6 * self.board.active_player as usize] << 8
+            self.board.piece_bitboards[index] << 8
             & self.board.empty_bitboard;
-        let double_push_mask = if self.board.active_player == WHITE {
-            0b0000000000000000000000000000000000000000111111110000000000000000
-        }
-        else {
-            0b0000000000000000111111110000000000000000000000000000000000000000
-        };
+        let double_push_mask = 0b0000000000000000000000000000000000000000111111110000000000000000;
 
         let double_push_bitboard: u64 =
             (push_bitboard & double_push_mask) << 8
                 & self.board.empty_bitboard;
-        return push_bitboard + double_push_bitboard;
+
+        let left_capture_bitboard: u64 = self.board.piece_bitboards[index] << 7
+            & self.board.colour_bitboards[self.board.inactive_player as usize];
+
+        let right_capture_bitboard: u64 = self.board.piece_bitboards[index] << 9
+            & self.board.colour_bitboards[self.board.inactive_player as usize];
+
+        return push_bitboard + double_push_bitboard + left_capture_bitboard + right_capture_bitboard;
+    }
+    fn generate_black_pawn_moves(&self) -> u64 {
+        let index = Piece::PAWN as usize + 6;
+        let push_bitboard: u64 =
+            self.board.piece_bitboards[index] >> 8
+            & self.board.empty_bitboard;
+        let double_push_mask = 0b0000000000000000111111110000000000000000000000000000000000000000;
+
+        let double_push_bitboard: u64 =
+            (push_bitboard & double_push_mask) >> 8
+                & self.board.empty_bitboard;
+
+        let left_capture_bitboard: u64 = self.board.piece_bitboards[index] >> 7
+            & self.board.colour_bitboards[self.board.inactive_player as usize];
+
+        let right_capture_bitboard: u64 = self.board.piece_bitboards[index] >> 9
+            & self.board.colour_bitboards[self.board.inactive_player as usize];
+
+        return push_bitboard + double_push_bitboard + left_capture_bitboard + right_capture_bitboard;
     }
 }
 
@@ -52,6 +74,9 @@ mod tests {
         read_fen(&mut board, START_POSITION);
         let move_list = MoveList::new(&board);
 
-        assert_eq!(move_list.generate_pawn_moves(), 0b0000000000000000000000000000000011111111111111110000000000000000);
+        assert_eq!(move_list.generate_white_pawn_moves(), 0b0000000000000000000000000000000011111111111111110000000000000000);
+        let x: u8 = 0b10000000;
+        x << 1;
+        assert_eq!(x, 0b10000000);
     }
 }
