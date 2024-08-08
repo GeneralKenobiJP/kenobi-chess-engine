@@ -10,24 +10,26 @@ use crate::piece::Piece;
 use crate::piece::Colour;
 use crate::piece::Colour::{BLACK, WHITE};
 
-const START_POSITION: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+pub const START_POSITION: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 pub struct Board {
-    main_bitboard: u64,
-    colour_bitboards: [u64; 2], // W B
-    piece_bitboards: [u64; 12], // white and black separately, kpqrbn wb
-    active_player: Colour,
-    castling_rights: [bool; 4], // White: KQ, Black: kq
-    en_passant_possibility: u32, // Tile, where en passant can be made. 64 if no such tile exists
-    half_moves: u32, // The halfmove clock specifies a decimal number of half moves with respect to the 50 move draw rule.
+    pub main_bitboard: u64,
+    pub empty_bitboard: u64,
+    pub colour_bitboards: [u64; 2], // W B
+    pub piece_bitboards: [u64; 12], // white and black separately, kpqrbn wb
+    pub active_player: Colour,
+    pub castling_rights: [bool; 4], // White: KQ, Black: kq
+    pub en_passant_possibility: u32, // Tile, where en passant can be made. 64 if no such tile exists
+    pub half_moves: u32, // The halfmove clock specifies a decimal number of half moves with respect to the 50 move draw rule.
     // It is reset to zero after a capture or a pawn move and incremented otherwise.
-    full_moves: u32
+    pub full_moves: u32
 }
 
 impl Board {
-    pub fn new() -> Board {
+    pub fn new() -> Self {
         Board {
             main_bitboard: 0,
+            empty_bitboard: u64::MAX,
             colour_bitboards: [0; 2],
             piece_bitboards: [0; 12],
             active_player: WHITE,
@@ -41,6 +43,7 @@ impl Board {
     pub fn put_piece(&mut self, piece: Piece, colour: Colour, tile: u32) {
         let bit = 1 << tile;
         self.main_bitboard += bit;
+        self.empty_bitboard -= bit;
         self.colour_bitboards[colour as usize] += bit;
         let index = piece as usize + 6 * colour as usize;
         self.piece_bitboards[index] += bit;
@@ -146,6 +149,7 @@ mod tests {
         assert_eq!(fen, START_POSITION);
         read_fen(&mut board, fen);
         assert_eq!(board.main_bitboard, 0b1111111111111111000000000000000000000000000000001111111111111111);
+        assert_eq!(board.empty_bitboard, u64::MAX - board.main_bitboard);
         assert_eq!(board.colour_bitboards[0], 0b0000000000000000000000000000000000000000000000001111111111111111);
         assert_eq!(board.colour_bitboards[1], 0b1111111111111111000000000000000000000000000000000000000000000000);
         assert_eq!(board.piece_bitboards[0], 0b0000000000000000000000000000000000000000000000000000000000001000);
@@ -200,6 +204,7 @@ mod tests {
         let fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
         read_fen(&mut board, fen);
         assert_eq!(board.main_bitboard,       0b1111111111111111000000000000000000001000000000001111011111111111);
+        assert_eq!(board.empty_bitboard, u64::MAX - board.main_bitboard);
         assert_eq!(board.colour_bitboards[0], 0b0000000000000000000000000000000000001000000000001111011111111111);
         assert_eq!(board.colour_bitboards[1], 0b1111111111111111000000000000000000000000000000000000000000000000);
         assert_eq!(board.piece_bitboards[0], 0b0000000000000000000000000000000000000000000000000000000000001000);
@@ -227,6 +232,7 @@ mod tests {
         let fen = "rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b K - 1 2";
         read_fen(&mut board, fen);
         assert_eq!(board.main_bitboard,       0b1111111111011111000000000010000000001000000001001111011111111101);
+        assert_eq!(board.empty_bitboard, u64::MAX - board.main_bitboard);
         assert_eq!(board.colour_bitboards[0], 0b0000000000000000000000000000000000001000000001001111011111111101);
         assert_eq!(board.colour_bitboards[1], 0b1111111111011111000000000010000000000000000000000000000000000000);
         assert_eq!(board.piece_bitboards[0],  0b0000000000000000000000000000000000000000000000000000000000001000);
