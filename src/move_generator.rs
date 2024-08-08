@@ -28,17 +28,19 @@ impl<'a> MoveList<'a> {
         let push_bitboard: u64 =
             self.board.piece_bitboards[index] << 8
             & self.board.empty_bitboard;
-        let double_push_mask = 0b0000000000000000000000000000000000000000111111110000000000000000;
 
+        let en_passant_tile = 1 << self.board.en_passant_possibility;
+
+        let double_push_mask = 0b0000000000000000000000000000000000000000111111110000000000000000;
         let double_push_bitboard: u64 =
             (push_bitboard & double_push_mask) << 8
                 & self.board.empty_bitboard;
 
         let left_capture_bitboard: u64 = self.board.piece_bitboards[index] << 7
-            & self.board.colour_bitboards[self.board.inactive_player as usize];
+            & (self.board.colour_bitboards[self.board.inactive_player as usize] + en_passant_tile);
 
         let right_capture_bitboard: u64 = self.board.piece_bitboards[index] << 9
-            & self.board.colour_bitboards[self.board.inactive_player as usize];
+            & (self.board.colour_bitboards[self.board.inactive_player as usize] + en_passant_tile);
 
         return push_bitboard + double_push_bitboard + left_capture_bitboard + right_capture_bitboard;
     }
@@ -47,17 +49,19 @@ impl<'a> MoveList<'a> {
         let push_bitboard: u64 =
             self.board.piece_bitboards[index] >> 8
             & self.board.empty_bitboard;
-        let double_push_mask = 0b0000000000000000111111110000000000000000000000000000000000000000;
 
+        let en_passant_tile = 1 << self.board.en_passant_possibility;
+
+        let double_push_mask = 0b0000000000000000111111110000000000000000000000000000000000000000;
         let double_push_bitboard: u64 =
             (push_bitboard & double_push_mask) >> 8
                 & self.board.empty_bitboard;
 
         let left_capture_bitboard: u64 = self.board.piece_bitboards[index] >> 7
-            & self.board.colour_bitboards[self.board.inactive_player as usize];
+            & (self.board.colour_bitboards[self.board.inactive_player as usize] + en_passant_tile);
 
         let right_capture_bitboard: u64 = self.board.piece_bitboards[index] >> 9
-            & self.board.colour_bitboards[self.board.inactive_player as usize];
+            & (self.board.colour_bitboards[self.board.inactive_player as usize] + en_passant_tile);
 
         return push_bitboard + double_push_bitboard + left_capture_bitboard + right_capture_bitboard;
     }
