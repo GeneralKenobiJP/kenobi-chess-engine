@@ -10,40 +10,67 @@ struct Move {
     origin: u8,
     target: u8,
     promotion: u8,
+    piece: Piece
 }
 
 struct MoveList<'a> {
     board: &'a Board,
+    moves: Vec<Move>
 }
 
 impl<'a> MoveList<'a> {
     fn new(board: &'a Board) -> Self {
         MoveList {
-            board
+            board,
+            moves: Vec::new()
         }
     }
 
+    fn get_moves(&self) -> &'a Vec<Move> {
+        &self.moves
+    }
+
+    fn generate_moves(&self) {
+        let pawn_moves = if self.board.active_player == WHITE {self.generate_white_pawn_moves()}
+            else {self.generate_black_pawn_moves()};
+        // get the LSB, check the pawn pos, create Mov
+
+
+    }
+
     fn generate_white_pawn_moves(&self) -> u64 {
-        let index = Piece::PAWN as usize;
-        let push_bitboard: u64 =
-            self.board.piece_bitboards[index] << 8
-            & self.board.empty_bitboard;
+        let push_bitboard = self.generate_white_push_bitboard();
+
+        let double_push_bitboard = self.generate_white_double_push_bitboard(push_bitboard);
 
         let en_passant_tile = 1 << self.board.en_passant_possibility;
+        let left_capture_bitboard = self.generate_pawn_capture_bitboard(7, en_passant_tile);
 
+        let right_capture_bitboard: u64 = self.generate_pawn_capture_bitboard(9, en_passant_tile);
+
+        return push_bitboard | double_push_bitboard | left_capture_bitboard | right_capture_bitboard;
+    }
+
+    fn generate_pawn_capture_bitboard(&self, shift: u8, en_passant_tile: u64) -> u64 {
+        let index = Piece::PAWN as usize;
+        let capture_bitboard: u64 = self.board.piece_bitboards[index] << shift
+            & (self.board.colour_bitboards[self.board.inactive_player as usize] + en_passant_tile);
+        capture_bitboard
+    }
+
+    fn generate_white_double_push_bitboard(&self, push_bitboard: u64) -> u64 {
         let double_push_mask = 0b0000000000000000000000000000000000000000111111110000000000000000;
         let double_push_bitboard: u64 =
             (push_bitboard & double_push_mask) << 8
                 & self.board.empty_bitboard;
-
-        let left_capture_bitboard: u64 = self.board.piece_bitboards[index] << 7
-            & (self.board.colour_bitboards[self.board.inactive_player as usize] + en_passant_tile);
-
-        let right_capture_bitboard: u64 = self.board.piece_bitboards[index] << 9
-            & (self.board.colour_bitboards[self.board.inactive_player as usize] + en_passant_tile);
-
-        return push_bitboard + double_push_bitboard + left_capture_bitboard + right_capture_bitboard;
+        double_push_bitboard
     }
+
+    fn generate_white_push_bitboard(&self) -> u64 {
+        self.board.piece_bitboards[Piece::PAWN as usize] << 8
+            & self.board.empty_bitboard
+    }
+
     fn generate_black_pawn_moves(&self) -> u64 {
         let index = Piece::PAWN as usize + 6;
         let push_bitboard: u64 =
@@ -63,7 +90,7 @@ impl<'a> MoveList<'a> {
         let right_capture_bitboard: u64 = self.board.piece_bitboards[index] >> 9
             & (self.board.colour_bitboards[self.board.inactive_player as usize] + en_passant_tile);
 
-        return push_bitboard + double_push_bitboard + left_capture_bitboard + right_capture_bitboard;
+        return push_bitboard | double_push_bitboard | left_capture_bitboard | right_capture_bitboard;
     }
 }
 
