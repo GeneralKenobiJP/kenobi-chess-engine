@@ -30,15 +30,17 @@ impl<'a> MoveList<'a> {
         &self.moves
     }
 
-    fn generate_moves(&self) {
+    fn generate_moves(&mut self) {
         // let pawn_moves = if self.board.active_player == WHITE {self.generate_white_pawn_moves()}
         //     else {self.generate_black_pawn_moves()};
-        // get the LSB, check the pawn pos, create Mov
-
-
+        if self.board.active_player == WHITE
+        {
+            self.generate_white_pawn_moves();
+            return;
+        }
     }
 
-    fn generate_white_pawn_moves(&self) {
+    fn generate_white_pawn_moves(&mut self) {
         let push_bitboard = self.generate_white_push_bitboard();
 
         let double_push_bitboard = self.generate_white_double_push_bitboard(push_bitboard);
@@ -48,7 +50,10 @@ impl<'a> MoveList<'a> {
 
         let right_capture_bitboard: u64 = self.generate_pawn_capture_bitboard(9, en_passant_tile);
 
-        // return push_bitboard | double_push_bitboard | left_capture_bitboard | right_capture_bitboard;
+        self.convert_white_pawn_moves(push_bitboard, 8);
+        self.convert_white_pawn_moves(double_push_bitboard, 16);
+        self.convert_white_pawn_moves(left_capture_bitboard, 7);
+        self.convert_white_pawn_moves(right_capture_bitboard, 9);
     }
 
     fn convert_white_pawn_moves(&mut self, push_bitboard: u64, shift: u8) {
@@ -56,10 +61,10 @@ impl<'a> MoveList<'a> {
 
         loop {
             let tile = bitboard & -bitboard;
+            if tile == 0 {break;}
+
             bitboard -= tile;
             let origin = u64::ilog2(tile as u64) as u8;
-
-            if tile == 0 {break;}
 
             if(origin < UPPER_RANK_LOWEST_TILE)
             {
