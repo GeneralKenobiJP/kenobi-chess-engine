@@ -3,7 +3,7 @@ use crate::piece;
 use crate::piece::Piece;
 use crate::piece::Colour;
 use crate::board;
-use crate::board::{Board, UPPER_RANK_LOWEST_TILE};
+use crate::board::{Board, LOWER_RANK_HIGHEST_TILE, UPPER_RANK_LOWEST_TILE};
 use crate::piece::Colour::WHITE;
 
 struct Move {
@@ -38,7 +38,10 @@ impl<'a> MoveList<'a> {
             self.generate_white_pawn_moves();
             return;
         }
+        self.generate_black_pawn_moves();
     }
+
+    /// WHITE PAWN MOVE GENERATION
 
     fn generate_white_pawn_moves(&mut self) {
         let push_bitboard = self.generate_white_push_bitboard();
@@ -65,12 +68,13 @@ impl<'a> MoveList<'a> {
 
             bitboard -= tile;
             let origin = u64::ilog2(tile as u64) as u8;
+            let target = origin >> shift;
 
-            if(origin < UPPER_RANK_LOWEST_TILE)
+            if(target < UPPER_RANK_LOWEST_TILE)
             {
                 self.moves.push(Move {
                     origin,
-                    target: origin >> shift,
+                    target,
                     promotion: 0,
                     piece: Piece::PAWN,
                 });
@@ -81,19 +85,12 @@ impl<'a> MoveList<'a> {
             {
                 self.moves.push(Move {
                     origin,
-                    target: origin >> shift,
+                    target,
                     promotion: i,
                     piece: Piece::PAWN,
                 });
             }
         }
-    }
-
-    fn generate_pawn_capture_bitboard(&self, shift: u8, en_passant_tile: u64) -> u64 {
-        let index = Piece::PAWN as usize;
-        let capture_bitboard: u64 = self.board.piece_bitboards[index] << shift
-            & (self.board.colour_bitboards[self.board.inactive_player as usize] + en_passant_tile);
-        capture_bitboard
     }
 
     fn generate_white_double_push_bitboard(&self, push_bitboard: u64) -> u64 {
@@ -109,26 +106,78 @@ impl<'a> MoveList<'a> {
             & self.board.empty_bitboard
     }
 
-    fn generate_black_pawn_moves(&self) -> u64 {
-        let index = Piece::PAWN as usize + 6;
-        let push_bitboard: u64 =
-            self.board.piece_bitboards[index] >> 8
-            & self.board.empty_bitboard;
+    /// BLACK PAWN MOVE GENERATION
+
+    fn generate_black_pawn_moves(&mut self) {
+        let push_bitboard = self.generate_black_push_bitboard();
+
+        let double_push_bitboard = self.generate_black_double_push_bitboard(push_bitboard);
 
         let en_passant_tile = 1 << self.board.en_passant_possibility;
+        let left_capture_bitboard = self.generate_pawn_capture_bitboard(-7, en_passant_tile);
 
+        let right_capture_bitboard: u64 = self.generate_pawn_capture_bitboard(-9, en_passant_tile);
+
+        self.convert_black_pawn_moves(push_bitboard, 8);
+        self.convert_black_pawn_moves(double_push_bitboard, 16);
+        self.convert_black_pawn_moves(left_capture_bitboard, 7);
+        self.convert_black_pawn_moves(right_capture_bitboard, 9);
+    }
+
+    fn convert_black_pawn_moves(&mut self, push_bitboard: u64, shift: u8) {
+        let mut bitboard = push_bitboard as i64;
+
+        loop {
+            let tile = bitboard & -bitboard;
+            if tile == 0 {break;}
+
+            bitboard -= tile;
+            let origin = u64::ilog2(tile as u64) as u8;
+            let target = origin << shift;
+
+            if(target > LOWER_RANK_HIGHEST_TILE)
+            {
+                self.moves.push(Move {
+                    origin,
+                    target,
+                    promotion: 0,
+                    piece: Piece::PAWN,
+                });
+                continue;
+            }
+
+            for i in (2..6)
+            {
+                self.moves.push(Move {
+                    origin,
+                    target,
+                    promotion: i,
+                    piece: Piece::PAWN,
+                });
+            }
+        }
+    }
+
+    fn generate_black_double_push_bitboard(&self, push_bitboard: u64) -> u64 {
         let double_push_mask = 0b0000000000000000111111110000000000000000000000000000000000000000;
         let double_push_bitboard: u64 =
             (push_bitboard & double_push_mask) >> 8
                 & self.board.empty_bitboard;
+        double_push_bitboard
+    }
 
-        let left_capture_bitboard: u64 = self.board.piece_bitboards[index] >> 7
+    fn generate_black_push_bitboard(&self) -> u64 {
+        self.board.piece_bitboards[Piece::PAWN as usize] >> 8
+            & self.board.empty_bitboard
+    }
+
+    /// NEUTRAL
+
+    fn generate_pawn_capture_bitboard(&self, shift: i8, en_passant_tile: u64) -> u64 {
+        let index = Piece::PAWN as usize;
+        let capture_bitboard: u64 = self.board.piece_bitboards[index] << shift
             & (self.board.colour_bitboards[self.board.inactive_player as usize] + en_passant_tile);
-
-        let right_capture_bitboard: u64 = self.board.piece_bitboards[index] >> 9
-            & (self.board.colour_bitboards[self.board.inactive_player as usize] + en_passant_tile);
-
-        return push_bitboard | double_push_bitboard | left_capture_bitboard | right_capture_bitboard;
+        capture_bitboard
     }
 }
 

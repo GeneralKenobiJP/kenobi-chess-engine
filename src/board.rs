@@ -12,6 +12,7 @@ use crate::piece::Colour::{BLACK, WHITE};
 
 pub const START_POSITION: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 pub const UPPER_RANK_LOWEST_TILE: u8 = 56;
+pub const LOWER_RANK_HIGHEST_TILE: u8 = 7;
 
 pub struct Board {
     pub main_bitboard: u64,
