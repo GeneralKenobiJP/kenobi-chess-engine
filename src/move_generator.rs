@@ -51,11 +51,12 @@ impl<'a> MoveList<'a> {
         // return push_bitboard | double_push_bitboard | left_capture_bitboard | right_capture_bitboard;
     }
 
-    fn convert_white_pawn_push_moves(&mut self, push_bitboard: u64) {
+    fn convert_white_pawn_moves(&mut self, push_bitboard: u64, shift: u8) {
         let mut bitboard = push_bitboard as i64;
 
         loop {
             let tile = bitboard & -bitboard;
+            bitboard -= tile;
             let origin = u64::ilog2(tile as u64) as u8;
 
             if tile == 0 {break;}
@@ -64,7 +65,7 @@ impl<'a> MoveList<'a> {
             {
                 self.moves.push(Move {
                     origin,
-                    target: origin >> 8,
+                    target: origin >> shift,
                     promotion: 0,
                     piece: Piece::PAWN,
                 });
@@ -75,38 +76,7 @@ impl<'a> MoveList<'a> {
             {
                 self.moves.push(Move {
                     origin,
-                    target: origin >> 8,
-                    promotion: i,
-                    piece: Piece::PAWN,
-                });
-            }
-        }
-    }
-    fn convert_white_pawn_double_push_moves(&mut self, push_bitboard: u64) {
-        let mut bitboard = push_bitboard as i64;
-
-        loop {
-            let tile = bitboard & -bitboard;
-            let origin = u64::ilog2(tile as u64) as u8;
-
-            if tile == 0 {break;}
-
-            if(origin < UPPER_RANK_LOWEST_TILE)
-            {
-                self.moves.push(Move {
-                    origin,
-                        target: origin >> 16,
-                    promotion: 0,
-                    piece: Piece::PAWN,
-                });
-                continue;
-            }
-
-            for i in (2..6)
-            {
-                self.moves.push(Move {
-                    origin,
-                    target: origin >> 16,
+                    target: origin >> shift,
                     promotion: i,
                     piece: Piece::PAWN,
                 });
