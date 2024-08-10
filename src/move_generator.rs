@@ -1,9 +1,9 @@
-
+use scanner_rust::generic_array::typenum::Log2;
 use crate::piece;
 use crate::piece::Piece;
 use crate::piece::Colour;
 use crate::board;
-use crate::board::Board;
+use crate::board::{Board, UPPER_RANK_LOWEST_TILE};
 use crate::piece::Colour::WHITE;
 
 struct Move {
@@ -31,14 +31,14 @@ impl<'a> MoveList<'a> {
     }
 
     fn generate_moves(&self) {
-        let pawn_moves = if self.board.active_player == WHITE {self.generate_white_pawn_moves()}
-            else {self.generate_black_pawn_moves()};
+        // let pawn_moves = if self.board.active_player == WHITE {self.generate_white_pawn_moves()}
+        //     else {self.generate_black_pawn_moves()};
         // get the LSB, check the pawn pos, create Mov
 
 
     }
 
-    fn generate_white_pawn_moves(&self) -> u64 {
+    fn generate_white_pawn_moves(&self) {
         let push_bitboard = self.generate_white_push_bitboard();
 
         let double_push_bitboard = self.generate_white_double_push_bitboard(push_bitboard);
@@ -48,7 +48,70 @@ impl<'a> MoveList<'a> {
 
         let right_capture_bitboard: u64 = self.generate_pawn_capture_bitboard(9, en_passant_tile);
 
-        return push_bitboard | double_push_bitboard | left_capture_bitboard | right_capture_bitboard;
+        // return push_bitboard | double_push_bitboard | left_capture_bitboard | right_capture_bitboard;
+    }
+
+    fn convert_white_pawn_push_moves(&mut self, push_bitboard: u64) {
+        let mut bitboard = push_bitboard as i64;
+
+        loop {
+            let tile = bitboard & -bitboard;
+            let origin = u64::ilog2(tile as u64) as u8;
+
+            if tile == 0 {break;}
+
+            if(origin < UPPER_RANK_LOWEST_TILE)
+            {
+                self.moves.push(Move {
+                    origin,
+                    target: origin >> 8,
+                    promotion: 0,
+                    piece: Piece::PAWN,
+                });
+                continue;
+            }
+
+            for i in (2..6)
+            {
+                self.moves.push(Move {
+                    origin,
+                    target: origin >> 8,
+                    promotion: i,
+                    piece: Piece::PAWN,
+                });
+            }
+        }
+    }
+    fn convert_white_pawn_double_push_moves(&mut self, push_bitboard: u64) {
+        let mut bitboard = push_bitboard as i64;
+
+        loop {
+            let tile = bitboard & -bitboard;
+            let origin = u64::ilog2(tile as u64) as u8;
+
+            if tile == 0 {break;}
+
+            if(origin < UPPER_RANK_LOWEST_TILE)
+            {
+                self.moves.push(Move {
+                    origin,
+                        target: origin >> 16,
+                    promotion: 0,
+                    piece: Piece::PAWN,
+                });
+                continue;
+            }
+
+            for i in (2..6)
+            {
+                self.moves.push(Move {
+                    origin,
+                    target: origin >> 16,
+                    promotion: i,
+                    piece: Piece::PAWN,
+                });
+            }
+        }
     }
 
     fn generate_pawn_capture_bitboard(&self, shift: u8, en_passant_tile: u64) -> u64 {
@@ -105,7 +168,7 @@ mod tests {
         read_fen(&mut board, START_POSITION);
         let move_list = MoveList::new(&board);
 
-        assert_eq!(move_list.generate_white_pawn_moves(), 0b0000000000000000000000000000000011111111111111110000000000000000);
+        // assert_eq!(move_list.generate_white_pawn_moves(), 0b0000000000000000000000000000000011111111111111110000000000000000);
         let x: u8 = 0b10000000;
         x << 1;
         assert_eq!(x, 0b10000000);
