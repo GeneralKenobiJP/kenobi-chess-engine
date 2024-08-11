@@ -90,7 +90,7 @@ impl<'a> MoveList<'a> {
                 continue;
             }
 
-            for i in (2..6)
+            for i in 2..6
             {
                 self.moves.push(Move {
                     origin,
@@ -154,7 +154,7 @@ impl<'a> MoveList<'a> {
             let target = u64::ilog2(tile as u64) as u8;
             let origin = u64::ilog2((tile as u64) << shift) as u8 ;
 
-            if(target > LOWER_RANK_HIGHEST_TILE)
+            if target > LOWER_RANK_HIGHEST_TILE
             {
                 self.moves.push(Move {
                     origin,
@@ -165,7 +165,7 @@ impl<'a> MoveList<'a> {
                 continue;
             }
 
-            for i in (2..6)
+            for i in 2..6
             {
                 self.moves.push(Move {
                     origin,
@@ -208,8 +208,8 @@ mod tests {
     use crate::board::{read_fen, START_POSITION};
     use super::*;
 
-    fn compare_vecs<Move: std::cmp::PartialEq + std::cmp::Eq + std::hash::Hash + std::clone::Clone>
-    (vec1: &Vec::<Move>, vec2: &Vec::<Move>) -> bool {
+    fn compare_vecs<Move: PartialEq + Eq + std::hash::Hash + Clone>
+    (vec1: &Vec<Move>, vec2: &Vec<Move>) -> bool {
         if vec1.len() != vec2.len() {
             return false;
         }
