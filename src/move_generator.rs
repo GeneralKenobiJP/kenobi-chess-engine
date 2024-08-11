@@ -242,6 +242,8 @@ mod tests {
         expected_double_push_moves.push(Move{ origin: 15, target: 31, promotion: 0, piece: Piece::PAWN });
         let expected_left_pawn_captures = Vec::<Move>::new();
         let expected_right_pawn_captures = Vec::<Move>::new();
+        let expected_pawn_moves = [expected_push_moves.clone(), expected_double_push_moves.clone(),
+            expected_left_pawn_captures.clone(), expected_right_pawn_captures.clone()].concat();
 
         assert_eq!(move_list.generate_white_push_bitboard(), expected_push_bitboard);
         assert_eq!(move_list.generate_white_double_push_bitboard(expected_push_bitboard), expected_double_push_bitboard);
@@ -251,9 +253,27 @@ mod tests {
         move_list.convert_white_pawn_moves(expected_push_bitboard, 8);
         assert!(compare_vecs(&move_list.moves, &expected_push_moves));
 
-        // move_list.generate_white_pawn_moves();
-        //
-        // assert!(compare_vecs(move_list.moves, expected_move_list));
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_white_pawn_moves(expected_double_push_bitboard, 16);
+        assert!(compare_vecs(&move_list.moves, &expected_double_push_moves));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_white_pawn_moves(expected_left_pawn_capture_bitboard, 7);
+        assert!(compare_vecs(&move_list.moves, &expected_left_pawn_captures));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_white_pawn_moves(expected_right_pawn_capture_bitboard, 7);
+        assert!(compare_vecs(&move_list.moves, &expected_right_pawn_captures));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.generate_white_pawn_moves();
+        assert!(compare_vecs(&move_list.moves, &expected_pawn_moves));
+
+        let expected_moves = [expected_pawn_moves].concat();
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.generate_moves();
+        assert!(compare_vecs(&move_list.moves, &expected_moves));
 
     }
 }
