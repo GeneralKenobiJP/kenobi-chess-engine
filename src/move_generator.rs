@@ -3,7 +3,7 @@ use crate::piece::Piece;
 use crate::piece::Colour;
 use crate::board;
 use crate::board::{Board, LOWER_RANK_HIGHEST_TILE, UPPER_RANK_LOWEST_TILE};
-use crate::piece::Colour::WHITE;
+use crate::piece::Colour::{BLACK, WHITE};
 
 #[derive(PartialEq, Eq, Hash, Clone)]
 struct Move {
@@ -58,9 +58,9 @@ impl<'a> MoveList<'a> {
 
         let double_push_bitboard = self.generate_white_double_push_bitboard(push_bitboard);
 
-        let left_capture_bitboard = self.generate_pawn_capture_bitboard(7);
+        let left_capture_bitboard = self.generate_white_pawn_capture_bitboard(7);
 
-        let right_capture_bitboard: u64 = self.generate_pawn_capture_bitboard(9);
+        let right_capture_bitboard: u64 = self.generate_white_pawn_capture_bitboard(9);
 
         self.convert_white_pawn_moves(push_bitboard, 8);
         self.convert_white_pawn_moves(double_push_bitboard, 16);
@@ -115,6 +115,17 @@ impl<'a> MoveList<'a> {
             & self.board.empty_bitboard
     }
 
+    fn generate_white_pawn_capture_bitboard(&self, shift: u8) -> u64 {
+        let mut attack_options = self.board.colour_bitboards[BLACK as usize];
+        if self.board.en_passant_possibility < 64 {
+            let en_passant_tile = 1 << self.board.en_passant_possibility;
+            attack_options |= en_passant_tile;
+        }
+        let index = Piece::PAWN as usize;
+        let capture_bitboard: u64 = self.board.piece_bitboards[index] << shift & attack_options;
+        capture_bitboard
+    }
+
     /// BLACK PAWN MOVE GENERATION
 
     fn generate_black_pawn_moves(&mut self) {
@@ -122,9 +133,9 @@ impl<'a> MoveList<'a> {
 
         let double_push_bitboard = self.generate_black_double_push_bitboard(push_bitboard);
 
-        let left_capture_bitboard = self.generate_pawn_capture_bitboard(-7);
+        let left_capture_bitboard = self.generate_black_pawn_capture_bitboard(7);
 
-        let right_capture_bitboard: u64 = self.generate_pawn_capture_bitboard(-9);
+        let right_capture_bitboard: u64 = self.generate_black_pawn_capture_bitboard(9);
 
         self.convert_black_pawn_moves(push_bitboard, 8);
         self.convert_black_pawn_moves(double_push_bitboard, 16);
@@ -140,8 +151,8 @@ impl<'a> MoveList<'a> {
             if tile == 0 {break;}
 
             bitboard -= tile;
-            let origin = u64::ilog2(tile as u64) as u8;
-            let target = origin << shift;
+            let target = u64::ilog2(tile as u64) as u8;
+            let origin = u64::ilog2((tile as u64) << shift) as u8 ;
 
             if(target > LOWER_RANK_HIGHEST_TILE)
             {
@@ -175,20 +186,18 @@ impl<'a> MoveList<'a> {
     }
 
     fn generate_black_push_bitboard(&self) -> u64 {
-        self.board.piece_bitboards[Piece::PAWN as usize] >> 8
+        self.board.piece_bitboards[Piece::PAWN as usize + 6] >> 8
             & self.board.empty_bitboard
     }
 
-    /// NEUTRAL
-
-    fn generate_pawn_capture_bitboard(&self, shift: i8) -> u64 {
-        let mut attack_options = self.board.colour_bitboards[self.board.inactive_player as usize];
+    fn generate_black_pawn_capture_bitboard(&self, shift: u8) -> u64 {
+        let mut attack_options = self.board.colour_bitboards[WHITE as usize];
         if self.board.en_passant_possibility < 64 {
             let en_passant_tile = 1 << self.board.en_passant_possibility;
             attack_options |= en_passant_tile;
         }
-        let index = Piece::PAWN as usize;
-        let capture_bitboard: u64 = self.board.piece_bitboards[index] << shift & attack_options;
+        let index = Piece::PAWN as usize + 6;
+        let capture_bitboard: u64 = self.board.piece_bitboards[index] >> shift & attack_options;
         capture_bitboard
     }
 }
@@ -247,8 +256,8 @@ mod tests {
 
         assert_eq!(move_list.generate_white_push_bitboard(), expected_push_bitboard);
         assert_eq!(move_list.generate_white_double_push_bitboard(expected_push_bitboard), expected_double_push_bitboard);
-        assert_eq!(move_list.generate_pawn_capture_bitboard(7), expected_left_pawn_capture_bitboard);
-        assert_eq!(move_list.generate_pawn_capture_bitboard(9), expected_right_pawn_capture_bitboard);
+        assert_eq!(move_list.generate_white_pawn_capture_bitboard(7), expected_left_pawn_capture_bitboard);
+        assert_eq!(move_list.generate_white_pawn_capture_bitboard(9), expected_right_pawn_capture_bitboard);
 
         move_list.convert_white_pawn_moves(expected_push_bitboard, 8);
         assert!(compare_vecs(&move_list.moves, &expected_push_moves));
@@ -267,6 +276,71 @@ mod tests {
 
         move_list.moves = Vec::<Move>::new();
         move_list.generate_white_pawn_moves();
+        assert!(compare_vecs(&move_list.moves, &expected_pawn_moves));
+
+        let expected_moves = [expected_pawn_moves].concat();
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.generate_moves();
+        assert!(compare_vecs(&move_list.moves, &expected_moves));
+    }
+
+    #[test]
+    fn position_2() {
+        let mut board = Board::new();
+        read_fen(&mut board, "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
+        let mut move_list = MoveList::new(&board);
+
+        let expected_push_bitboard: u64 = 0b0000000000000000111111110000000000000000000000000000000000000000;
+        let expected_double_push_bitboard: u64 = 0b0000000000000000000000001111111100000000000000000000000000000000;
+        let expected_left_pawn_capture_bitboard: u64 = 0;
+        let expected_right_pawn_capture_bitboard: u64 = 0;
+
+        let mut expected_push_moves = Vec::<Move>::new();
+        expected_push_moves.push(Move{ origin: 55, target: 47, promotion: 0, piece: Piece::PAWN });
+        expected_push_moves.push(Move{ origin: 54, target: 46, promotion: 0, piece: Piece::PAWN });
+        expected_push_moves.push(Move{ origin: 53, target: 45, promotion: 0, piece: Piece::PAWN });
+        expected_push_moves.push(Move{ origin: 52, target: 44, promotion: 0, piece: Piece::PAWN });
+        expected_push_moves.push(Move{ origin: 51, target: 43, promotion: 0, piece: Piece::PAWN });
+        expected_push_moves.push(Move{ origin: 50, target: 42, promotion: 0, piece: Piece::PAWN });
+        expected_push_moves.push(Move{ origin: 49, target: 41, promotion: 0, piece: Piece::PAWN });
+        expected_push_moves.push(Move{ origin: 48, target: 40, promotion: 0, piece: Piece::PAWN });
+        let mut expected_double_push_moves = Vec::<Move>::new();
+        expected_double_push_moves.push(Move{ origin: 55, target: 39, promotion: 0, piece: Piece::PAWN });
+        expected_double_push_moves.push(Move{ origin: 54, target: 38, promotion: 0, piece: Piece::PAWN });
+        expected_double_push_moves.push(Move{ origin: 53, target: 37, promotion: 0, piece: Piece::PAWN });
+        expected_double_push_moves.push(Move{ origin: 52, target: 36, promotion: 0, piece: Piece::PAWN });
+        expected_double_push_moves.push(Move{ origin: 51, target: 35, promotion: 0, piece: Piece::PAWN });
+        expected_double_push_moves.push(Move{ origin: 50, target: 34, promotion: 0, piece: Piece::PAWN });
+        expected_double_push_moves.push(Move{ origin: 49, target: 33, promotion: 0, piece: Piece::PAWN });
+        expected_double_push_moves.push(Move{ origin: 48, target: 32, promotion: 0, piece: Piece::PAWN });
+        let expected_left_pawn_captures = Vec::<Move>::new();
+        let expected_right_pawn_captures = Vec::<Move>::new();
+        let expected_pawn_moves = [expected_push_moves.clone(), expected_double_push_moves.clone(),
+            expected_left_pawn_captures.clone(), expected_right_pawn_captures.clone()].concat();
+
+        assert_eq!(move_list.generate_black_push_bitboard(), expected_push_bitboard);
+        assert_eq!(move_list.generate_black_double_push_bitboard(expected_push_bitboard), expected_double_push_bitboard);
+        assert_eq!(move_list.generate_black_pawn_capture_bitboard(7), expected_left_pawn_capture_bitboard);
+        assert_eq!(move_list.generate_black_pawn_capture_bitboard(9), expected_right_pawn_capture_bitboard);
+
+        move_list.convert_black_pawn_moves(expected_push_bitboard, 8);
+        assert!(compare_vecs(&move_list.moves, &expected_push_moves));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_black_pawn_moves(expected_double_push_bitboard, 16);
+        assert!(compare_vecs(&move_list.moves, &expected_double_push_moves));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_black_pawn_moves(expected_left_pawn_capture_bitboard, 7);
+        assert!(compare_vecs(&move_list.moves, &expected_left_pawn_captures));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_black_pawn_moves(expected_right_pawn_capture_bitboard, 7);
+        assert!(compare_vecs(&move_list.moves, &expected_right_pawn_captures));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.generate_black_pawn_moves();
         assert!(compare_vecs(&move_list.moves, &expected_pawn_moves));
 
         let expected_moves = [expected_pawn_moves].concat();
