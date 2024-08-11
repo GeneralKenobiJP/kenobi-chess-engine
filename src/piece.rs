@@ -3,7 +3,7 @@
 //! Colour (piece colour / player colour)
 
 use crate::piece::Colour::WHITE;
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq, Clone, Hash)]
 pub enum Piece {
     KING = 0,
     PAWN = 1,

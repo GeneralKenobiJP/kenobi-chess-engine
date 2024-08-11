@@ -5,7 +5,7 @@ use crate::board;
 use crate::board::{Board, LOWER_RANK_HIGHEST_TILE, UPPER_RANK_LOWEST_TILE};
 use crate::piece::Colour::WHITE;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq, Hash, Clone)]
 struct Move {
     origin: u8,
     target: u8,
@@ -76,8 +76,8 @@ impl<'a> MoveList<'a> {
             if tile == 0 {break;}
 
             bitboard -= tile;
-            let origin = u64::ilog2(tile as u64) as u8;
-            let target = origin >> shift;
+            let target = u64::ilog2(tile as u64) as u8;
+            let origin = u64::ilog2((tile as u64) >> shift) as u8 ;
 
             if target < UPPER_RANK_LOWEST_TILE
             {
@@ -199,13 +199,14 @@ mod tests {
     use crate::board::{read_fen, START_POSITION};
     use super::*;
 
-    fn compare_vecs<Move: std::cmp::PartialEq>(vec1: &Vec::<Move>, vec2: &Vec::<Move>) -> bool {
+    fn compare_vecs<Move: std::cmp::PartialEq + std::cmp::Eq + std::hash::Hash + std::clone::Clone>
+    (vec1: &Vec::<Move>, vec2: &Vec::<Move>) -> bool {
         if vec1.len() != vec2.len() {
             return false;
         }
 
-        let set1: HashSet<Move> = HashSet::from_iter(vec1.iter());
-        let set2: HashSet<Move> = HashSet::from_iter(vec2.iter());
+        let set1: HashSet<Move> = HashSet::from_iter(vec1.iter().cloned());
+        let set2: HashSet<Move> = HashSet::from_iter(vec2.iter().cloned());
 
         return set1 == set2;
     }
