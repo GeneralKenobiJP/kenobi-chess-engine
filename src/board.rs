@@ -129,7 +129,7 @@ pub fn read_fen(board: &mut Board, fen: &str) {
     else {
         // let tile = en_passant.parse::<u32>().unwrap_or_default();
         let mut chars = en_passant.chars();
-        let file = chars.next().unwrap_or_default() as u32 - 'a' as u32;
+        let file = 'h' as u32 - chars.next().unwrap_or_default() as u32;
         let rank = chars.next().unwrap_or_default().to_digit(10).unwrap_or_default() - 1;
         let tile = file + rank * 8;
         board.en_passant_possibility = tile;
@@ -202,7 +202,7 @@ mod tests {
         let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w - f2 0 1";
         read_fen(&mut board, fen);
 
-        assert_eq!(board.en_passant_possibility, 13);
+        assert_eq!(board.en_passant_possibility, 10);
     }
 
     #[test]
@@ -229,7 +229,7 @@ mod tests {
         assert_eq!(board.active_player, BLACK);
         assert_eq!(board.inactive_player, WHITE);
         assert_eq!(board.castling_rights, [true; 4]);
-        assert_eq!(board.en_passant_possibility, 20);
+        assert_eq!(board.en_passant_possibility, 19);
         assert_eq!(board.half_moves, 0);
         assert_eq!(board.full_moves, 1);
     }
