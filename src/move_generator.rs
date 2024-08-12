@@ -2,6 +2,7 @@
 //! Generates a vector of moves based on the input board position
 //! Involves bitboards, magic bitboards, etc.
 
+use std::arch::x86_64::_xgetbv;
 use crate::piece;
 use crate::piece::Piece;
 use crate::piece::Colour;
@@ -19,14 +20,16 @@ struct Move {
 
 struct MoveList<'a> {
     board: &'a Board,
-    moves: Vec<Move>
+    moves: Vec<Move>,
+    king_lookup_table: [u64; 64] // should be immutable
 }
 
 impl<'a> MoveList<'a> {
     fn new(board: &'a Board) -> Self {
         MoveList {
             board,
-            moves: Vec::new()
+            moves: Vec::new(),
+            king_lookup_table: Self::setup_king_lookup_table()
         }
     }
 
@@ -42,6 +45,34 @@ impl<'a> MoveList<'a> {
             return;
         }
         self.generate_black_pawn_moves();
+    }
+
+    /// KING MOVE GENERATION
+
+    /// Outputs a lookup table for bitboards of possible king moves at given square, assuming no blocks
+    /// Used by the constructor of the board for initialization of the lookup table
+    fn setup_king_lookup_table() -> [u64; 64] {
+        let mut lookup_table: [u64; 64] = [0; 64];
+        let mut current_bit: u64 = 1;
+        for i in 0..64 {
+            let is_east: bool = if current_bit % 8 == 0 { true } else { false };
+            let is_west: bool = if current_bit % 8 == 7 { true } else { false };
+            let is_north: bool = if current_bit / 8 == 7 { true } else { false };
+            let is_south: bool = if current_bit / 8 == 0 { true } else { false };
+
+            if !is_east { lookup_table[i] |= current_bit >> 1 };
+            if !is_west { lookup_table[i] |= current_bit << 1 };
+            if !is_north { lookup_table[i] |= current_bit << 8 };
+            if !is_south { lookup_table[i] |= current_bit >> 8 };
+            if !is_east && !is_north { lookup_table[i] |= current_bit << 7 };
+            if !is_west && !is_north { lookup_table[i] |= current_bit << 9 };
+            if !is_west && !is_south { lookup_table[i] |= current_bit >> 7 };
+            if !is_east && !is_south { lookup_table[i] |= current_bit >> 9 };
+
+            current_bit << 1;
+        }
+
+        lookup_table
     }
 
     /// PAWN MOVE GENERATION
