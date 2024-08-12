@@ -1,3 +1,7 @@
+//! Move generator
+//! Generates a vector of moves based on the input board position
+//! Involves bitboards, magic bitboards, etc.
+
 use crate::piece;
 use crate::piece::Piece;
 use crate::piece::Colour;
@@ -12,18 +16,6 @@ struct Move {
     promotion: u8,
     piece: Piece
 }
-
-// impl PartialEq for Move {
-//     fn eq(&self, other: &Self) -> bool {
-//         self.origin == other.origin
-//         && self.target == other.target
-//         && self.promotion == other.promotion
-//         && self.piece == other.piece
-//     }
-//     fn ne(&self, other: &Self) -> bool {
-//         !self.eq(other)
-//     }
-// }
 
 struct MoveList<'a> {
     board: &'a Board,
@@ -42,6 +34,7 @@ impl<'a> MoveList<'a> {
         &self.moves
     }
 
+    /// Generates moves and updates move list based on the situation on the board
     fn generate_moves(&mut self) {
         if self.board.active_player == WHITE
         {
@@ -51,8 +44,11 @@ impl<'a> MoveList<'a> {
         self.generate_black_pawn_moves();
     }
 
+    /// PAWN MOVE GENERATION
+
     /// WHITE PAWN MOVE GENERATION
 
+    /// Generates moves of white pawns based on the current board situation and updates self
     fn generate_white_pawn_moves(&mut self) {
         let push_bitboard = self.generate_white_push_bitboard();
 
@@ -68,8 +64,13 @@ impl<'a> MoveList<'a> {
         self.convert_white_pawn_moves(right_capture_bitboard, 9);
     }
 
-    fn convert_white_pawn_moves(&mut self, push_bitboard: u64, shift: u8) {
-        let mut bitboard = push_bitboard;
+    /// Converts a bitboard of white pawn moves and a move shift into a list of moves and updates self
+    /// Should be used separately for single pushes, double pushes, left captures, right captures
+    /// parameters:
+    ///     move_bitboard - bitboards of squares targeted by a move subgroup
+    ///     shift - move shift that is needed to decode the origin square for a given move subgroup, given their target squares
+    fn convert_white_pawn_moves(&mut self, move_bitboard: u64, shift: u8) {
+        let mut bitboard = move_bitboard;
 
         while bitboard != 0 {
             let tile = bitboard & bitboard.wrapping_neg();
@@ -101,6 +102,9 @@ impl<'a> MoveList<'a> {
         }
     }
 
+    /// Outputs a bitboard of double push white pawn moves, given the input of single push bitboard, based on the current board situation
+    /// parameters:
+    ///     push_bitboard - bitboard of white pawn single pushes
     fn generate_white_double_push_bitboard(&self, push_bitboard: u64) -> u64 {
         let double_push_mask = 0b0000000000000000000000000000000000000000111111110000000000000000;
         let double_push_bitboard: u64 =
@@ -109,11 +113,18 @@ impl<'a> MoveList<'a> {
         double_push_bitboard
     }
 
+    /// Outputs a bitboard of single push white pawn moves, based on the current board situation
     fn generate_white_push_bitboard(&self) -> u64 {
         self.board.piece_bitboards[Piece::PAWN as usize] << 8
             & self.board.empty_bitboard
     }
 
+    /// Outputs a bitboard of white pawn captures, based on the current board situation
+    /// Takes the direction of the attack as the input
+    /// Should be used separately for left captures and right captures.
+    /// Accounts for en passant
+    /// parameters:
+    ///     shift - move shift of the given attack direction
     fn generate_white_pawn_capture_bitboard(&self, shift: u8) -> u64 {
         let mut attack_options = self.board.colour_bitboards[BLACK as usize];
         if self.board.en_passant_possibility < 64 {
@@ -127,6 +138,7 @@ impl<'a> MoveList<'a> {
 
     /// BLACK PAWN MOVE GENERATION
 
+    /// Generates moves of black pawns based on the current board situation and updates self
     fn generate_black_pawn_moves(&mut self) {
         let push_bitboard = self.generate_black_push_bitboard();
 
@@ -142,6 +154,11 @@ impl<'a> MoveList<'a> {
         self.convert_black_pawn_moves(right_capture_bitboard, 9);
     }
 
+    /// Converts a bitboard of black pawn moves and a move shift into a list of moves and updates self
+    /// Should be used separately for single pushes, double pushes, left captures, right captures
+    /// parameters:
+    ///     move_bitboard - bitboards of squares targeted by a move subgroup
+    ///     shift - move shift that is needed to decode the origin square for a given move subgroup, given their target squares
     fn convert_black_pawn_moves(&mut self, push_bitboard: u64, shift: u8) {
         let mut bitboard = push_bitboard;
 
@@ -175,6 +192,9 @@ impl<'a> MoveList<'a> {
         }
     }
 
+    /// Outputs a bitboard of double push black pawn moves, given the input of single push bitboard, based on the current board situation
+    /// parameters:
+    ///     push_bitboard - bitboard of black pawn single pushes
     fn generate_black_double_push_bitboard(&self, push_bitboard: u64) -> u64 {
         let double_push_mask = 0b0000000000000000111111110000000000000000000000000000000000000000;
         let double_push_bitboard: u64 =
@@ -183,11 +203,18 @@ impl<'a> MoveList<'a> {
         double_push_bitboard
     }
 
+    /// Outputs a bitboard of single push black pawn moves, based on the current board situation
     fn generate_black_push_bitboard(&self) -> u64 {
         self.board.piece_bitboards[Piece::PAWN as usize + 6] >> 8
             & self.board.empty_bitboard
     }
 
+    /// Outputs a bitboard of white pawn captures, based on the current board situation
+    /// Takes the direction of the attack as the input
+    /// Should be used separately for left captures and right captures.
+    /// Accounts for en passant
+    /// parameters:
+    ///     shift - move shift of the given attack direction
     fn generate_black_pawn_capture_bitboard(&self, shift: u8) -> u64 {
         let mut attack_options = self.board.colour_bitboards[WHITE as usize];
         if self.board.en_passant_possibility < 64 {
