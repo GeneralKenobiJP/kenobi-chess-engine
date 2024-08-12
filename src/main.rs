@@ -1,5 +1,6 @@
 mod board;
 mod piece;
+mod move_generator;
 
 use std::io;
 use scanner_rust::ScannerStr;

@@ -1,5 +1,8 @@
-use crate::piece::Colour::WHITE;
-#[derive(PartialEq)]
+//! Enums that define pieces and players
+//! Piece (piece type)
+//! Colour (piece colour / player colour)
+//!
+#[derive(PartialEq, Eq, Clone, Hash)]
 pub enum Piece {
     KING = 0,
     PAWN = 1,
