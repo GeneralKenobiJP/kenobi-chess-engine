@@ -55,10 +55,10 @@ impl<'a> MoveList<'a> {
         let mut lookup_table: [u64; 64] = [0; 64];
         let mut current_bit: u64 = 1;
         for i in 0..64 {
-            let is_east: bool = if current_bit % 8 == 0 { true } else { false };
-            let is_west: bool = if current_bit % 8 == 7 { true } else { false };
-            let is_north: bool = if current_bit / 8 == 7 { true } else { false };
-            let is_south: bool = if current_bit / 8 == 0 { true } else { false };
+            let is_east: bool = if i % 8 == 0 { true } else { false };
+            let is_west: bool = if i % 8 == 7 { true } else { false };
+            let is_north: bool = if i / 8 == 7 { true } else { false };
+            let is_south: bool = if i / 8 == 0 { true } else { false };
 
             if !is_east { lookup_table[i] |= current_bit >> 1 };
             if !is_west { lookup_table[i] |= current_bit << 1 };
@@ -69,7 +69,7 @@ impl<'a> MoveList<'a> {
             if !is_west && !is_south { lookup_table[i] |= current_bit >> 7 };
             if !is_east && !is_south { lookup_table[i] |= current_bit >> 9 };
 
-            current_bit << 1;
+            current_bit <<= 1;
         }
 
         lookup_table
@@ -470,5 +470,22 @@ mod tests {
         move_list.moves = Vec::<Move>::new();
         move_list.generate_moves();
         assert!(compare_vecs(&move_list.moves, &expected_moves));
+    }
+
+    #[test]
+    fn check_king_lookup() {
+        let mut board = Board::new();
+        read_fen(&mut board, START_POSITION);
+        let mut move_list = MoveList::new(&board);
+
+        assert_eq!(0b0000000000000000000000000000000000000000000000000000001100000010, move_list.king_lookup_table[0]);
+        assert_eq!(0b0000000000000000000000000000000000000000000000000000011100000101, move_list.king_lookup_table[1]);
+        assert_eq!(0b0000000000000000000000000000000000000000000000001100000001000000, move_list.king_lookup_table[7]);
+        assert_eq!(0b0000000000000000000000000000000000011100000101000001110000000000, move_list.king_lookup_table[19]);
+        assert_eq!(0b0000000000000000000000000000000000000011000000100000001100000000, move_list.king_lookup_table[16]);
+        assert_eq!(0b0000000000000000000000000000000011000000010000001100000000000000, move_list.king_lookup_table[23]);
+        assert_eq!(0b0100000011000000000000000000000000000000000000000000000000000000, move_list.king_lookup_table[63]);
+        assert_eq!(0b1010000011100000000000000000000000000000000000000000000000000000, move_list.king_lookup_table[62]);
+        assert_eq!(0b0000001000000011000000000000000000000000000000000000000000000000, move_list.king_lookup_table[56]);
     }
 }
