@@ -16,6 +16,7 @@ pub const LOWER_RANK_HIGHEST_TILE: u8 = 7;
 pub const NOT_FILE_A_MASK: u64 = 0b0111111101111111011111110111111101111111011111110111111101111111;
 pub const NOT_FILE_H_MASK: u64 = 0b1111111011111110111111101111111011111110111111101111111011111110;
 
+// #[derive(Copy)]
 pub struct Board {
     pub main_bitboard: u64,
     pub empty_bitboard: u64,
@@ -28,7 +29,6 @@ pub struct Board {
     pub half_moves: u32, // The halfmove clock specifies a decimal number of half moves with respect to the 50 move draw rule.
     // It is reset to zero after a capture or a pawn move and incremented otherwise.
     pub full_moves: u32,
-    pub is_in_check: bool
 }
 
 impl Board {
@@ -44,7 +44,6 @@ impl Board {
             en_passant_possibility: 64,
             half_moves: 0,
             full_moves: 1,
-            is_in_check: false
         }
     }
 
@@ -66,11 +65,8 @@ impl Board {
         println!("{}", self.en_passant_possibility);
         println!("{}", self.half_moves);
         println!("{}", self.full_moves);
-        println!("{}", self.is_in_check);
     }
-}
 
-impl Board {
     /// Read in the FEN (Forsyth-Edwards Notation) and adjust the board's attributes accordingly
     /// parameters:
     ///     board - Board object we are considering

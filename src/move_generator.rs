@@ -80,7 +80,9 @@ impl<'a> MoveList<'a> {
     fn generate_king_moves(&mut self) {
         let bitboard = self.generate_king_moves_bitboard();
         // self.convert_king_moves();
-        // self.generate_castling();
+        
+        if self.board.active_player == WHITE { self.generate_white_castling() }
+        else { self.generate_black_castling() }
     }
 
     /// Outputs a bitboard of king moves, based on the current board situation
@@ -92,7 +94,7 @@ impl<'a> MoveList<'a> {
     /// Generates legal castling moves for white based on the current board situation and updates self
     /// Updates directly the list of moves
     fn generate_white_castling(&mut self) {
-        // if self.is_check { return; }
+        if self.is_in_check() { return; }
 
         if self.board.castling_rights[0] && self.board.main_bitboard & 6 == 0
             && !self.is_edge_square_attacked_by_black(2) && !self.is_edge_square_attacked_by_black(1)
@@ -112,7 +114,7 @@ impl<'a> MoveList<'a> {
     /// Generates legal castling moves for black based on the current board situation and updates self
     /// Updates directly the list of moves
     fn generate_black_castling(&mut self) {
-        // if self.is_check { return; }
+        if self.is_in_check() { return; }
 
         let kingside_bitboard: u64 = 0b0000011000000000000000000000000000000000000000000000000000000000;
         if self.board.castling_rights[2] && self.board.main_bitboard & kingside_bitboard == 0
@@ -163,6 +165,47 @@ impl<'a> MoveList<'a> {
         // todo: Check if a queen attacks the square
 
         false
+    }
+
+    /// Checks if the given square is attacked by white
+    /// Inputs a 64-bit number with one bit set to 1 as a tile indication
+    /// Outputs true/false
+    fn is_square_attacked_by_white(&self, tile: u64) -> bool {
+        // Check if a pawn attacks the square
+        if (tile & NOT_FILE_H_MASK) >> 7 & self.board.piece_bitboards[1] != 0 { return true; }
+        if (tile & NOT_FILE_A_MASK) >> 9 & self.board.piece_bitboards[1] != 0 { return true; }
+        if tile & self.king_lookup_table[self.board.piece_bitboards[0]] != 0 { return true; }
+        // todo: Check if a knight attacks the square
+        // todo: Check if a bishop attacks the square
+        // todo: Check if a rook attacks the square
+        // todo: Check if a queen attacks the square
+
+        false
+    }
+
+    /// Checks if the given square is attacked by black
+    /// Inputs a 64-bit number with one bit set to 1 as a tile indication
+    /// Outputs true/false
+    fn is_square_attacked_by_black(&self, tile: u64) -> bool {
+        // Check if a pawn attacks the square
+        if (tile & NOT_FILE_A_MASK) << 7 & self.board.piece_bitboards[7] != 0 { return true; }
+        if (tile & NOT_FILE_H_MASK) << 9 & self.board.piece_bitboards[7] != 0 { return true; }
+        if tile & self.king_lookup_table[self.board.piece_bitboards[6]] != 0 { return true; }
+        // todo: Check if a knight attacks the square
+        // todo: Check if a bishop attacks the square
+        // todo: Check if a rook attacks the square
+        // todo: Check if a queen attacks the square
+
+        false
+    }
+
+    /// Checks if the king of the current player is in check
+    /// Outputs true/false
+    fn is_in_check(&self) -> bool {
+        if self.board.active_player == BLACK {
+            return self.is_square_attacked_by_white(self.board.piece_bitboards[6]);
+        }
+        self.is_square_attacked_by_black(self.board.piece_bitboards[0])
     }
 
     /// PAWN MOVE GENERATION
