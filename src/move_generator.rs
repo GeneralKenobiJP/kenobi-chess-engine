@@ -137,7 +137,7 @@ impl<'a> MoveList<'a> {
 
         // Check if a pawn or king attacks the square
         if (tile & NOT_FILE_A_MASK) << 7 & (self.board.piece_bitboards[7] | self.board.piece_bitboards[6]) != 0 { return true; }
-        if (tile & NOT_FILE_H_MASK) << 9 & (self.board.piece_bitboards[7] | self.board.piece_bitboards[6]) != 0{ return true; }
+        if (tile & NOT_FILE_H_MASK) << 9 & (self.board.piece_bitboards[7] | self.board.piece_bitboards[6]) != 0 { return true; }
         if tile << 8 & self.board.piece_bitboards[6] != 0 { return true; }
         // todo: Check if a knight attacks the square
         // todo: Check if a bishop attacks the square
@@ -375,7 +375,7 @@ impl<'a> MoveList<'a> {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
-    use crate::board::{read_fen, START_POSITION};
+    use crate::board::{Board, START_POSITION};
     use super::*;
 
     fn compare_vecs<Move: PartialEq + Eq + std::hash::Hash + Clone>
@@ -393,7 +393,7 @@ mod tests {
     #[test]
     fn start_position() {
         let mut board = Board::new();
-        read_fen(&mut board, START_POSITION);
+        board.read_fen(START_POSITION);
         let mut move_list = MoveList::new(&board);
 
         let expected_push_bitboard: u64 = 0b0000000000000000000000000000000000000000111111110000000000000000;
@@ -458,7 +458,7 @@ mod tests {
     #[test]
     fn position_2() {
         let mut board = Board::new();
-        read_fen(&mut board, "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
+        board.read_fen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
         let mut move_list = MoveList::new(&board);
 
         let expected_push_bitboard: u64 = 0b0000000000000000111111110000000000000000000000000000000000000000;
@@ -524,7 +524,7 @@ mod tests {
     #[test]
     fn position_4() {
         let mut board = Board::new();
-        read_fen(&mut board, "r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/5N2/P7/RK6 w q d6 1 25");
+        board.read_fen("r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/5N2/P7/RK6 w q d6 1 25");
         let mut move_list = MoveList::new(&board);
 
         let expected_push_bitboard: u64 =               0b0100000000000000000010010000000000000000100000000000000000000000;
@@ -589,7 +589,7 @@ mod tests {
     #[test]
     fn check_king_lookup() {
         let mut board = Board::new();
-        read_fen(&mut board, START_POSITION);
+        board.read_fen(START_POSITION);
         let mut move_list = MoveList::new(&board);
 
         assert_eq!(0b0000000000000000000000000000000000000000000000000000001100000010, move_list.king_lookup_table[0]);

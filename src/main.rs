@@ -28,7 +28,7 @@ fn main() {
         match command {
             "ucinewgame" => initiate_bot(&mut board),
             "isready" => println!("readyok"),
-            "position" => board::read_fen(&mut board, scanner.next().unwrap_or_default().unwrap_or_default()),
+            "position" => board.read_fen(scanner.next().unwrap_or_default().unwrap_or_default()),
             "quit" => break,
             _ => println!("unexpected command"),
         }
