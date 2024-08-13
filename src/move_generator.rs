@@ -7,7 +7,7 @@ use crate::piece;
 use crate::piece::Piece;
 use crate::piece::Colour;
 use crate::board;
-use crate::board::{Board, LOWER_RANK_HIGHEST_TILE, UPPER_RANK_LOWEST_TILE};
+use crate::board::{Board, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_MASK, UPPER_RANK_LOWEST_TILE};
 use crate::piece::Colour::{BLACK, WHITE};
 use crate::piece::Piece::KING;
 
@@ -83,7 +83,7 @@ impl<'a> MoveList<'a> {
     }
 
     fn generate_king_moves_bitboard(&self) -> u64 {
-        self.king_lookup_table[self.board.piece_bitboards[6 * self.board.active_player as usize]]
+        self.king_lookup_table[self.board.piece_bitboards[6 * self.board.active_player as usize] as usize]
             & self.board.empty_bitboard
     }
 
@@ -91,16 +91,16 @@ impl<'a> MoveList<'a> {
         // if self.is_check { return; }
 
         if self.board.castling_rights[0] && self.board.main_bitboard & 6 == 0 {
-            // if self.is_square_attacked(2) { break; }
-            // if self.is_square_attacked(1) { break; }
+            // if self.is_square_attacked_by_black(2) { break; }
+            // if self.is_square_attacked_by_black(1) { break; }
             self.moves.push(Move {origin: 3, target: 1, promotion: 1, piece: KING});
         }
 
         let queenside_bitboard: u64 = 0b0000000000000000000000000000000000000000000000000000000000110000;
 
         if self.board.castling_rights[1] && self.board.main_bitboard & queenside_bitboard == 0{
-            // if self.is_square_attacked(4) { break; }
-            // if self.is_square_attacked(5) { break; }
+            // if self.is_square_attacked_by_black(4) { break; }
+            // if self.is_square_attacked_by_black(5) { break; }
             self.moves.push(Move {origin: 3, target: 5, promotion: 1, piece: KING});
         }
     }
@@ -110,17 +110,24 @@ impl<'a> MoveList<'a> {
 
         let kingside_bitboard: u64 = 0b0000011000000000000000000000000000000000000000000000000000000000;
         if self.board.castling_rights[2] && self.board.main_bitboard & kingside_bitboard == 0 {
-            // if self.is_square_attacked(58) { break; }
-            // if self.is_square_attacked(57) { break; }
+            // if self.is_square_attacked_by_white(58) { break; }
+            // if self.is_square_attacked_by_white(57) { break; }
             self.moves.push(Move {origin: 59, target: 57, promotion: 1, piece: KING});
         }
-        
+
         let queenside_bitboard: u64 = 0b0011000000000000000000000000000000000000000000000000000000110000;
         if self.board.castling_rights[3] && self.board.main_bitboard & queenside_bitboard == 0 {
-            // if self.is_square_attacked(60) { break; }
-            // if self.is_square_attacked(61) { break; }
+            // if self.is_square_attacked_by_white(60) { break; }
+            // if self.is_square_attacked_by_white(61) { break; }
             self.moves.push(Move {origin: 59, target: 61, promotion: 1, piece: KING});
         }
+    }
+
+    fn is_edge_square_attacked_by_black(square: u8) {
+        let tile = 1 << square;
+
+
+
     }
 
     /// PAWN MOVE GENERATION
@@ -133,14 +140,14 @@ impl<'a> MoveList<'a> {
 
         let double_push_bitboard = self.generate_white_double_push_bitboard(push_bitboard);
 
-        let left_capture_bitboard = self.generate_white_pawn_capture_bitboard(7);
+        let left_capture_bitboard = self.generate_white_pawn_left_capture_bitboard();
 
-        let right_capture_bitboard: u64 = self.generate_white_pawn_capture_bitboard(9);
+        let right_capture_bitboard: u64 = self.generate_white_pawn_right_capture_bitboard();
 
         self.convert_white_pawn_moves(push_bitboard, 8);
         self.convert_white_pawn_moves(double_push_bitboard, 16);
-        self.convert_white_pawn_moves(left_capture_bitboard, 7);
-        self.convert_white_pawn_moves(right_capture_bitboard, 9);
+        self.convert_white_pawn_moves(left_capture_bitboard, 9);
+        self.convert_white_pawn_moves(right_capture_bitboard, 7);
     }
 
     /// Converts a bitboard of white pawn moves and a move shift into a list of moves and updates self
@@ -198,20 +205,32 @@ impl<'a> MoveList<'a> {
             & self.board.empty_bitboard
     }
 
-    /// Outputs a bitboard of white pawn captures, based on the current board situation
-    /// Takes the direction of the attack as the input
+    /// Outputs a bitboard of white left pawn captures, based on the current board situation
+    /// Shifts by 9 bits
     /// Should be used separately for left captures and right captures.
     /// Accounts for en passant
-    /// parameters:
-    ///     shift - move shift of the given attack direction
-    fn generate_white_pawn_capture_bitboard(&self, shift: u8) -> u64 {
+    fn generate_white_pawn_left_capture_bitboard(&self) -> u64 {
         let mut attack_options = self.board.colour_bitboards[BLACK as usize];
         if self.board.en_passant_possibility < 64 {
             let en_passant_tile = 1 << self.board.en_passant_possibility;
             attack_options |= en_passant_tile;
         }
         let index = Piece::PAWN as usize;
-        let capture_bitboard: u64 = (self.board.piece_bitboards[index] << shift) & attack_options;
+        let capture_bitboard: u64 = ((self.board.piece_bitboards[index] & NOT_FILE_A_MASK) << 9) & attack_options;
+        capture_bitboard
+    }
+    /// Outputs a bitboard of white pawn captures, based on the current board situation
+    /// Shifts by 7 bits
+    /// Should be used separately for left captures and right captures.
+    /// Accounts for en passant
+    fn generate_white_pawn_right_capture_bitboard(&self) -> u64 {
+        let mut attack_options = self.board.colour_bitboards[BLACK as usize];
+        if self.board.en_passant_possibility < 64 {
+            let en_passant_tile = 1 << self.board.en_passant_possibility;
+            attack_options |= en_passant_tile;
+        }
+        let index = Piece::PAWN as usize;
+        let capture_bitboard: u64 = ((self.board.piece_bitboards[index] & NOT_FILE_H_MASK) << 7) & attack_options;
         capture_bitboard
     }
 
@@ -360,8 +379,8 @@ mod tests {
 
         assert_eq!(move_list.generate_white_push_bitboard(), expected_push_bitboard);
         assert_eq!(move_list.generate_white_double_push_bitboard(expected_push_bitboard), expected_double_push_bitboard);
-        assert_eq!(move_list.generate_white_pawn_capture_bitboard(9), expected_left_pawn_capture_bitboard);
-        assert_eq!(move_list.generate_white_pawn_capture_bitboard(7), expected_right_pawn_capture_bitboard);
+        assert_eq!(move_list.generate_white_pawn_left_capture_bitboard(), expected_left_pawn_capture_bitboard);
+        assert_eq!(move_list.generate_white_pawn_right_capture_bitboard(), expected_right_pawn_capture_bitboard);
 
         move_list.convert_white_pawn_moves(expected_push_bitboard, 8);
         assert!(compare_vecs(&move_list.moves, &expected_push_moves));
@@ -458,7 +477,7 @@ mod tests {
     #[test]
     fn position_4() {
         let mut board = Board::new();
-        read_fen(&mut board, "r3kq2/1Pr5/5pp1/3pPBPP/1b1P2Q1/5N2/P7/RK6 w q d6 1 25");
+        read_fen(&mut board, "r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/5N2/P7/RK6 w q d6 1 25");
         let mut move_list = MoveList::new(&board);
 
         let expected_push_bitboard: u64 =               0b0100000000000000000010010000000000000000100000000000000000000000;
@@ -491,8 +510,8 @@ mod tests {
 
         assert_eq!(move_list.generate_white_push_bitboard(), expected_push_bitboard);
         assert_eq!(move_list.generate_white_double_push_bitboard(expected_push_bitboard), expected_double_push_bitboard);
-        assert_eq!(move_list.generate_white_pawn_capture_bitboard(9), expected_left_pawn_capture_bitboard);
-        assert_eq!(move_list.generate_white_pawn_capture_bitboard(7), expected_right_pawn_capture_bitboard);
+        assert_eq!(move_list.generate_white_pawn_left_capture_bitboard(), expected_left_pawn_capture_bitboard);
+        assert_eq!(move_list.generate_white_pawn_right_capture_bitboard(), expected_right_pawn_capture_bitboard);
 
         move_list.convert_white_pawn_moves(expected_push_bitboard, 8);
         assert!(compare_vecs(&move_list.moves, &expected_push_moves));
