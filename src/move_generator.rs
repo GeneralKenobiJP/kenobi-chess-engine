@@ -75,6 +75,21 @@ impl<'a> MoveList<'a> {
         lookup_table
     }
 
+    fn generate_king_moves(&mut self) {
+        let bitboard = self.generate_king_moves_bitboard();
+        // self.convert_king_moves();
+        // self.generate_castling();
+    }
+
+    fn generate_king_moves_bitboard(&self) -> u64 {
+        self.king_lookup_table[self.board.piece_bitboards[6 * self.board.active_player as usize]]
+            & self.board.empty_bitboard
+    }
+
+    fn generate_white_castling(&mut self) {
+        
+    }
+
     /// PAWN MOVE GENERATION
 
     /// WHITE PAWN MOVE GENERATION
