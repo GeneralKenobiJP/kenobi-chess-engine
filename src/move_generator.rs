@@ -9,6 +9,7 @@ use crate::piece::Colour;
 use crate::board;
 use crate::board::{Board, LOWER_RANK_HIGHEST_TILE, UPPER_RANK_LOWEST_TILE};
 use crate::piece::Colour::{BLACK, WHITE};
+use crate::piece::Piece::KING;
 
 #[derive(PartialEq, Eq, Hash, Clone)]
 struct Move {
@@ -87,7 +88,39 @@ impl<'a> MoveList<'a> {
     }
 
     fn generate_white_castling(&mut self) {
+        // if self.is_check { return; }
+
+        if self.board.castling_rights[0] && self.board.main_bitboard & 6 == 0 {
+            // if self.is_square_attacked(2) { break; }
+            // if self.is_square_attacked(1) { break; }
+            self.moves.push(Move {origin: 3, target: 1, promotion: 1, piece: KING});
+        }
+
+        let queenside_bitboard: u64 = 0b0000000000000000000000000000000000000000000000000000000000110000;
+
+        if self.board.castling_rights[1] && self.board.main_bitboard & queenside_bitboard == 0{
+            // if self.is_square_attacked(4) { break; }
+            // if self.is_square_attacked(5) { break; }
+            self.moves.push(Move {origin: 3, target: 5, promotion: 1, piece: KING});
+        }
+    }
+
+    fn generate_black_castling(&mut self) {
+        // if self.is_check { return; }
+
+        let kingside_bitboard: u64 = 0b0000011000000000000000000000000000000000000000000000000000000000;
+        if self.board.castling_rights[2] && self.board.main_bitboard & kingside_bitboard == 0 {
+            // if self.is_square_attacked(58) { break; }
+            // if self.is_square_attacked(57) { break; }
+            self.moves.push(Move {origin: 59, target: 57, promotion: 1, piece: KING});
+        }
         
+        let queenside_bitboard: u64 = 0b0011000000000000000000000000000000000000000000000000000000110000;
+        if self.board.castling_rights[3] && self.board.main_bitboard & queenside_bitboard == 0 {
+            // if self.is_square_attacked(60) { break; }
+            // if self.is_square_attacked(61) { break; }
+            self.moves.push(Move {origin: 59, target: 61, promotion: 1, piece: KING});
+        }
     }
 
     /// PAWN MOVE GENERATION
