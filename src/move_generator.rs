@@ -76,17 +76,21 @@ impl<'a> MoveList<'a> {
         lookup_table
     }
 
+    /// Generates moves of a king based on the current board situation and updates self
     fn generate_king_moves(&mut self) {
         let bitboard = self.generate_king_moves_bitboard();
         // self.convert_king_moves();
         // self.generate_castling();
     }
 
+    /// Outputs a bitboard of king moves, based on the current board situation
     fn generate_king_moves_bitboard(&self) -> u64 {
         self.king_lookup_table[self.board.piece_bitboards[6 * self.board.active_player as usize] as usize]
             & self.board.empty_bitboard
     }
 
+    /// Generates legal castling moves for white based on the current board situation and updates self
+    /// Updates directly the list of moves
     fn generate_white_castling(&mut self) {
         // if self.is_check { return; }
 
@@ -105,6 +109,8 @@ impl<'a> MoveList<'a> {
         }
     }
 
+    /// Generates legal castling moves for black based on the current board situation and updates self
+    /// Updates directly the list of moves
     fn generate_black_castling(&mut self) {
         // if self.is_check { return; }
 
