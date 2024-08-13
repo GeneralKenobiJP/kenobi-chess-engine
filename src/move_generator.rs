@@ -123,12 +123,12 @@ impl<'a> MoveList<'a> {
         }
     }
 
-    fn is_edge_square_attacked_by_black(square: u8) {
-        let tile = 1 << square;
-
-
-
-    }
+    // fn is_edge_square_attacked_by_black(square: u8) {
+    //     let tile = 1 << square;
+    //
+    //     if (tile & NOT_FILE_H_MASK) << 7
+    //
+    // }
 
     /// PAWN MOVE GENERATION
 
@@ -242,14 +242,14 @@ impl<'a> MoveList<'a> {
 
         let double_push_bitboard = self.generate_black_double_push_bitboard(push_bitboard);
 
-        let left_capture_bitboard = self.generate_black_pawn_capture_bitboard(7);
+        let left_capture_bitboard = self.generate_black_pawn_left_capture_bitboard();
 
-        let right_capture_bitboard: u64 = self.generate_black_pawn_capture_bitboard(9);
+        let right_capture_bitboard: u64 = self.generate_black_pawn_right_capture_bitboard();
 
         self.convert_black_pawn_moves(push_bitboard, 8);
         self.convert_black_pawn_moves(double_push_bitboard, 16);
-        self.convert_black_pawn_moves(left_capture_bitboard, 7);
-        self.convert_black_pawn_moves(right_capture_bitboard, 9);
+        self.convert_black_pawn_moves(left_capture_bitboard, 9);
+        self.convert_black_pawn_moves(right_capture_bitboard, 7);
     }
 
     /// Converts a bitboard of black pawn moves and a move shift into a list of moves and updates self
@@ -307,20 +307,32 @@ impl<'a> MoveList<'a> {
             & self.board.empty_bitboard
     }
 
-    /// Outputs a bitboard of white pawn captures, based on the current board situation
-    /// Takes the direction of the attack as the input
+    /// Outputs a bitboard of black pawn left captures, based on the current board situation
+    /// Shifts by 9 bits
     /// Should be used separately for left captures and right captures.
     /// Accounts for en passant
-    /// parameters:
-    ///     shift - move shift of the given attack direction
-    fn generate_black_pawn_capture_bitboard(&self, shift: u8) -> u64 {
+    fn generate_black_pawn_left_capture_bitboard(&self) -> u64 {
         let mut attack_options = self.board.colour_bitboards[WHITE as usize];
         if self.board.en_passant_possibility < 64 {
             let en_passant_tile = 1 << self.board.en_passant_possibility;
             attack_options |= en_passant_tile;
         }
         let index = Piece::PAWN as usize + 6;
-        let capture_bitboard: u64 = self.board.piece_bitboards[index] >> shift & attack_options;
+        let capture_bitboard: u64 = (self.board.piece_bitboards[index] & NOT_FILE_A_MASK) >> 9 & attack_options;
+        capture_bitboard
+    }
+    /// Outputs a bitboard of black pawn right captures, based on the current board situation
+    /// Shifts by 7 bits
+    /// Should be used separately for left captures and right captures.
+    /// Accounts for en passant
+    fn generate_black_pawn_right_capture_bitboard(&self) -> u64 {
+        let mut attack_options = self.board.colour_bitboards[WHITE as usize];
+        if self.board.en_passant_possibility < 64 {
+            let en_passant_tile = 1 << self.board.en_passant_possibility;
+            attack_options |= en_passant_tile;
+        }
+        let index = Piece::PAWN as usize + 6;
+        let capture_bitboard: u64 = (self.board.piece_bitboards[index] & NOT_FILE_H_MASK) >> 7 & attack_options;
         capture_bitboard
     }
 }
@@ -444,8 +456,8 @@ mod tests {
 
         assert_eq!(move_list.generate_black_push_bitboard(), expected_push_bitboard);
         assert_eq!(move_list.generate_black_double_push_bitboard(expected_push_bitboard), expected_double_push_bitboard);
-        assert_eq!(move_list.generate_black_pawn_capture_bitboard(9), expected_left_pawn_capture_bitboard);
-        assert_eq!(move_list.generate_black_pawn_capture_bitboard(7), expected_right_pawn_capture_bitboard);
+        assert_eq!(move_list.generate_black_pawn_left_capture_bitboard(), expected_left_pawn_capture_bitboard);
+        assert_eq!(move_list.generate_black_pawn_right_capture_bitboard(), expected_right_pawn_capture_bitboard);
 
         move_list.convert_black_pawn_moves(expected_push_bitboard, 8);
         assert!(compare_vecs(&move_list.moves, &expected_push_moves));
