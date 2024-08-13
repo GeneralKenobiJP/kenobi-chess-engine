@@ -13,7 +13,10 @@ use crate::piece::Colour::{BLACK, WHITE};
 pub const START_POSITION: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 pub const UPPER_RANK_LOWEST_TILE: u8 = 56;
 pub const LOWER_RANK_HIGHEST_TILE: u8 = 7;
+pub const NOT_FILE_A_MASK: u64 = 0b0111111101111111011111110111111101111111011111110111111101111111;
+pub const NOT_FILE_H_MASK: u64 = 0b1111111011111110111111101111111011111110111111101111111011111110;
 
+// #[derive(Copy)]
 pub struct Board {
     pub main_bitboard: u64,
     pub empty_bitboard: u64,
@@ -25,7 +28,7 @@ pub struct Board {
     pub en_passant_possibility: u32, // Tile, where en passant can be made. 64 if no such tile exists
     pub half_moves: u32, // The halfmove clock specifies a decimal number of half moves with respect to the 50 move draw rule.
     // It is reset to zero after a capture or a pawn move and incremented otherwise.
-    pub full_moves: u32
+    pub full_moves: u32,
 }
 
 impl Board {
@@ -40,7 +43,7 @@ impl Board {
             castling_rights: [false; 4],
             en_passant_possibility: 64,
             half_moves: 0,
-            full_moves: 1
+            full_moves: 1,
         }
     }
 
@@ -63,85 +66,85 @@ impl Board {
         println!("{}", self.half_moves);
         println!("{}", self.full_moves);
     }
-}
 
-/// Read in the FEN (Forsyth-Edwards Notation) and adjust the board's attributes accordingly
-/// parameters:
-///     board - Board object we are considering
-///     fen - FEN string holding board position
-pub fn read_fen(board: &mut Board, fen: &str) {
-    let fen = if fen == "" {START_POSITION} else {fen};
-    println!("Received fen: {}", fen);
+    /// Read in the FEN (Forsyth-Edwards Notation) and adjust the board's attributes accordingly
+    /// parameters:
+    ///     board - Board object we are considering
+    ///     fen - FEN string holding board position
+    pub fn read_fen(&mut self, fen: &str) {
+        let fen = if fen == "" { START_POSITION } else { fen };
+        println!("Received fen: {}", fen);
 
-    let mut scanner = ScannerStr::new(fen);
+        let mut scanner = ScannerStr::new(fen);
 
-    let pieces = scanner.next().unwrap_or_default().unwrap_or_default().split('/');
+        let pieces = scanner.next().unwrap_or_default().unwrap_or_default().split('/');
 
-    let mut tile = 63;
-    for rank in pieces {
-        for mut char in rank.chars() {
-            let colour = if char.is_lowercase() {BLACK} else {WHITE};
-            char.make_ascii_lowercase();
+        let mut tile = 63;
+        for rank in pieces {
+            for mut char in rank.chars() {
+                let colour = if char.is_lowercase() { BLACK } else { WHITE };
+                char.make_ascii_lowercase();
+                match char {
+                    'k' => self.put_piece(Piece::KING, colour, tile),
+                    'p' => self.put_piece(Piece::PAWN, colour, tile),
+                    'q' => self.put_piece(Piece::QUEEN, colour, tile),
+                    'r' => self.put_piece(Piece::ROOK, colour, tile),
+                    'b' => self.put_piece(Piece::BISHOP, colour, tile),
+                    'n' => self.put_piece(Piece::KNIGHT, colour, tile),
+                    _ => {
+                        if char.is_ascii_digit() {
+                            let digit = char.to_digit(10).unwrap_or_default();
+                            tile -= digit - 1
+                        }
+                    }
+                }
+
+                if tile > 0 {
+                    tile -= 1;
+                }
+            }
+        }
+
+        let player = scanner.next().unwrap_or_default().unwrap_or_default();
+        if player == "b" {
+            self.active_player = BLACK;
+            self.inactive_player = WHITE;
+        } else {
+            self.active_player = WHITE;
+            self.inactive_player = BLACK;
+        }
+
+        let castling = scanner.next().unwrap_or_default().unwrap_or_default();
+        self.castling_rights = [false; 4];
+        for char in castling.chars() {
             match char {
-                'k' => board.put_piece(Piece::KING, colour, tile),
-                'p' => board.put_piece(Piece::PAWN, colour, tile),
-                'q' => board.put_piece(Piece::QUEEN, colour, tile),
-                'r' => board.put_piece(Piece::ROOK, colour, tile),
-                'b' => board.put_piece(Piece::BISHOP, colour, tile),
-                'n' => board.put_piece(Piece::KNIGHT, colour, tile),
-                _ => { if char.is_ascii_digit() {
-                    let digit = char.to_digit(10).unwrap_or_default();
-                    tile -= digit - 1 } }
-            }
-
-            if tile > 0 {
-                tile -= 1;
+                'K' => self.castling_rights[0] = true,
+                'Q' => self.castling_rights[1] = true,
+                'k' => self.castling_rights[2] = true,
+                'q' => self.castling_rights[3] = true,
+                _ => { break; }
             }
         }
-    }
 
-    let player = scanner.next().unwrap_or_default().unwrap_or_default();
-    if player == "b" {
-        board.active_player = BLACK;
-        board.inactive_player = WHITE;
-    }
-    else {
-        board.active_player = WHITE;
-        board.inactive_player = BLACK;
-    }
-
-    let castling = scanner.next().unwrap_or_default().unwrap_or_default();
-    board.castling_rights = [false; 4];
-    for char in castling.chars() {
-        match char {
-            'K' => board.castling_rights[0] = true,
-            'Q' => board.castling_rights[1] = true,
-            'k' => board.castling_rights[2] = true,
-            'q' => board.castling_rights[3] = true,
-            _ => { break; }
+        let en_passant = scanner.next().unwrap_or_default().unwrap_or_default();
+        if en_passant == "-" {
+            self.en_passant_possibility = 64;
+        } else {
+            let mut chars = en_passant.chars();
+            let file = 'h' as u32 - chars.next().unwrap_or_default() as u32;
+            let rank = chars.next().unwrap_or_default().to_digit(10).unwrap_or_default() - 1;
+            let tile = file + rank * 8;
+            self.en_passant_possibility = tile;
         }
+
+        let half_moves = scanner.next().unwrap_or_default().unwrap_or_default().parse().unwrap_or_default();
+        self.half_moves = half_moves;
+
+        let full_moves = scanner.next().unwrap_or_default().unwrap_or_default().parse().unwrap_or_default();
+        self.full_moves = full_moves;
+
+        self.print_board();
     }
-
-    let en_passant = scanner.next().unwrap_or_default().unwrap_or_default();
-    if en_passant == "-" {
-        board.en_passant_possibility = 64;
-    }
-    else {
-        // let tile = en_passant.parse::<u32>().unwrap_or_default();
-        let mut chars = en_passant.chars();
-        let file = 'h' as u32 - chars.next().unwrap_or_default() as u32;
-        let rank = chars.next().unwrap_or_default().to_digit(10).unwrap_or_default() - 1;
-        let tile = file + rank * 8;
-        board.en_passant_possibility = tile;
-    }
-
-    let half_moves = scanner.next().unwrap_or_default().unwrap_or_default().parse().unwrap_or_default();
-    board.half_moves = half_moves;
-
-    let full_moves = scanner.next().unwrap_or_default().unwrap_or_default().parse().unwrap_or_default();
-    board.full_moves = full_moves;
-
-    board.print_board();
 }
 
 #[cfg(test)]
@@ -153,7 +156,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
         assert_eq!(fen, START_POSITION);
-        read_fen(&mut board, fen);
+        board.read_fen(fen);
         assert_eq!(board.main_bitboard, 0b1111111111111111000000000000000000000000000000001111111111111111);
         assert_eq!(board.empty_bitboard, u64::MAX - board.main_bitboard);
         assert_eq!(board.colour_bitboards[0], 0b0000000000000000000000000000000000000000000000001111111111111111);
@@ -182,7 +185,7 @@ mod tests {
     fn no_castling() {
         let mut board = Board::new();
         let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w - - 0 1";
-        read_fen(&mut board, fen);
+        board.read_fen(fen);
 
         assert_eq!(board.castling_rights, [false; 4]);
     }
@@ -191,7 +194,7 @@ mod tests {
     fn qw_kb_castling() {
         let mut board = Board::new();
         let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w Qk - 0 1";
-        read_fen(&mut board, fen);
+        board.read_fen(fen);
 
         assert_eq!(board.castling_rights, [false, true, true, false]);
     }
@@ -200,7 +203,7 @@ mod tests {
     fn check_en_passant() {
         let mut board = Board::new();
         let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w - f2 0 1";
-        read_fen(&mut board, fen);
+        board.read_fen(fen);
 
         assert_eq!(board.en_passant_possibility, 10);
     }
@@ -209,7 +212,7 @@ mod tests {
     fn position_2() {
         let mut board = Board::new();
         let fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
-        read_fen(&mut board, fen);
+        board.read_fen(fen);
         assert_eq!(board.main_bitboard,       0b1111111111111111000000000000000000001000000000001111011111111111);
         assert_eq!(board.empty_bitboard, u64::MAX - board.main_bitboard);
         assert_eq!(board.colour_bitboards[0], 0b0000000000000000000000000000000000001000000000001111011111111111);
@@ -238,7 +241,7 @@ mod tests {
     fn position_3() {
         let mut board = Board::new();
         let fen = "rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b K - 1 2";
-        read_fen(&mut board, fen);
+        board.read_fen(fen);
         assert_eq!(board.main_bitboard,       0b1111111111011111000000000010000000001000000001001111011111111101);
         assert_eq!(board.empty_bitboard, u64::MAX - board.main_bitboard);
         assert_eq!(board.colour_bitboards[0], 0b0000000000000000000000000000000000001000000001001111011111111101);

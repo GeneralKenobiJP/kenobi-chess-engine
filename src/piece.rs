@@ -2,6 +2,9 @@
 //! Piece (piece type)
 //! Colour (piece colour / player colour)
 //!
+
+use crate::piece::Colour::{BLACK, WHITE};
+
 #[derive(PartialEq, Eq, Clone, Hash)]
 pub enum Piece {
     KING = 0,
@@ -16,4 +19,11 @@ pub enum Piece {
 pub enum Colour {
     WHITE = 0,
     BLACK = 1
+}
+
+impl Colour {
+    pub fn switch_player(&self) -> Colour {
+        if *self == WHITE { return BLACK }
+        WHITE
+    }
 }
