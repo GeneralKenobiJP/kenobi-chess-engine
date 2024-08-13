@@ -123,7 +123,7 @@ impl<'a> MoveList<'a> {
             self.moves.push(Move {origin: 3, target: 1, promotion: 1, piece: KING});
         }
 
-        let queenside_bitboard: u64 = 0b0000000000000000000000000000000000000000000000000000000000110000;
+        let queenside_bitboard: u64 = 0b0000000000000000000000000000000000000000000000000000000001110000;
 
         if self.board.castling_rights[1] && self.board.main_bitboard & queenside_bitboard == 0
             && !self.is_edge_square_attacked_by_black(4) && !self.is_edge_square_attacked_by_black(5)
@@ -144,7 +144,7 @@ impl<'a> MoveList<'a> {
             self.moves.push(Move {origin: 59, target: 57, promotion: 1, piece: KING});
         }
 
-        let queenside_bitboard: u64 = 0b0011000000000000000000000000000000000000000000000000000000110000;
+        let queenside_bitboard: u64 = 0b0111000000000000000000000000000000000000000000000000000000110000;
         if self.board.castling_rights[3] && self.board.main_bitboard & queenside_bitboard == 0
             && !self.is_edge_square_attacked_by_white(60) && !self.is_edge_square_attacked_by_white(61)
         {
@@ -725,6 +725,162 @@ mod tests {
         expected_move_list.push(Move {origin: 3, target: 5, promotion: 1, piece: KING});
 
         move_list.generate_white_castling();
+
+        assert!(compare_vecs(&move_list.moves, &expected_move_list));
+    }
+
+    #[test]
+    fn check_castling_white_kingside_possible() {
+        let mut board = Board::new();
+        board.read_fen("8/8/8/8/8/8/8/R3K2R w K - 1 1");
+        let mut move_list = MoveList::new(&board);
+
+        let mut expected_move_list = Vec::<Move>::new();
+
+        expected_move_list.push(Move {origin: 3, target: 1, promotion: 1, piece: KING});
+
+        move_list.generate_white_castling();
+
+        assert!(compare_vecs(&move_list.moves, &expected_move_list));
+    }
+
+    #[test]
+    fn check_castling_white_queenside_possible() {
+        let mut board = Board::new();
+        board.read_fen("8/8/8/8/8/8/8/R3K2R w Q - 1 1");
+        let mut move_list = MoveList::new(&board);
+
+        let mut expected_move_list = Vec::<Move>::new();
+
+        expected_move_list.push(Move {origin: 3, target: 5, promotion: 1, piece: KING});
+
+        move_list.generate_white_castling();
+
+        assert!(compare_vecs(&move_list.moves, &expected_move_list));
+    }
+
+    #[test]
+    fn check_castling_white_check() {
+        let mut board = Board::new();
+        board.read_fen("8/8/8/8/8/8/5p2/R3K2R w KQ - 1 1");
+        let mut move_list = MoveList::new(&board);
+
+        let mut expected_move_list = Vec::<Move>::new();
+
+        move_list.generate_white_castling();
+
+        assert!(compare_vecs(&move_list.moves, &expected_move_list));
+    }
+
+    #[test]
+    fn check_castling_white_block() {
+        let mut board = Board::new();
+        board.read_fen("8/8/8/8/8/8/5p2/RP2KP1R w KQ - 1 1");
+        let mut move_list = MoveList::new(&board);
+
+        let mut expected_move_list = Vec::<Move>::new();
+
+        move_list.generate_white_castling();
+
+        assert!(compare_vecs(&move_list.moves, &expected_move_list));
+    }
+
+    #[test]
+    fn check_castling_white_guarded() {
+        let mut board = Board::new();
+        board.read_fen("8/8/8/8/8/8/p5p1/R3K2R w KQ - 1 1");
+        let mut move_list = MoveList::new(&board);
+
+        let mut expected_move_list = Vec::<Move>::new();
+        expected_move_list.push(Move {origin: 3, target: 5, promotion: 1, piece: KING});
+
+        move_list.generate_white_castling();
+
+        assert!(compare_vecs(&move_list.moves, &expected_move_list));
+    }
+
+    #[test]
+    fn check_castling_black_both_possible() {
+        let mut board = Board::new();
+        board.read_fen("r3k2r/8/8/8/8/8/8/8 b kq - 1 1");
+        let mut move_list = MoveList::new(&board);
+
+        let mut expected_move_list = Vec::<Move>::new();
+
+        expected_move_list.push(Move {origin: 59, target: 57, promotion: 1, piece: KING});
+        expected_move_list.push(Move {origin: 59, target: 61, promotion: 1, piece: KING});
+
+        move_list.generate_black_castling();
+
+        assert!(compare_vecs(&move_list.moves, &expected_move_list));
+    }
+
+    #[test]
+    fn check_castling_black_kingside_possible() {
+        let mut board = Board::new();
+        board.read_fen("r3k2r/8/8/8/8/8/8/8 b k - 1 1");
+        let mut move_list = MoveList::new(&board);
+
+        let mut expected_move_list = Vec::<Move>::new();
+
+        expected_move_list.push(Move {origin: 59, target: 57, promotion: 1, piece: KING});
+
+        move_list.generate_black_castling();
+
+        assert!(compare_vecs(&move_list.moves, &expected_move_list));
+    }
+
+    #[test]
+    fn check_castling_black_queenside_possible() {
+        let mut board = Board::new();
+        board.read_fen("r3k2r/8/8/8/8/8/8/8 b q - 1 1");
+        let mut move_list = MoveList::new(&board);
+
+        let mut expected_move_list = Vec::<Move>::new();
+
+        expected_move_list.push(Move {origin: 59, target: 61, promotion: 1, piece: KING});
+
+        move_list.generate_black_castling();
+
+        assert!(compare_vecs(&move_list.moves, &expected_move_list));
+    }
+
+    #[test]
+    fn check_castling_black_check() {
+        let mut board = Board::new();
+        board.read_fen("r3k2r/5P2/8/8/8/8/8/8 b kq - 1 1");
+        let mut move_list = MoveList::new(&board);
+
+        let mut expected_move_list = Vec::<Move>::new();
+
+        move_list.generate_black_castling();
+
+        assert!(compare_vecs(&move_list.moves, &expected_move_list));
+    }
+
+    #[test]
+    fn check_castling_black_block() {
+        let mut board = Board::new();
+        board.read_fen("rp2kp1r/8/8/8/8/8/8/8 b kq - 1 1");
+        let mut move_list = MoveList::new(&board);
+
+        let mut expected_move_list = Vec::<Move>::new();
+
+        move_list.generate_black_castling();
+
+        assert!(compare_vecs(&move_list.moves, &expected_move_list));
+    }
+
+    #[test]
+    fn check_castling_black_guarded() {
+        let mut board = Board::new();
+        board.read_fen("r3k2r/6P1/8/8/8/8/8/8 b kq - 1 1");
+        let mut move_list = MoveList::new(&board);
+
+        let mut expected_move_list = Vec::<Move>::new();
+        expected_move_list.push(Move {origin: 59, target: 61, promotion: 1, piece: KING});
+
+        move_list.generate_black_castling();
 
         assert!(compare_vecs(&move_list.moves, &expected_move_list));
     }
