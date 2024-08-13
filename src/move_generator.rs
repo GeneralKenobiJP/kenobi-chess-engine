@@ -79,8 +79,9 @@ impl<'a> MoveList<'a> {
     /// Generates moves of a king based on the current board situation and updates self
     fn generate_king_moves(&mut self) {
         let bitboard = self.generate_king_moves_bitboard();
-        // self.convert_king_moves();
         
+        self.convert_king_moves(bitboard);
+
         if self.board.active_player == WHITE { self.generate_white_castling() }
         else { self.generate_black_castling() }
     }
@@ -89,6 +90,24 @@ impl<'a> MoveList<'a> {
     fn generate_king_moves_bitboard(&self) -> u64 {
         self.king_lookup_table[self.board.piece_bitboards[6 * self.board.active_player as usize] as usize]
             & self.board.empty_bitboard
+    }
+
+    /// Converts a bitboard of king moves into a list of moves and updates self
+    /// Does not consider castling
+    /// parameters:
+    ///     move_bitboard - bitboards of squares targeted by a move subgroup
+    fn convert_king_moves(&mut self, move_bitboard: u64) {
+        let mut bitboard = move_bitboard;
+        let origin = u64::ilog2(self.board.piece_bitboards[6]) as u8;
+
+        while bitboard != 0 {
+            let tile = bitboard & bitboard.wrapping_neg();
+            bitboard -= tile;
+
+            let target = u64::ilog2(tile) as u8;
+
+            self.moves.push(Move {origin, target, promotion: 0, piece: KING});
+        }
     }
 
     /// Generates legal castling moves for white based on the current board situation and updates self
