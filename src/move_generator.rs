@@ -90,17 +90,17 @@ impl<'a> MoveList<'a> {
     fn generate_white_castling(&mut self) {
         // if self.is_check { return; }
 
-        if self.board.castling_rights[0] && self.board.main_bitboard & 6 == 0 {
-            // if self.is_square_attacked_by_black(2) { break; }
-            // if self.is_square_attacked_by_black(1) { break; }
+        if self.board.castling_rights[0] && self.board.main_bitboard & 6 == 0
+            && !self.is_edge_square_attacked_by_black(2) && !self.is_edge_square_attacked_by_black(1)
+        {
             self.moves.push(Move {origin: 3, target: 1, promotion: 1, piece: KING});
         }
 
         let queenside_bitboard: u64 = 0b0000000000000000000000000000000000000000000000000000000000110000;
 
-        if self.board.castling_rights[1] && self.board.main_bitboard & queenside_bitboard == 0{
-            // if self.is_square_attacked_by_black(4) { break; }
-            // if self.is_square_attacked_by_black(5) { break; }
+        if self.board.castling_rights[1] && self.board.main_bitboard & queenside_bitboard == 0
+            && !self.is_edge_square_attacked_by_black(4) && !self.is_edge_square_attacked_by_black(5)
+        {
             self.moves.push(Move {origin: 3, target: 5, promotion: 1, piece: KING});
         }
     }
@@ -109,26 +109,55 @@ impl<'a> MoveList<'a> {
         // if self.is_check { return; }
 
         let kingside_bitboard: u64 = 0b0000011000000000000000000000000000000000000000000000000000000000;
-        if self.board.castling_rights[2] && self.board.main_bitboard & kingside_bitboard == 0 {
-            // if self.is_square_attacked_by_white(58) { break; }
-            // if self.is_square_attacked_by_white(57) { break; }
+        if self.board.castling_rights[2] && self.board.main_bitboard & kingside_bitboard == 0
+            && !self.is_edge_square_attacked_by_white(58) && !self.is_edge_square_attacked_by_white(57)
+        {
             self.moves.push(Move {origin: 59, target: 57, promotion: 1, piece: KING});
         }
 
         let queenside_bitboard: u64 = 0b0011000000000000000000000000000000000000000000000000000000110000;
-        if self.board.castling_rights[3] && self.board.main_bitboard & queenside_bitboard == 0 {
-            // if self.is_square_attacked_by_white(60) { break; }
-            // if self.is_square_attacked_by_white(61) { break; }
+        if self.board.castling_rights[3] && self.board.main_bitboard & queenside_bitboard == 0
+            && !self.is_edge_square_attacked_by_white(60) && !self.is_edge_square_attacked_by_white(61)
+        {
             self.moves.push(Move {origin: 59, target: 61, promotion: 1, piece: KING});
         }
     }
 
-    // fn is_edge_square_attacked_by_black(square: u8) {
-    //     let tile = 1 << square;
-    //
-    //     if (tile & NOT_FILE_H_MASK) << 7
-    //
-    // }
+    /// Checks if the given square on the 1st rank is attacked by black
+    /// Inputs a given 1st rank square (u8)
+    /// Outputs true/false
+    fn is_edge_square_attacked_by_black(&self, square: u8) -> bool {
+        let tile = 1 << square;
+
+        // Check if a pawn or king attacks the square
+        if (tile & NOT_FILE_H_MASK) << 7 & (self.board.piece_bitboards[7] | self.board.piece_bitboards[6]) { return true; }
+        if (tile & NOT_FILE_A_MASK) << 9 & (self.board.piece_bitboards[7] | self.board.piece_bitboards[6]) { return true; }
+        if tile << 8 & self.board.piece_bitboards[6] { return true; }
+        // todo: Check if a knight attacks the square
+        // todo: Check if a bishop attacks the square
+        // todo: Check if a rook attacks the square
+        // todo: Check if a queen attacks the square
+
+        false
+    }
+
+    /// Checks if the given square on the 8th rank is attacked by white
+    /// Inputs a given 8th rank square (u8)
+    /// Outputs true/false
+    fn is_edge_square_attacked_by_white(&self, square: u8) -> bool {
+        let tile = 1 << square;
+
+        // Check if a pawn or king attacks the square
+        if (tile & NOT_FILE_H_MASK) >> 7 & (self.board.piece_bitboards[1] | self.board.piece_bitboards[0]) { return true; }
+        if (tile & NOT_FILE_A_MASK) >> 9 & (self.board.piece_bitboards[1] | self.board.piece_bitboards[0]) { return true; }
+        if tile >> 8 & self.board.piece_bitboards[0] { return true; }
+        // todo: Check if a knight attacks the square
+        // todo: Check if a bishop attacks the square
+        // todo: Check if a rook attacks the square
+        // todo: Check if a queen attacks the square
+
+        false
+    }
 
     /// PAWN MOVE GENERATION
 
