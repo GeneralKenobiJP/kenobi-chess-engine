@@ -88,7 +88,8 @@ impl<'a> MoveList<'a> {
 
     /// Outputs a bitboard of king moves, based on the current board situation
     fn generate_king_moves_bitboard(&self) -> u64 {
-        self.king_lookup_table[u64::ilog2(self.board.piece_bitboards[6 * self.board.active_player as usize]) as usize]
+        self.king_lookup_table[u64::checked_ilog2(self.board.piece_bitboards[6 * self.board.active_player as usize])
+            .unwrap_or_default() as usize]
             & self.board.empty_bitboard
     }
 
@@ -98,13 +99,14 @@ impl<'a> MoveList<'a> {
     ///     move_bitboard - bitboards of squares targeted by a move subgroup
     fn convert_king_moves(&mut self, move_bitboard: u64) {
         let mut bitboard = move_bitboard;
-        let origin = u64::ilog2(self.board.piece_bitboards[6 * self.board.active_player as usize]) as u8;
+        let origin = u64::checked_ilog2(self.board.piece_bitboards[6 * self.board.active_player as usize])
+            .unwrap_or_default() as u8;
 
         while bitboard != 0 {
             let tile = bitboard & bitboard.wrapping_neg();
             bitboard -= tile;
 
-            let target = u64::ilog2(tile) as u8;
+            let target = u64::checked_ilog2(tile).unwrap_or_default() as u8;
 
             self.moves.push(Move {origin, target, promotion: 0, piece: KING});
         }
@@ -193,7 +195,8 @@ impl<'a> MoveList<'a> {
         // Check if a pawn attacks the square
         if (tile & NOT_FILE_H_MASK) >> 7 & self.board.piece_bitboards[1] != 0 { return true; }
         if (tile & NOT_FILE_A_MASK) >> 9 & self.board.piece_bitboards[1] != 0 { return true; }
-        if tile & self.king_lookup_table[u64::ilog2(self.board.piece_bitboards[0]) as usize] != 0 { return true; }
+        if tile & self.king_lookup_table[u64::checked_ilog2(self.board.piece_bitboards[0])
+            .unwrap_or_default() as usize] != 0 { return true; }
         // todo: Check if a knight attacks the square
         // todo: Check if a bishop attacks the square
         // todo: Check if a rook attacks the square
@@ -209,7 +212,7 @@ impl<'a> MoveList<'a> {
         // Check if a pawn attacks the square
         if (tile & NOT_FILE_A_MASK) << 7 & self.board.piece_bitboards[7] != 0 { return true; }
         if (tile & NOT_FILE_H_MASK) << 9 & self.board.piece_bitboards[7] != 0 { return true; }
-        if tile & self.king_lookup_table[u64::ilog2(self.board.piece_bitboards[6]) as usize] != 0 { return true; }
+        if tile & self.king_lookup_table[u64::checked_ilog2(self.board.piece_bitboards[6]).unwrap_or_default() as usize] != 0 { return true; }
         // todo: Check if a knight attacks the square
         // todo: Check if a bishop attacks the square
         // todo: Check if a rook attacks the square
@@ -259,8 +262,8 @@ impl<'a> MoveList<'a> {
             let tile = bitboard & bitboard.wrapping_neg();
 
             bitboard -= tile;
-            let target = u64::ilog2(tile) as u8;
-            let origin = u64::ilog2((tile) >> shift) as u8 ;
+            let target = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+            let origin = u64::checked_ilog2((tile) >> shift).unwrap_or_default() as u8 ;
 
             if target < UPPER_RANK_LOWEST_TILE
             {
@@ -361,8 +364,8 @@ impl<'a> MoveList<'a> {
             let tile = bitboard & bitboard.wrapping_neg();
 
             bitboard -= tile;
-            let target = u64::ilog2(tile) as u8;
-            let origin = u64::ilog2((tile) << shift) as u8 ;
+            let target = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+            let origin = u64::checked_ilog2(tile << shift).unwrap_or_default() as u8 ;
 
             if target > LOWER_RANK_HIGHEST_TILE
             {
@@ -708,5 +711,21 @@ mod tests {
         assert_eq!(0b0100000011000000000000000000000000000000000000000000000000000000, move_list.king_lookup_table[63]);
         assert_eq!(0b1010000011100000000000000000000000000000000000000000000000000000, move_list.king_lookup_table[62]);
         assert_eq!(0b0000001000000011000000000000000000000000000000000000000000000000, move_list.king_lookup_table[56]);
+    }
+
+    #[test]
+    fn check_castling_white_both_possible() {
+        let mut board = Board::new();
+        board.read_fen("8/8/8/8/8/8/8/R3K2R w KQ - 1 1");
+        let mut move_list = MoveList::new(&board);
+
+        let mut expected_move_list = Vec::<Move>::new();
+
+        expected_move_list.push(Move {origin: 3, target: 1, promotion: 1, piece: KING});
+        expected_move_list.push(Move {origin: 3, target: 5, promotion: 1, piece: KING});
+
+        move_list.generate_white_castling();
+
+        assert!(compare_vecs(&move_list.moves, &expected_move_list));
     }
 }
