@@ -130,9 +130,9 @@ impl<'a> MoveList<'a> {
         let tile = 1 << square;
 
         // Check if a pawn or king attacks the square
-        if (tile & NOT_FILE_H_MASK) << 7 & (self.board.piece_bitboards[7] | self.board.piece_bitboards[6]) { return true; }
-        if (tile & NOT_FILE_A_MASK) << 9 & (self.board.piece_bitboards[7] | self.board.piece_bitboards[6]) { return true; }
-        if tile << 8 & self.board.piece_bitboards[6] { return true; }
+        if (tile & NOT_FILE_A_MASK) << 7 & (self.board.piece_bitboards[7] | self.board.piece_bitboards[6]) != 0 { return true; }
+        if (tile & NOT_FILE_H_MASK) << 9 & (self.board.piece_bitboards[7] | self.board.piece_bitboards[6]) != 0{ return true; }
+        if tile << 8 & self.board.piece_bitboards[6] != 0 { return true; }
         // todo: Check if a knight attacks the square
         // todo: Check if a bishop attacks the square
         // todo: Check if a rook attacks the square
@@ -148,9 +148,9 @@ impl<'a> MoveList<'a> {
         let tile = 1 << square;
 
         // Check if a pawn or king attacks the square
-        if (tile & NOT_FILE_H_MASK) >> 7 & (self.board.piece_bitboards[1] | self.board.piece_bitboards[0]) { return true; }
-        if (tile & NOT_FILE_A_MASK) >> 9 & (self.board.piece_bitboards[1] | self.board.piece_bitboards[0]) { return true; }
-        if tile >> 8 & self.board.piece_bitboards[0] { return true; }
+        if (tile & NOT_FILE_H_MASK) >> 7 & (self.board.piece_bitboards[1] | self.board.piece_bitboards[0]) != 0 { return true; }
+        if (tile & NOT_FILE_A_MASK) >> 9 & (self.board.piece_bitboards[1] | self.board.piece_bitboards[0]) != 0 { return true; }
+        if tile >> 8 & self.board.piece_bitboards[0] != 0 { return true; }
         // todo: Check if a knight attacks the square
         // todo: Check if a bishop attacks the square
         // todo: Check if a rook attacks the square
@@ -347,7 +347,7 @@ impl<'a> MoveList<'a> {
             attack_options |= en_passant_tile;
         }
         let index = Piece::PAWN as usize + 6;
-        let capture_bitboard: u64 = (self.board.piece_bitboards[index] & NOT_FILE_A_MASK) >> 9 & attack_options;
+        let capture_bitboard: u64 = (self.board.piece_bitboards[index] & NOT_FILE_H_MASK) >> 9 & attack_options;
         capture_bitboard
     }
     /// Outputs a bitboard of black pawn right captures, based on the current board situation
@@ -361,7 +361,7 @@ impl<'a> MoveList<'a> {
             attack_options |= en_passant_tile;
         }
         let index = Piece::PAWN as usize + 6;
-        let capture_bitboard: u64 = (self.board.piece_bitboards[index] & NOT_FILE_H_MASK) >> 7 & attack_options;
+        let capture_bitboard: u64 = (self.board.piece_bitboards[index] & NOT_FILE_A_MASK) >> 7 & attack_options;
         capture_bitboard
     }
 }
