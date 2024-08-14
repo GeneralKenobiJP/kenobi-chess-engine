@@ -8,7 +8,7 @@ use crate::piece::Colour;
 use crate::board;
 use crate::board::{Board, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_MASK, UPPER_RANK_LOWEST_TILE};
 use crate::piece::Colour::{BLACK, WHITE};
-use crate::piece::Piece::KING;
+use crate::piece::Piece::{KING, KNIGHT};
 
 const KNIGHT_SHIFTS: [i8; 8] = [17, 10, -6, -15, -17, -10, 6, 15]; // Beginning on NW, counter-clockwise
 
@@ -481,6 +481,27 @@ impl<'a> MoveList<'a> {
     fn generate_knight_moves_bitboard(&self, square: u8) -> u64 {
         self.knight_lookup_table[square] & self.board.empty_bitboard
     }
+
+    /// Converts a bitboard of knight moves into a list of moves and updates self
+    /// Takes origin square of the knight as input
+    /// Should be used separately for each owned knight
+    /// parameters:
+    ///     move_bitboard - bitboards of squares targeted by a move subgroup
+    ///     origin - number of the square the given knight is on
+    fn convert_knight_moves(&mut self, move_bitboard: u64, origin: u8) {
+        let mut bitboard = move_bitboard;
+
+        while bitboard != 0 {
+            let tile = bitboard & bitboard.wrapping_neg();
+            bitboard -= tile;
+
+            let target = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+
+            self.moves.push(Move { origin, target, promotion: 0, piece: KNIGHT });
+        }
+    }
+
+
 }
 
 #[cfg(test)]
