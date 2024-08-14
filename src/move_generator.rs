@@ -441,6 +441,8 @@ impl<'a> MoveList<'a> {
 
     /// KNIGHT MOVE GENERATION
 
+    /// Outputs a lookup table for bitboards of possible knight moves at given square, assuming no occupancy
+    /// Used by the constructor of the board for initialization of the lookup table
     fn setup_knight_lookup_table() -> [u64; 64] {
         let mut lookup_table: [u64; 64] = [0; 64];
         for origin in 0..64 {

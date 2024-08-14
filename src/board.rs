@@ -47,6 +47,11 @@ impl Board {
         }
     }
 
+    /// Register a piece on corresponding bitboards, given information about the desired piece
+    /// Parameters:
+    ///     - piece - piece type
+    ///     - colour - piece colour
+    ///     - tile - tile number (u32)
     pub fn put_piece(&mut self, piece: Piece, colour: Colour, tile: u32) {
         let bit = 1 << tile;
         self.main_bitboard += bit;
@@ -56,6 +61,7 @@ impl Board {
         self.piece_bitboards[index] += bit;
     }
 
+    /// Prints debug information about the board
     pub fn print_board(&self) {
         println!("{}", self.main_bitboard);
         println!("{:?}", self.colour_bitboards);
@@ -67,6 +73,8 @@ impl Board {
         println!("{}", self.full_moves);
     }
 
+    /// Calculates distance between two given squares
+    /// The squares are given as their number in the order (not bit)
     pub fn distance(square1: u8, square2: u8) -> u8 {
         let file1 = square1 % 8;
         let rank1 = square1 / 8;
