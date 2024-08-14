@@ -161,7 +161,7 @@ impl Board {
         let full_moves = scanner.next().unwrap_or_default().unwrap_or_default().parse().unwrap_or_default();
         self.full_moves = full_moves;
 
-        self.print_board();
+        // self.print_board();
     }
 }
 

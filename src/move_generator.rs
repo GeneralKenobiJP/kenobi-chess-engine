@@ -474,7 +474,7 @@ impl<'a> MoveList<'a> {
             let tile = knight_bitboard & knight_bitboard.wrapping_neg();
             knight_bitboard -= tile;
 
-            let square = u64::checked_ilog2(knight_bitboard).unwrap_or_default() as u8;
+            let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
             let bitboard = self.generate_knight_moves_bitboard(square);
             self.convert_knight_moves(bitboard, square);
         }
@@ -573,6 +573,8 @@ mod tests {
         assert_eq!(move_list.generate_king_moves_bitboard(), expected_king_bitboard);
         assert_eq!(move_list.generate_knight_moves_bitboard(6), expected_knight_bitboard1);
         assert_eq!(move_list.generate_knight_moves_bitboard(1), expected_knight_bitboard2);
+        assert_eq!(move_list.generate_knight_moves_bitboard(6), expected_knight_bitboard1);
+        assert_eq!(move_list.generate_knight_moves_bitboard(1), expected_knight_bitboard2);
 
         // PAWN MOVES
 
@@ -646,6 +648,8 @@ mod tests {
         let expected_left_pawn_capture_bitboard: u64 = 0;
         let expected_right_pawn_capture_bitboard: u64 = 0;
         let expected_king_bitboard: u64 = 0;
+        let expected_knight_bitboard1: u64 = 0b0000000000000000101000000000000000000000000000000000000000000000;
+        let expected_knight_bitboard2: u64 = 0b0000000000000000000001010000000000000000000000000000000000000000;
 
         let mut expected_push_moves = Vec::<Move>::new();
         expected_push_moves.push(Move{ origin: 55, target: 47, promotion: 0, piece: Piece::PAWN });
@@ -675,6 +679,8 @@ mod tests {
         assert_eq!(move_list.generate_black_pawn_left_capture_bitboard(), expected_left_pawn_capture_bitboard);
         assert_eq!(move_list.generate_black_pawn_right_capture_bitboard(), expected_right_pawn_capture_bitboard);
         assert_eq!(move_list.generate_king_moves_bitboard(), expected_king_bitboard);
+        assert_eq!(move_list.generate_knight_moves_bitboard(62), expected_knight_bitboard1);
+        assert_eq!(move_list.generate_knight_moves_bitboard(57), expected_knight_bitboard2);
 
         // PAWN MOVES
 
@@ -705,9 +711,32 @@ mod tests {
         move_list.generate_king_moves();
         assert!(compare_vecs(&move_list.moves, &expected_king_moves));
 
+        // KNIGHT MOVES
+
+        let mut expected_knight_moves1 = Vec::<Move>::new();
+        expected_knight_moves1.push( Move { origin: 62, target: 47, promotion: 0, piece: KNIGHT });
+        expected_knight_moves1.push( Move { origin: 62, target: 45, promotion: 0, piece: KNIGHT });
+        let mut expected_knight_moves2 = Vec::<Move>::new();
+        expected_knight_moves2.push( Move { origin: 57, target: 42, promotion: 0, piece: KNIGHT });
+        expected_knight_moves2.push( Move { origin: 57, target: 40, promotion: 0, piece: KNIGHT });
+
+        let mut expected_knight_moves_all = [expected_knight_moves1.clone(), expected_knight_moves2.clone()].concat();
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_knight_moves(expected_knight_bitboard1, 62);
+        assert!(compare_vecs(&move_list.moves, &expected_knight_moves1));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_knight_moves(expected_knight_bitboard2, 57);
+        assert!(compare_vecs(&move_list.moves, &expected_knight_moves2));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.generate_knight_moves();
+        assert!(compare_vecs(&move_list.moves, &expected_knight_moves_all));
+
         // ALL MOVES
 
-        let expected_moves = [expected_pawn_moves].concat();
+        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all].concat();
 
         move_list.moves = Vec::<Move>::new();
         move_list.generate_moves();
