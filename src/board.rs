@@ -47,6 +47,11 @@ impl Board {
         }
     }
 
+    /// Register a piece on corresponding bitboards, given information about the desired piece
+    /// Parameters:
+    ///     - piece - piece type
+    ///     - colour - piece colour
+    ///     - tile - tile number (u32)
     pub fn put_piece(&mut self, piece: Piece, colour: Colour, tile: u32) {
         let bit = 1 << tile;
         self.main_bitboard += bit;
@@ -56,6 +61,7 @@ impl Board {
         self.piece_bitboards[index] += bit;
     }
 
+    /// Prints debug information about the board
     pub fn print_board(&self) {
         println!("{}", self.main_bitboard);
         println!("{:?}", self.colour_bitboards);
@@ -65,6 +71,18 @@ impl Board {
         println!("{}", self.en_passant_possibility);
         println!("{}", self.half_moves);
         println!("{}", self.full_moves);
+    }
+
+    /// Calculates distance between two given squares
+    /// The squares are given as their number in the order (not bit)
+    pub fn distance(square1: u8, square2: u8) -> u8 {
+        let file1 = square1 % 8;
+        let rank1 = square1 / 8;
+
+        let file2 = square2 % 8;
+        let rank2 = square2 / 8;
+
+        u8::abs_diff(file1, file2) + u8::abs_diff(rank1, rank2)
     }
 
     /// Read in the FEN (Forsyth-Edwards Notation) and adjust the board's attributes accordingly
@@ -143,7 +161,7 @@ impl Board {
         let full_moves = scanner.next().unwrap_or_default().unwrap_or_default().parse().unwrap_or_default();
         self.full_moves = full_moves;
 
-        self.print_board();
+        // self.print_board();
     }
 }
 
