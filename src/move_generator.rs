@@ -169,7 +169,7 @@ impl<'a> MoveList<'a> {
         if (tile & NOT_FILE_A_MASK) << 7 & (self.board.piece_bitboards[7] | self.board.piece_bitboards[6]) != 0 { return true; }
         if (tile & NOT_FILE_H_MASK) << 9 & (self.board.piece_bitboards[7] | self.board.piece_bitboards[6]) != 0 { return true; }
         if tile << 8 & self.board.piece_bitboards[6] != 0 { return true; }
-        // todo: Check if a knight attacks the square
+        if self.knight_lookup_table[square as usize] & self.board.piece_bitboards[11] != 0 { return true; }
         // todo: Check if a bishop attacks the square
         // todo: Check if a rook attacks the square
         // todo: Check if a queen attacks the square
@@ -187,7 +187,7 @@ impl<'a> MoveList<'a> {
         if (tile & NOT_FILE_H_MASK) >> 7 & (self.board.piece_bitboards[1] | self.board.piece_bitboards[0]) != 0 { return true; }
         if (tile & NOT_FILE_A_MASK) >> 9 & (self.board.piece_bitboards[1] | self.board.piece_bitboards[0]) != 0 { return true; }
         if tile >> 8 & self.board.piece_bitboards[0] != 0 { return true; }
-        // todo: Check if a knight attacks the square
+        if self.knight_lookup_table[square as usize] & self.board.piece_bitboards[5] != 0 { return true; }
         // todo: Check if a bishop attacks the square
         // todo: Check if a rook attacks the square
         // todo: Check if a queen attacks the square
@@ -202,9 +202,10 @@ impl<'a> MoveList<'a> {
         // Check if a pawn attacks the square
         if (tile & NOT_FILE_H_MASK) >> 7 & self.board.piece_bitboards[1] != 0 { return true; }
         if (tile & NOT_FILE_A_MASK) >> 9 & self.board.piece_bitboards[1] != 0 { return true; }
-        if tile & self.king_lookup_table[u64::checked_ilog2(self.board.piece_bitboards[0])
-            .unwrap_or_default() as usize] != 0 { return true; }
-        // todo: Check if a knight attacks the square
+
+        let square = u64::checked_ilog2(tile).unwrap_or_default();
+        if tile & self.king_lookup_table[square as usize] != 0 { return true; }
+        if self.knight_lookup_table[square as usize] & self.board.piece_bitboards[5] != 0 { return true; }
         // todo: Check if a bishop attacks the square
         // todo: Check if a rook attacks the square
         // todo: Check if a queen attacks the square
@@ -219,8 +220,10 @@ impl<'a> MoveList<'a> {
         // Check if a pawn attacks the square
         if (tile & NOT_FILE_A_MASK) << 7 & self.board.piece_bitboards[7] != 0 { return true; }
         if (tile & NOT_FILE_H_MASK) << 9 & self.board.piece_bitboards[7] != 0 { return true; }
+
+        let square = u64::checked_ilog2(tile).unwrap_or_default();
         if tile & self.king_lookup_table[u64::checked_ilog2(self.board.piece_bitboards[6]).unwrap_or_default() as usize] != 0 { return true; }
-        // todo: Check if a knight attacks the square
+        if self.knight_lookup_table[square as usize] & self.board.piece_bitboards[11] != 0 { return true; }
         // todo: Check if a bishop attacks the square
         // todo: Check if a rook attacks the square
         // todo: Check if a queen attacks the square
@@ -1031,6 +1034,19 @@ mod tests {
         expected_move_list.push(Move {origin: 59, target: 61, promotion: 1, piece: KING});
 
         move_list.generate_black_castling();
+
+        assert!(compare_vecs(&move_list.moves, &expected_move_list));
+    }
+
+    #[test]
+    fn check_castling_white_knight_check() {
+        let mut board = Board::new();
+        board.read_fen("8/8/8/8/8/5n2/8/R3K2R w KQ - 1 1");
+        let mut move_list = MoveList::new(&board);
+
+        let mut expected_move_list = Vec::<Move>::new();
+
+        move_list.generate_white_castling();
 
         assert!(compare_vecs(&move_list.moves, &expected_move_list));
     }
