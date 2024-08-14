@@ -471,18 +471,16 @@ impl<'a> MoveList<'a> {
             let tile = knight_bitboard & knight_bitboard.wrapping_neg();
             knight_bitboard -= tile;
 
-            let square = u64::checked_ilog2(knight_bitboard).unwrap_or_default();
+            let square = u64::checked_ilog2(knight_bitboard).unwrap_or_default() as u8;
             let bitboard = self.generate_knight_moves_bitboard(square);
             self.convert_knight_moves(bitboard, square);
         }
     }
 
-    // /// Outputs a bitboard of king moves, based on the current board situation
-    // fn generate_king_moves_bitboard(&self) -> u64 {
-    //     self.king_lookup_table[u64::checked_ilog2(self.board.piece_bitboards[6 * self.board.active_player as usize])
-    //         .unwrap_or_default() as usize]
-    //         & self.board.empty_bitboard
-    // }
+    /// Outputs a bitboard of knight moves, based on the current board occupancy, given the knight's square
+    fn generate_knight_moves_bitboard(&self, square: u8) -> u64 {
+        self.knight_lookup_table[square] & self.board.empty_bitboard
+    }
 }
 
 #[cfg(test)]
