@@ -67,6 +67,16 @@ impl Board {
         println!("{}", self.full_moves);
     }
 
+    pub fn distance(square1: u8, square2: u8) -> u8 {
+        let file1 = square1 % 8;
+        let rank1 = square1 / 8;
+
+        let file2 = square2 % 8;
+        let rank2 = square2 / 8;
+
+        u8::abs_diff(file1, file2) + u8::abs_diff(rank1, rank2)
+    }
+
     /// Read in the FEN (Forsyth-Edwards Notation) and adjust the board's attributes accordingly
     /// parameters:
     ///     board - Board object we are considering

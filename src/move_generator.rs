@@ -10,6 +10,8 @@ use crate::board::{Board, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_M
 use crate::piece::Colour::{BLACK, WHITE};
 use crate::piece::Piece::KING;
 
+const KNIGHT_SHIFTS: [i8; 8] = [17, 10, -6, -15, -17, -10, 6, 15]; // Beginning on NW, counter-clockwise
+
 #[derive(PartialEq, Eq, Hash, Clone)]
 struct Move {
     origin: u8,
@@ -21,7 +23,8 @@ struct Move {
 struct MoveList<'a> {
     board: &'a Board,
     moves: Vec<Move>,
-    king_lookup_table: [u64; 64] // should be immutable
+    king_lookup_table: [u64; 64], // should be treated as immutable after setup
+    knight_lookup_table: [u64; 64] // should be treated as immutable after setup
 }
 
 impl<'a> MoveList<'a> {
@@ -29,7 +32,8 @@ impl<'a> MoveList<'a> {
         MoveList {
             board,
             moves: Vec::new(),
-            king_lookup_table: Self::setup_king_lookup_table()
+            king_lookup_table: Self::setup_king_lookup_table(),
+            knight_lookup_table: Self::setup_knight_lookup_table()
         }
     }
 
@@ -82,8 +86,7 @@ impl<'a> MoveList<'a> {
 
         self.convert_king_moves(bitboard);
 
-        if self.board.active_player == WHITE { self.generate_white_castling() }
-        else { self.generate_black_castling() }
+        if self.board.active_player == WHITE { self.generate_white_castling() } else { self.generate_black_castling() }
     }
 
     /// Outputs a bitboard of king moves, based on the current board situation
@@ -108,7 +111,7 @@ impl<'a> MoveList<'a> {
 
             let target = u64::checked_ilog2(tile).unwrap_or_default() as u8;
 
-            self.moves.push(Move {origin, target, promotion: 0, piece: KING});
+            self.moves.push(Move { origin, target, promotion: 0, piece: KING });
         }
     }
 
@@ -120,7 +123,7 @@ impl<'a> MoveList<'a> {
         if self.board.castling_rights[0] && self.board.main_bitboard & 6 == 0
             && !self.is_edge_square_attacked_by_black(2) && !self.is_edge_square_attacked_by_black(1)
         {
-            self.moves.push(Move {origin: 3, target: 1, promotion: 1, piece: KING});
+            self.moves.push(Move { origin: 3, target: 1, promotion: 1, piece: KING });
         }
 
         let queenside_bitboard: u64 = 0b0000000000000000000000000000000000000000000000000000000001110000;
@@ -128,7 +131,7 @@ impl<'a> MoveList<'a> {
         if self.board.castling_rights[1] && self.board.main_bitboard & queenside_bitboard == 0
             && !self.is_edge_square_attacked_by_black(4) && !self.is_edge_square_attacked_by_black(5)
         {
-            self.moves.push(Move {origin: 3, target: 5, promotion: 1, piece: KING});
+            self.moves.push(Move { origin: 3, target: 5, promotion: 1, piece: KING });
         }
     }
 
@@ -141,14 +144,14 @@ impl<'a> MoveList<'a> {
         if self.board.castling_rights[2] && self.board.main_bitboard & kingside_bitboard == 0
             && !self.is_edge_square_attacked_by_white(58) && !self.is_edge_square_attacked_by_white(57)
         {
-            self.moves.push(Move {origin: 59, target: 57, promotion: 1, piece: KING});
+            self.moves.push(Move { origin: 59, target: 57, promotion: 1, piece: KING });
         }
 
         let queenside_bitboard: u64 = 0b0111000000000000000000000000000000000000000000000000000000110000;
         if self.board.castling_rights[3] && self.board.main_bitboard & queenside_bitboard == 0
             && !self.is_edge_square_attacked_by_white(60) && !self.is_edge_square_attacked_by_white(61)
         {
-            self.moves.push(Move {origin: 59, target: 61, promotion: 1, piece: KING});
+            self.moves.push(Move { origin: 59, target: 61, promotion: 1, piece: KING });
         }
     }
 
@@ -263,7 +266,7 @@ impl<'a> MoveList<'a> {
 
             bitboard -= tile;
             let target = u64::checked_ilog2(tile).unwrap_or_default() as u8;
-            let origin = u64::checked_ilog2((tile) >> shift).unwrap_or_default() as u8 ;
+            let origin = u64::checked_ilog2((tile) >> shift).unwrap_or_default() as u8;
 
             if target < UPPER_RANK_LOWEST_TILE
             {
@@ -365,7 +368,7 @@ impl<'a> MoveList<'a> {
 
             bitboard -= tile;
             let target = u64::checked_ilog2(tile).unwrap_or_default() as u8;
-            let origin = u64::checked_ilog2(tile << shift).unwrap_or_default() as u8 ;
+            let origin = u64::checked_ilog2(tile << shift).unwrap_or_default() as u8;
 
             if target > LOWER_RANK_HIGHEST_TILE
             {
@@ -434,6 +437,28 @@ impl<'a> MoveList<'a> {
         let index = Piece::PAWN as usize + 6;
         let capture_bitboard: u64 = (self.board.piece_bitboards[index] & NOT_FILE_A_MASK) >> 7 & attack_options;
         capture_bitboard
+    }
+
+    /// KNIGHT MOVE GENERATION
+
+    fn setup_knight_lookup_table() -> [u64; 64] {
+        let mut lookup_table: [u64; 64] = [0; 64];
+        for origin in 0..64 {
+            for direction in 0..8 {
+                let target: i8 = origin + KNIGHT_SHIFTS[direction];
+                if target > 63 || target < 0 {
+                    continue;
+                }
+
+                if Board::distance(origin as u8, target as u8) > 3 {
+                    continue;
+                }
+
+                lookup_table[origin] |= 1 << target;
+            }
+        }
+
+        lookup_table
     }
 }
 
