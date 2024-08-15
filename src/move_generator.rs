@@ -520,53 +520,68 @@ impl<'a> MoveList<'a> {
 
         for square in 0..64 {
             let origin = 1 << square;
-            let mut full_mask: u64 = 0;
 
-            // Full mask generation
-            // Note that we omit the edges
-
-            let rank_start: u8 = square - square % 8 + 1;
-            let mut rank_tile: u64 = 1 << rank_start;
-            for i in 0..6 {
-                full_mask |= rank_tile;
-
-                rank_tile <<= 1;
-            }
-
-            let file_start: u8 = square % 8 + 1;
-            let mut file_tile: u64 = 1 << file_start;
-            for i in 0..6 {
-                full_mask |= file_tile;
-
-                file_tile <<= 8;
-            }
-
-            let mut full_mask_vector = Vec::<u64>::new();
-            while full_mask > 0 {
-                let tile = full_mask & full_mask.wrapping_neg();
-                full_mask -= tile;
-
-                if tile != origin { full_mask_vector.push(tile); }
-            }
+            let full_mask_vector = Self::generate_rook_magic_key_mask(square, origin);
 
             // Occupancy combinations
 
             for combination_mask in 0..(1 << full_mask_vector.len()) {
-                let mut mask = combination_mask;
-                let mut key: u64 = 0;
-                let mut index = 0;
-                while mask > 0 {
-                    if mask % 2 == 1 { key |= full_mask_vector[index]; }
-                    index += 1;
-                    mask >>= 1;
-                }
+                let key = Self::generate_rook_magic_key(&full_mask_vector, combination_mask);
+                let value = Self::generate_rook_magic_value(key, origin);
 
-                
+                magic_bitboard.insert(key, value);
             }
 
         }
 
         magic_bitboard
+    }
+
+    fn generate_rook_magic_key_mask(square: u8, origin: u64) -> Vec<u64> {
+        let mut full_mask: u64 = 0;
+
+        // Note that we omit the edges
+
+        let rank_start: u8 = square - square % 8 + 1;
+        let mut rank_tile: u64 = 1 << rank_start;
+        for i in 0..6 {
+            full_mask |= rank_tile;
+
+            rank_tile <<= 1;
+        }
+
+        let file_start: u8 = square % 8 + 1;
+        let mut file_tile: u64 = 1 << file_start;
+        for i in 0..6 {
+            full_mask |= file_tile;
+
+            file_tile <<= 8;
+        }
+
+        let mut full_mask_vector = Vec::<u64>::new();
+        while full_mask > 0 {
+            let tile = full_mask & full_mask.wrapping_neg();
+            full_mask -= tile;
+
+            if tile != origin { full_mask_vector.push(tile); }
+        }
+        full_mask_vector
+    }
+
+    fn generate_rook_magic_key(full_mask_vector: &Vec<u64>, combination_mask: i32) -> u64 {
+        let mut mask = combination_mask;
+        let mut key: u64 = 0;
+        let mut index = 0;
+        while mask > 0 {
+            if mask % 2 == 1 { key |= full_mask_vector[index]; }
+            index += 1;
+            mask >>= 1;
+        }
+        key
+    }
+
+    fn generate_rook_magic_value(key: u64, origin: u64) -> u64 {
+        0
     }
 
 }
