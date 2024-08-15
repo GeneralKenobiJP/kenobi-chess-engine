@@ -310,6 +310,7 @@ impl<'a> MoveList<'a> {
     }
 
     /// Outputs a bitboard of single push white pawn moves, based on the current board situation
+    /// We do not need to consider edges because of promotions
     fn generate_white_push_bitboard(&self) -> u64 {
         self.board.piece_bitboards[Piece::PAWN as usize] << 8
             & self.board.empty_bitboard
@@ -412,6 +413,7 @@ impl<'a> MoveList<'a> {
     }
 
     /// Outputs a bitboard of single push black pawn moves, based on the current board situation
+    /// We do not need to consider edges because of promotions
     fn generate_black_push_bitboard(&self) -> u64 {
         self.board.piece_bitboards[Piece::PAWN as usize + 6] >> 8
             & self.board.empty_bitboard
