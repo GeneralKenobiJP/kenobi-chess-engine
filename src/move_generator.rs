@@ -526,10 +526,12 @@ impl<'a> MoveList<'a> {
             // Occupancy combinations
 
             for combination_mask in 0..(1 << full_mask_vector.len()) {
-                let key = Self::generate_rook_magic_key(&full_mask_vector, combination_mask);
-                let value = Self::generate_rook_magic_value(key, origin);
+                let raw_key = Self::generate_rook_magic_raw_key(&full_mask_vector, combination_mask);
+                let value = Self::generate_rook_magic_value(raw_key, square);
 
-                magic_bitboard.insert(key, value);
+                // let key = Self::generate_rook_magic_hashed_key(raw_key);
+
+                magic_bitboard.insert(raw_key, value);
             }
 
         }
@@ -568,7 +570,7 @@ impl<'a> MoveList<'a> {
         full_mask_vector
     }
 
-    fn generate_rook_magic_key(full_mask_vector: &Vec<u64>, combination_mask: i32) -> u64 {
+    fn generate_rook_magic_raw_key(full_mask_vector: &Vec<u64>, combination_mask: i32) -> u64 {
         let mut mask = combination_mask;
         let mut key: u64 = 0;
         let mut index = 0;
@@ -580,8 +582,28 @@ impl<'a> MoveList<'a> {
         key
     }
 
-    fn generate_rook_magic_value(key: u64, origin: u64) -> u64 {
-        0
+    fn generate_rook_magic_value(key: u64, origin: u8) -> u64 {
+        Self::generate_rook_magic_bitboard_left(key, origin)
+        | Self::generate_rook_magic_bitboard_right(key, origin)
+        | Self::generate_rook_magic_bitboard_top(key, origin)
+        | Self::generate_rook_magic_bitboard_bottom(key, origin)
+    }
+
+    fn generate_rook_magic_bitboard_left(key: u64, origin: u8) -> u64 {
+        let mut bitboard: u64 = 0;
+
+        if origin % 8 == 7 {return bitboard;}
+
+        let mut square = origin + 1;
+        if square % 8 == 7 { return 1 << square; }
+
+        while square % 8 != 7 {
+            if key >> square % 2 == 1 { break; }
+            bitboard |= 1 << square;
+        }
+        bitboard |= 1 << square;
+
+        bitboard
     }
 
 }
