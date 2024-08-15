@@ -1218,4 +1218,36 @@ mod tests {
         assert_eq!(0b0000000000000000000000000001010000100010000000000010001000010100, move_list.knight_lookup_table[19]);
         assert_eq!(0b0000010000000000000001000000001000000000000000000000000000000000, move_list.knight_lookup_table[48]);
     }
+
+    #[test]
+    fn check_rook_magic_bitboard_value_generation() {
+        let key: u64 =          0b0000000000000100000001000000010001111010000001000000010000000000;
+        let origin: u8 = 26;
+
+        let value_left: u64 =   0b0000000000000000000000000000000011111000000000000000000000000000;
+        let value_right: u64 =  0b0000000000000000000000000000000000000011000000000000000000000000;
+        let value_top: u64 =    0b0000010000000100000001000000010000000000000000000000000000000000;
+        let value_bottom: u64 = 0b0000000000000000000000000000000000000000000001000000010000000100;
+
+        assert_eq!(value_left, MoveList::generate_rook_magic_bitboard_left(key, origin));
+        assert_eq!(value_right, MoveList::generate_rook_magic_bitboard_right(key, origin));
+        assert_eq!(value_top, MoveList::generate_rook_magic_bitboard_top(key, origin));
+        assert_eq!(value_bottom, MoveList::generate_rook_magic_bitboard_bottom(key, origin));
+    }
+
+    #[test]
+    fn check_rook_magic_bitboard_value_generation_edge() {
+        let key: u64 =          0b0000000100000001000000010000000100000001000000010000000101111110;
+        let origin: u8 = 0;
+
+        let value_left: u64 =   0b0000000000000000000000000000000000000000000000000000000011111110;
+        let value_right: u64 =  0b0000000000000000000000000000000000000000000000000000000000000000;
+        let value_top: u64 =    0b0000000100000001000000010000000100000001000000010000000100000000;
+        let value_bottom: u64 = 0b0000000000000000000000000000000000000000000000000000000000000000;
+
+        assert_eq!(value_left, MoveList::generate_rook_magic_bitboard_left(key, origin));
+        assert_eq!(value_right, MoveList::generate_rook_magic_bitboard_right(key, origin));
+        assert_eq!(value_top, MoveList::generate_rook_magic_bitboard_top(key, origin));
+        assert_eq!(value_bottom, MoveList::generate_rook_magic_bitboard_bottom(key, origin));
+    }
 }
