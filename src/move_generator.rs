@@ -2,6 +2,7 @@
 //! Generates a vector of moves based on the input board position
 //! Involves bitboards, magic bitboards, etc.
 
+use std::collections::HashMap;
 use crate::piece;
 use crate::piece::Piece;
 use crate::piece::Colour;
@@ -24,7 +25,8 @@ struct MoveList<'a> {
     board: &'a Board,
     moves: Vec<Move>,
     king_lookup_table: [u64; 64], // should be treated as immutable after setup
-    knight_lookup_table: [u64; 64] // should be treated as immutable after setup
+    knight_lookup_table: [u64; 64], // should be treated as immutable after setup
+    rook_magic_bitboard: HashMap<u64,u64>
 }
 
 impl<'a> MoveList<'a> {
@@ -33,7 +35,8 @@ impl<'a> MoveList<'a> {
             board,
             moves: Vec::new(),
             king_lookup_table: Self::setup_king_lookup_table(),
-            knight_lookup_table: Self::setup_knight_lookup_table()
+            knight_lookup_table: Self::setup_knight_lookup_table(),
+            rook_magic_bitboard: Self::setup_rook_magic_bitboard()
         }
     }
 
@@ -510,8 +513,37 @@ impl<'a> MoveList<'a> {
         }
     }
 
+    /// ROOK MOVE GENERATION
+
+    fn setup_rook_magic_bitboard() -> HashMap<u64,u64> {
+        let mut magic_bitboard = HashMap::<u64,u64>::new();
+
+        for square in 0..64 {
+            let mut full_mask: u64 = 0;
+
+            let rank_start: u8 = square - square % 8;
+            let mut rank_tile: u64 = 1 << rank_start;
+            for i in 0..8 {
+                full_mask |= rank_tile;
+
+                if i != 7 { rank_tile <<= 1; }
+            }
+
+            let file_start: u8 = square % 8;
+            let mut file_tile: u64 = 1 << file_start;
+            for i in 0..8 {
+                full_mask |= file_tile;
+
+                if i != 7 { file_tile <<= 8; }
+            }
+        }
+
+        magic_bitboard
+    }
 
 }
+
+/// /// /// TESTS
 
 #[cfg(test)]
 mod tests {
