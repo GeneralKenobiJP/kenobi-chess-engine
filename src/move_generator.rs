@@ -595,11 +595,66 @@ impl<'a> MoveList<'a> {
         if origin % 8 == 7 {return bitboard;}
 
         let mut square = origin + 1;
-        if square % 8 == 7 { return 1 << square; }
 
         while square % 8 != 7 {
-            if key >> square % 2 == 1 { break; }
             bitboard |= 1 << square;
+            if key >> square % 2 == 1 { break; }
+
+            square += 1;
+        }
+        bitboard |= 1 << square;
+
+        bitboard
+    }
+
+    fn generate_rook_magic_bitboard_right(key: u64, origin: u8) -> u64 {
+        let mut bitboard: u64 = 0;
+
+        if origin % 8 == 0 {return bitboard;}
+
+        let mut square = origin - 1;
+
+        while square % 8 != 0 {
+            bitboard |= 1 << square;
+            if key >> square % 2 == 1 { break; }
+
+            square -= 1;
+        }
+        bitboard |= 1 << square;
+
+        bitboard
+    }
+
+    fn generate_rook_magic_bitboard_top(key: u64, origin: u8) -> u64 {
+        let mut bitboard: u64 = 0;
+
+        if origin / 8 == 7 {return bitboard;}
+
+        let mut square = origin + 8;
+
+        while square / 8 != 7 {
+            bitboard |= 1 << square;
+            if key >> square % 2 == 1 { break; }
+
+            square += 8;
+        }
+        bitboard |= 1 << square;
+
+        bitboard
+    }
+
+    fn generate_rook_magic_bitboard_bottom(key: u64, origin: u8) -> u64 {
+        let mut bitboard: u64 = 0;
+
+        if origin / 8 == 0 {return bitboard;}
+
+        let mut square = origin - 8;
+
+        while square / 8 != 0 {
+            bitboard |= 1 << square;
+            if key >> square % 2 == 1 { break; }
+
+            square -= 8;
         }
         bitboard |= 1 << square;
 
