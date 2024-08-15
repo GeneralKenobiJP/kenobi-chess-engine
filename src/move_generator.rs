@@ -598,7 +598,7 @@ impl<'a> MoveList<'a> {
 
         while square % 8 != 7 {
             bitboard |= 1 << square;
-            if key >> square % 2 == 1 { break; }
+            if (key >> square) % 2 == 1 { break; }
 
             square += 1;
         }
@@ -616,7 +616,7 @@ impl<'a> MoveList<'a> {
 
         while square % 8 != 0 {
             bitboard |= 1 << square;
-            if key >> square % 2 == 1 { break; }
+            if (key >> square) % 2 == 1 { break; }
 
             square -= 1;
         }
@@ -634,7 +634,7 @@ impl<'a> MoveList<'a> {
 
         while square / 8 != 7 {
             bitboard |= 1 << square;
-            if key >> square % 2 == 1 { break; }
+            if (key >> square) % 2 == 1 { break; }
 
             square += 8;
         }
@@ -652,7 +652,7 @@ impl<'a> MoveList<'a> {
 
         while square / 8 != 0 {
             bitboard |= 1 << square;
-            if key >> square % 2 == 1 { break; }
+            if (key >> square) % 2 == 1 { break; }
 
             square -= 8;
         }
@@ -1221,23 +1221,24 @@ mod tests {
 
     #[test]
     fn check_rook_magic_bitboard_value_generation() {
-        let key: u64 =          0b0000000000000100000001000000010001111010000001000000010000000000;
+        let key: u64 =          0b0000000000000000000001000000000000001000000000000000000000000000;
         let origin: u8 = 26;
 
-        let value_left: u64 =   0b0000000000000000000000000000000011111000000000000000000000000000;
+        let value_left: u64 =   0b0000000000000000000000000000000000001000000000000000000000000000;
         let value_right: u64 =  0b0000000000000000000000000000000000000011000000000000000000000000;
-        let value_top: u64 =    0b0000010000000100000001000000010000000000000000000000000000000000;
+        let value_top: u64 =    0b0000000000000000000001000000010000000000000000000000000000000000;
         let value_bottom: u64 = 0b0000000000000000000000000000000000000000000001000000010000000100;
 
         assert_eq!(value_left, MoveList::generate_rook_magic_bitboard_left(key, origin));
         assert_eq!(value_right, MoveList::generate_rook_magic_bitboard_right(key, origin));
         assert_eq!(value_top, MoveList::generate_rook_magic_bitboard_top(key, origin));
         assert_eq!(value_bottom, MoveList::generate_rook_magic_bitboard_bottom(key, origin));
+        assert_eq!(value_left | value_right | value_top | value_bottom, MoveList::generate_rook_magic_value(key, origin));
     }
 
     #[test]
     fn check_rook_magic_bitboard_value_generation_edge() {
-        let key: u64 =          0b0000000100000001000000010000000100000001000000010000000101111110;
+        let key: u64 =          0;
         let origin: u8 = 0;
 
         let value_left: u64 =   0b0000000000000000000000000000000000000000000000000000000011111110;
@@ -1249,5 +1250,6 @@ mod tests {
         assert_eq!(value_right, MoveList::generate_rook_magic_bitboard_right(key, origin));
         assert_eq!(value_top, MoveList::generate_rook_magic_bitboard_top(key, origin));
         assert_eq!(value_bottom, MoveList::generate_rook_magic_bitboard_bottom(key, origin));
+        assert_eq!(value_left | value_right | value_top | value_bottom, MoveList::generate_rook_magic_value(key, origin));
     }
 }
