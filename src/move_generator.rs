@@ -519,23 +519,51 @@ impl<'a> MoveList<'a> {
         let mut magic_bitboard = HashMap::<u64,u64>::new();
 
         for square in 0..64 {
+            let origin = 1 << square;
             let mut full_mask: u64 = 0;
 
-            let rank_start: u8 = square - square % 8;
+            // Full mask generation
+            // Note that we omit the edges
+
+            let rank_start: u8 = square - square % 8 + 1;
             let mut rank_tile: u64 = 1 << rank_start;
-            for i in 0..8 {
+            for i in 0..6 {
                 full_mask |= rank_tile;
 
-                if i != 7 { rank_tile <<= 1; }
+                rank_tile <<= 1;
             }
 
-            let file_start: u8 = square % 8;
+            let file_start: u8 = square % 8 + 1;
             let mut file_tile: u64 = 1 << file_start;
-            for i in 0..8 {
+            for i in 0..6 {
                 full_mask |= file_tile;
 
-                if i != 7 { file_tile <<= 8; }
+                file_tile <<= 8;
             }
+
+            let mut full_mask_vector = Vec::<u64>::new();
+            while full_mask > 0 {
+                let tile = full_mask & full_mask.wrapping_neg();
+                full_mask -= tile;
+
+                if tile != origin { full_mask_vector.push(tile); }
+            }
+
+            // Occupancy combinations
+
+            for combination_mask in 0..(1 << full_mask_vector.len()) {
+                let mut mask = combination_mask;
+                let mut key: u64 = 0;
+                let mut index = 0;
+                while mask > 0 {
+                    if mask % 2 == 1 { key |= full_mask_vector[index]; }
+                    index += 1;
+                    mask >>= 1;
+                }
+
+                
+            }
+
         }
 
         magic_bitboard
