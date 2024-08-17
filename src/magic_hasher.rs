@@ -1,3 +1,5 @@
+use std::hash::{Hash, Hasher};
+
 const MAGIC_NUMBERS_ROOK: [u64; 64] = [
     0x008080808080807E, 0x004040404040403E, 0x002020202020205E, 0x001010101010106E, 0x0008080808080876, 0x000404040404047A, 0x000202020202027C, 0x000101010101017E,
     0x0080808080807E00, 0x0040404040403E00, 0x0020202020205E00, 0x0010101010106E00, 0x0008080808087600, 0x0004040404047A00, 0x0002020202027C00, 0x0001010101017E00,
@@ -19,9 +21,19 @@ const MAGIC_NUMBERS_SHIFT_ROOK: [u8; 64] = [
     53, 53, 53, 53, 53, 54, 54, 53
 ];
 
+#[derive(Eq, PartialEq, Clone)]
 pub struct MagicKey {
     raw_key: u64,
     origin: u8
+}
+
+impl Hash for MagicKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let mut input: [u8; 9] = [0;9];
+        input[..8].copy_from_slice(&self.raw_key.to_le_bytes());
+        input[8] = self.origin;
+        input.hash(state);
+    }
 }
 
 pub struct MagicHasher {
@@ -66,7 +78,7 @@ impl std::hash::BuildHasher for BuildMagicHasher {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
     use std::hash::{BuildHasher, Hasher, RandomState};
     use crate::board::{Board, START_POSITION};
     use super::*;
@@ -95,5 +107,15 @@ mod tests {
         //     for j in (0..8).rev() { y[index] = x[j+8*i]; index+=1; }
         // }
         // println!{"{:?}", y};
+    }
+
+    #[test]
+    fn hash_map() {
+        let mut hash_map = HashMap::<MagicKey,u64,BuildMagicHasher>::with_hasher(BuildMagicHasher);
+        let key = 0x008080808080807Eu64;
+        let magic_key = MagicKey { raw_key: key, origin: 0 };
+        hash_map.insert(magic_key.clone(), 69);
+        assert_eq!(hash_map.len(), 1);
+        assert_eq!(*hash_map.get(&magic_key).unwrap(), 69);
     }
 }
