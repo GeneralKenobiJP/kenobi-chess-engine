@@ -2,16 +2,15 @@
 //! Generates a vector of moves based on the input board position
 //! Involves bitboards, magic bitboards, etc.
 
-use std::collections::HashMap;
-use std::hash::{BuildHasher, Hasher};
 use crate::piece;
 use crate::piece::Piece;
 use crate::piece::Colour;
 use crate::board;
 use crate::board::{Board, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_MASK, UPPER_RANK_LOWEST_TILE};
-use crate::magic_hasher::BuildMagicHasher;
 use crate::piece::Colour::{BLACK, WHITE};
 use crate::piece::Piece::{KING, KNIGHT};
+use crate::magic_hasher;
+use crate::magic_hasher::magic_hash_rook;
 
 const KNIGHT_SHIFTS: [i8; 8] = [17, 10, -6, -15, -17, -10, 6, 15]; // Beginning on NW, counter-clockwise
 
@@ -28,7 +27,7 @@ struct MoveList<'a> {
     moves: Vec<Move>,
     king_lookup_table: [u64; 64], // should be treated as immutable after setup
     knight_lookup_table: [u64; 64], // should be treated as immutable after setup
-    rook_magic_bitboard: HashMap<u64,u64>
+    rook_magic_bitboard: Vec<u64>
 }
 
 impl<'a> MoveList<'a> {
@@ -517,8 +516,8 @@ impl<'a> MoveList<'a> {
 
     /// ROOK MOVE GENERATION
 
-    fn setup_rook_magic_bitboard() -> HashMap<u64,u64> {
-        let mut magic_bitboard = HashMap::<u64,u64>::new();
+    fn setup_rook_magic_bitboard() -> Vec<u64> {
+        let mut magic_bitboard = vec![0u64;100000];
 
         for square in 0..64 {
             let origin = 1 << square;
@@ -535,12 +534,19 @@ impl<'a> MoveList<'a> {
                 // let mut test = HashMap::<u64,u64,BuildMagicHasher>::with_hasher(BuildMagicHasher);
                 // test.insert(raw_key, value);
 
-                magic_bitboard.insert(raw_key, value);
+                // magic_bitboard.insert(raw_key, value);
+                let key = magic_hash_rook(raw_key, square);
+                if magic_bitboard[key] != 0 && magic_bitboard[key] != value {
+                    let x = magic_bitboard[key];
+                    println!("{}", square);
+                    panic!();
+                }
+                magic_bitboard[key] = value;
             }
 
         }
 
-        // println!("{:?}", magic_bitboard);
+        println!("{}", magic_bitboard.len());
 
         magic_bitboard
     }
