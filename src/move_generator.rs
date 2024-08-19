@@ -2,6 +2,7 @@
 //! Generates a vector of moves based on the input board position
 //! Involves bitboards, magic bitboards, etc.
 
+use std::collections::HashSet;
 use crate::piece;
 use crate::piece::Piece;
 use crate::piece::Colour;
@@ -517,7 +518,7 @@ impl<'a> MoveList<'a> {
     /// ROOK MOVE GENERATION
 
     fn setup_rook_magic_bitboard() -> Vec<u64> {
-        let mut magic_bitboard = vec![0u64;100000];
+        let mut magic_bitboard = vec![0u64;1048577];
 
         for square in 0..64 {
             let origin = 1 << square;
@@ -536,9 +537,14 @@ impl<'a> MoveList<'a> {
 
                 // magic_bitboard.insert(raw_key, value);
                 let key = magic_hash_rook(raw_key, square);
-                if magic_bitboard[key] != 0 && magic_bitboard[key] != value {
+                // if key == 2056 {println!("raw key: {}", raw_key)}
+                if magic_bitboard[key] != 0 && magic_bitboard[key] != value && key != 0 {
                     let x = magic_bitboard[key];
-                    println!("{}", square);
+                    println!("square: {}", square);
+                    println!("raw_key:: {}", raw_key);
+                    println!("hashed_key:: {}", key);
+                    println!("old_value: {}", x);
+                    println!("new_value: {}", value);
                     panic!();
                 }
                 magic_bitboard[key] = value;
@@ -546,7 +552,8 @@ impl<'a> MoveList<'a> {
 
         }
 
-        println!("{}", magic_bitboard.len());
+        // println!("{}", magic_bitboard.len());
+        // println!("unique keys: {}", test_hashset.len());
 
         magic_bitboard
     }
