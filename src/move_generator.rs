@@ -530,30 +530,12 @@ impl<'a> MoveList<'a> {
             for combination_mask in 0..(1 << full_mask_vector.len()) {
                 let raw_key = Self::generate_rook_magic_raw_key(&full_mask_vector, combination_mask);
                 let value = Self::generate_rook_magic_value(raw_key, square);
-
-                // let key = Self::generate_rook_magic_hashed_key(raw_key);
-                // let mut test = HashMap::<u64,u64,BuildMagicHasher>::with_hasher(BuildMagicHasher);
-                // test.insert(raw_key, value);
-
-                // magic_bitboard.insert(raw_key, value);
                 let key = magic_hash_rook(raw_key, square);
-                // if key == 2056 {println!("raw key: {}", raw_key)}
-                if magic_bitboard[key] != 0 && magic_bitboard[key] != value && key != 0 {
-                    let x = magic_bitboard[key];
-                    println!("square: {}", square);
-                    println!("raw_key:: {}", raw_key);
-                    println!("hashed_key:: {}", key);
-                    println!("old_value: {}", x);
-                    println!("new_value: {}", value);
-                    panic!();
-                }
+
                 magic_bitboard[key] = value;
             }
 
         }
-
-        // println!("{}", magic_bitboard.len());
-        // println!("unique keys: {}", test_hashset.len());
 
         magic_bitboard
     }
@@ -679,10 +661,6 @@ impl<'a> MoveList<'a> {
 
         bitboard
     }
-
-    // fn generate_rook_magic_hashed_key(raw_key: u64) -> u64 {
-    //
-    // }
 
 }
 

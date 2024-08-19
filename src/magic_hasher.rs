@@ -1,5 +1,10 @@
+//! Magic Hashing
+//! Implements hashing for magic bitboards
+//! Used for rook and bishops (and thus also for queens)
+
 use std::hash::{Hash, Hasher};
 
+/// Mask containing relevant bits for each rook position
 const MAGIC_MASK_ROOK: [u64; 64] = [
     0x000101010101017E, 0x000202020202027C, 0x000404040404047A, 0x0008080808080876, 0x001010101010106E, 0x002020202020205E, 0x004040404040403E, 0x008080808080807E,
     0x0001010101017E00, 0x0002020202027C00, 0x0004040404047A00, 0x0008080808087600, 0x0010101010106E00, 0x0020202020205E00, 0x0040404040403E00, 0x0080808080807E00,
@@ -11,6 +16,7 @@ const MAGIC_MASK_ROOK: [u64; 64] = [
     0x7E01010101010100, 0x7C02020202020200, 0x7A04040404040400, 0x7608080808080800, 0x6E10101010101000, 0x5E20202020202000, 0x3E40404040404000, 0x7E80808080808000,
 ];
 
+//! Magic numbers used for rook's magic bitboard hashing
 const MAGIC_NUMBERS_ROOK: [u64; 64] = [
     0x0080001020400080, 0x0040001000200040, 0x0080081000200080, 0x0080040800100080, 0x0080020400080080, 0x0080010200040080, 0x0080008001000200, 0x0080002040800100,
     0x0000800020400080, 0x0000400020005000, 0x0000801000200080, 0x0000800800100080, 0x0000800400080080, 0x0000800200040080, 0x0000800100020080, 0x0000800040800100,
@@ -22,6 +28,7 @@ const MAGIC_NUMBERS_ROOK: [u64; 64] = [
     0x00FFFCDDFCED714A, 0x007FFCDDFCED714A, 0x003FFFCDFFD88096, 0x0000040810002101, 0x0001000204080011, 0x0001000204000801, 0x0001000082000401, 0x0001FFFAABFAD1A2
 ];
 
+//! Shifts for magic numbers for rooks
 const MAGIC_NUMBERS_SHIFT_ROOK: [u8; 64] = [
     52, 53, 53, 53, 53, 53, 53, 52,
     53, 54, 54, 54, 54, 54, 54, 53,
@@ -33,66 +40,14 @@ const MAGIC_NUMBERS_SHIFT_ROOK: [u8; 64] = [
     53, 54, 54, 53, 53, 53, 53, 53
 ];
 
+//! Given a raw key indicating occupancy of relevant bits for a given rook and its origin,
+//! output a hash according to the magic bitboard hashing
+//! Formula: key * origin << shift
 pub fn magic_hash_rook(key: u64, origin: u8) -> usize {
     (((key.wrapping_mul(MAGIC_NUMBERS_ROOK[origin as usize]))
         >> MAGIC_NUMBERS_SHIFT_ROOK[origin as usize])
         | ((origin as u64) << 12)) as usize
 }
-
-// #[derive(Eq, PartialEq, Clone)]
-// pub struct MagicKey {
-//     raw_key: u64,
-//     origin: u8
-// }
-//
-// impl Hash for MagicKey {
-//     fn hash<H: Hasher>(&self, state: &mut H) {
-//         let mut input: [u8; 9] = [0;9];
-//         input[..8].copy_from_slice(&self.raw_key.to_le_bytes());
-//         input[8] = self.origin;
-//         input.hash(state);
-//     }
-// }
-//
-// pub struct MagicHasher {
-//     state: u64,
-// }
-//
-// pub struct BuildMagicHasher;
-//
-// impl BuildMagicHasher {
-//     fn new() -> Self {
-//         BuildMagicHasher
-//     }
-// }
-//
-// impl std::hash::Hasher for MagicHasher {
-//     fn finish(&self) -> u64 {
-//         self.state
-//     }
-//
-//     fn write(&mut self, bytes: &[u8]) {
-//         let mut input = 0u64;
-//         for i in 0..8 {
-//             input <<= 8;
-//             input |= bytes[i] as u64;
-//         }
-//         self.state = input.wrapping_mul(MAGIC_NUMBERS_ROOK[bytes[8] as usize]);
-//         self.state >>= MAGIC_NUMBERS_SHIFT_ROOK[bytes[8] as usize];
-//         // self.write_u64(input);
-//     }
-//
-//     fn write_u64(&mut self, i: u64) {
-//         self.state = i.wrapping_mul(0x000101010101017E);
-//     }
-// }
-//
-// impl std::hash::BuildHasher for BuildMagicHasher {
-//     type Hasher = MagicHasher;
-//     fn build_hasher(&self) -> MagicHasher {
-//         MagicHasher { state: 0 }
-//     }
-// }
 
 #[cfg(test)]
 mod tests {
@@ -107,13 +62,6 @@ mod tests {
                    magic_hash_rook(0x008080808080807Eu64, 7) as u64);
         assert_eq!(0x000101010101017Eu64.wrapping_mul(MAGIC_NUMBERS_ROOK[0]) >> 52,
                    magic_hash_rook(0x000101010101017Eu64, 0) as u64);
-
-        // let s = BuildMagicHasher::new();
-        // let mut magic_hasher = s.build_hasher();
-        // magic_hasher.write(&[0x00,0x80,0x80,0x80,0x80,0x80,0x80,0x7E,7]);
-        // assert_eq!(0x008080808080807Eu64.wrapping_mul(0x000101010101017E) >> 52, magic_hasher.finish());
-        // magic_hasher.write_u64(0x008080808080807E);
-        // assert_eq!(0x008080808080807Eu64.wrapping_mul(0x000101010101017E), magic_hasher.finish());
 
         // let x = MAGIC_NUMBERS_ROOK;
         // let mut y = [0u64;64];
@@ -130,15 +78,5 @@ mod tests {
         //     for j in (0..8).rev() { y[index] = x[j+8*i]; index+=1; }
         // }
         // println!{"{:?}", y};
-    }
-
-    #[test]
-    fn hash_map() {
-        // let mut hash_map = HashMap::<MagicKey,u64,BuildMagicHasher>::with_hasher(BuildMagicHasher);
-        // let key = 0x008080808080807Eu64;
-        // let magic_key = MagicKey { raw_key: key, origin: 0 };
-        // hash_map.insert(magic_key.clone(), 69);
-        // assert_eq!(hash_map.len(), 1);
-        // assert_eq!(*hash_map.get(&magic_key).unwrap(), 69);
     }
 }
