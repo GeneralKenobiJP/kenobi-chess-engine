@@ -517,6 +517,8 @@ impl<'a> MoveList<'a> {
 
     /// ROOK MOVE GENERATION
 
+    /// Outputs a magic bitboard of possible rook moves at given square and given occupancy
+    /// Used by the constructor of the board for initialization of the magic bitboard
     fn setup_rook_magic_bitboard() -> Vec<u64> {
         let mut magic_bitboard = vec![0u64;1048577];
 
@@ -540,6 +542,14 @@ impl<'a> MoveList<'a> {
         magic_bitboard
     }
 
+    /// Generates full rook occupancy mask for a given square
+    /// Supposes there is a piece on every relevant tile
+    /// Used for creating permutations of occupancies while creating magic bitboards
+    /// parameters:
+    ///     - square - number of the square we are considering (u8)
+    ///     - origin - u64 number with one bit set to 1 that identifies the given square (eq. to 1 << square)
+    /// Outputs bits of the occupancy mask in vector in such a manner
+    /// that after concatenation it would be the full rook occupancy mask for the given square
     fn generate_rook_magic_key_mask(square: u8, origin: u64) -> Vec<u64> {
         let mut full_mask: u64 = 0;
 
@@ -571,6 +581,10 @@ impl<'a> MoveList<'a> {
         full_mask_vector
     }
 
+    /// Generate a raw key for magic rook bitboard (unhashed)
+    /// given a mask vector of bits and a combination mask indicating which bits to consider
+    /// Example: [0100 0000, 0001 0000, 0000 1000, 0000 0001], 0b1011
+    ///         should output 0100 1001
     fn generate_rook_magic_raw_key(full_mask_vector: &Vec<u64>, combination_mask: i32) -> u64 {
         let mut mask = combination_mask;
         let mut key: u64 = 0;
@@ -583,6 +597,8 @@ impl<'a> MoveList<'a> {
         key
     }
 
+    /// Generates a bitboard of possible rook moves,
+    /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
     fn generate_rook_magic_value(key: u64, origin: u8) -> u64 {
         Self::generate_rook_magic_bitboard_left(key, origin)
         | Self::generate_rook_magic_bitboard_right(key, origin)
@@ -590,6 +606,9 @@ impl<'a> MoveList<'a> {
         | Self::generate_rook_magic_bitboard_bottom(key, origin)
     }
 
+    /// Generates a bitboard of possible rook West moves,
+    /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    /// Called by generate_rook_magic_value, should not be called independently
     fn generate_rook_magic_bitboard_left(key: u64, origin: u8) -> u64 {
         let mut bitboard: u64 = 0;
 
@@ -608,6 +627,9 @@ impl<'a> MoveList<'a> {
         bitboard
     }
 
+    /// Generates a bitboard of possible rook East moves,
+    /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    /// Called by generate_rook_magic_value, should not be called independently
     fn generate_rook_magic_bitboard_right(key: u64, origin: u8) -> u64 {
         let mut bitboard: u64 = 0;
 
@@ -626,6 +648,9 @@ impl<'a> MoveList<'a> {
         bitboard
     }
 
+    /// Generates a bitboard of possible rook North moves,
+    /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    /// Called by generate_rook_magic_value, should not be called independently
     fn generate_rook_magic_bitboard_top(key: u64, origin: u8) -> u64 {
         let mut bitboard: u64 = 0;
 
@@ -644,6 +669,9 @@ impl<'a> MoveList<'a> {
         bitboard
     }
 
+    /// Generates a bitboard of possible rook South moves,
+    /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    /// Called by generate_rook_magic_value, should not be called independently
     fn generate_rook_magic_bitboard_bottom(key: u64, origin: u8) -> u64 {
         let mut bitboard: u64 = 0;
 
