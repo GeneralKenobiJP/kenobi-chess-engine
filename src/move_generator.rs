@@ -533,7 +533,7 @@ impl<'a> MoveList<'a> {
             // Occupancy combinations
 
             for combination_mask in 0..(1 << full_mask_vector.len()) {
-                let raw_key = Self::generate_rook_magic_raw_key(&full_mask_vector, combination_mask);
+                let raw_key = Self::generate_magic_raw_key(&full_mask_vector, combination_mask);
                 let value = Self::generate_rook_magic_value(raw_key, square);
                 let key = magic_hash_rook(raw_key, square);
 
@@ -583,22 +583,6 @@ impl<'a> MoveList<'a> {
             if tile != origin { full_mask_vector.push(tile); }
         }
         full_mask_vector
-    }
-
-    /// Generate a raw key for magic rook bitboard (unhashed)
-    /// given a mask vector of bits and a combination mask indicating which bits to consider
-    /// Example: [0100 0000, 0001 0000, 0000 1000, 0000 0001], 0b1011
-    ///         should output 0100 1001
-    fn generate_rook_magic_raw_key(full_mask_vector: &Vec<u64>, combination_mask: i32) -> u64 {
-        let mut mask = combination_mask;
-        let mut key: u64 = 0;
-        let mut index = 0;
-        while mask > 0 {
-            if mask % 2 == 1 { key |= full_mask_vector[index]; }
-            index += 1;
-            mask >>= 1;
-        }
-        key
     }
 
     /// Generates a bitboard of possible rook moves,
@@ -741,6 +725,24 @@ impl<'a> MoveList<'a> {
         }
     }
 
+    /// ROOK/BISHOP
+
+    /// Generate a raw key for magic bitboard (unhashed)
+    /// given a mask vector of bits and a combination mask indicating which bits to consider
+    /// Example: [0100 0000, 0001 0000, 0000 1000, 0000 0001], 0b1011
+    ///         should output 0100 1001
+    fn generate_magic_raw_key(full_mask_vector: &Vec<u64>, combination_mask: i32) -> u64 {
+        let mut mask = combination_mask;
+        let mut key: u64 = 0;
+        let mut index = 0;
+        while mask > 0 {
+            if mask % 2 == 1 { key |= full_mask_vector[index]; }
+            index += 1;
+            mask >>= 1;
+        }
+        key
+    }
+
     /// BISHOP MOVE GENERATION
 
     /// Outputs a magic bitboard of possible bishop moves at given square and given occupancy
@@ -756,7 +758,7 @@ impl<'a> MoveList<'a> {
             // Occupancy combinations
 
             for combination_mask in 0..(1 << full_mask_vector.len()) {
-                // let raw_key = Self::generate_bishop_magic_raw_key(&full_mask_vector, combination_mask);
+                let raw_key = Self::generate_magic_raw_key(&full_mask_vector, combination_mask);
                 // let value = Self::generate_bishop_magic_value(raw_key, square);
                 // let key = magic_hash_bishop(raw_key, square);
 
@@ -789,21 +791,6 @@ impl<'a> MoveList<'a> {
         full_mask_vector
     }
 
-    // /// Generate a raw key for magic rook bitboard (unhashed)
-    // /// given a mask vector of bits and a combination mask indicating which bits to consider
-    // /// Example: [0100 0000, 0001 0000, 0000 1000, 0000 0001], 0b1011
-    // ///         should output 0100 1001
-    // fn generate_rook_magic_raw_key(full_mask_vector: &Vec<u64>, combination_mask: i32) -> u64 {
-    //     let mut mask = combination_mask;
-    //     let mut key: u64 = 0;
-    //     let mut index = 0;
-    //     while mask > 0 {
-    //         if mask % 2 == 1 { key |= full_mask_vector[index]; }
-    //         index += 1;
-    //         mask >>= 1;
-    //     }
-    //     key
-    // }
     //
     // /// Generates a bitboard of possible rook moves,
     // /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
