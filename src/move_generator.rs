@@ -1328,7 +1328,7 @@ mod tests {
     }
 
     #[test]
-    fn key_mask_vector() {
+    fn rook_key_mask_vector() {
         let mut expected_vec1 = vec![0x0001000000000000, 0x0000010000000000, 0x0000000100000000, 0x0000000001000000, 0x000000000010000, 0x0000000000000100,
                         0x0000000000000040, 0x0000000000000020, 0x0000000000000010, 0x0000000000000008, 0x0000000000000004, 0x0000000000000002];
         expected_vec1.reverse();
@@ -1345,5 +1345,18 @@ mod tests {
         let mut actual = MoveList::generate_rook_magic_key_mask(27,1 << 27);
         actual.sort();
         assert_eq!(expected_vec3, actual); // rook on e4
+    }
+
+    #[test]
+    fn rook_raw_mask() {
+        let mut vec1 = vec![0x0001000000000000, 0x0000010000000000, 0x0000000100000000, 0x0000000001000000, 0x000000000010000, 0x0000000000000100,
+                        0x0000000000000040, 0x0000000000000020, 0x0000000000000010, 0x0000000000000008, 0x0000000000000004, 0x0000000000000002];
+        vec1.reverse();
+
+        let combination_mask = 0b1001101;
+
+        let expected = vec1[0] + vec1[2] + vec1[3] + vec1[6];
+
+        assert_eq!(expected, MoveList::generate_rook_magic_raw_key(&vec1, combination_mask));
     }
 }
