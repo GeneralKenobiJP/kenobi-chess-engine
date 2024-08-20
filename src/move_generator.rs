@@ -690,6 +690,7 @@ impl<'a> MoveList<'a> {
         bitboard
     }
 
+    /// Generates moves of rooks based on the current board situation and updates self
     fn generate_rook_moves(&mut self) {
         let mut rook_bitboard = self.board.piece_bitboards[3 + 6 * self.board.active_player as usize];
 
@@ -703,15 +704,26 @@ impl<'a> MoveList<'a> {
         }
     }
 
+    /// Retrieves rook magic bitboard based on a given origin and current board situation
+    /// Constructs occupancy mask from the current board situation and
+    /// masks it with the relevant magic mask to obtain a raw key,
+    /// then hashes using magic hash to obtain a hashed key
     fn get_rook_magic_bitboard(&self, origin: u8) -> u64 {
         let occupancy = self.board.main_bitboard & MAGIC_MASK_ROOK[origin];
         self.rook_magic_bitboard[magic_hash_rook(occupancy, origin)]
     }
 
+    /// Outputs a bitboard of rook moves, based on the current board occupancy, given the rook's square
     fn generate_rook_moves_bitboard(&self, square: u8) -> u64 {
         self.get_rook_magic_bitboard(square) & (self.board.empty_bitboard | self.board.colour_bitboards[self.board.inactive_player as usize])
     }
 
+    /// Converts a bitboard of rook moves into a list of moves and updates self
+    /// Takes origin square of the rook as input
+    /// Should be used separately for each owned knight
+    /// parameters:
+    ///     move_bitboard - bitboards of squares targeted by a move subgroup
+    ///     origin - number of the square the given rook is on
     fn convert_rook_moves(&mut self, move_bitboard: u64, origin: u8) {
         let mut bitboard = move_bitboard;
 
