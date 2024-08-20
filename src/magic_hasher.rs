@@ -79,11 +79,20 @@ const MAGIC_NUMBERS_SHIFT_BISHOP: [u8; 64] = [
 
 /// Given a raw key indicating occupancy of relevant bits for a given rook and its origin,
 /// output a hash according to the magic bitboard hashing
-/// Formula: key * origin << shift
+/// Formula: ((key * origin) << shift) | (origin << 12)
 pub fn magic_hash_rook(key: u64, origin: u8) -> usize {
     (((key.wrapping_mul(MAGIC_NUMBERS_ROOK[origin as usize]))
         >> MAGIC_NUMBERS_SHIFT_ROOK[origin as usize])
         | ((origin as u64) << 12)) as usize
+}
+
+/// Given a raw key indicating occupancy of relevant bits for a given bishop and its origin,
+/// output a hash according to the magic bitboard hashing
+/// Formula: ((key * origin) << shift) | (origin << 12)
+pub fn magic_hash_bishop(key: u64, origin: u8) -> usize {
+    (((key.wrapping_mul(MAGIC_NUMBERS_BISHOP[origin as usize]))
+        >> MAGIC_NUMBERS_SHIFT_BISHOP[origin as usize])
+        | ((origin as u64) << 10)) as usize
 }
 
 #[cfg(test)]
@@ -100,20 +109,9 @@ mod tests {
         assert_eq!(0x000101010101017Eu64.wrapping_mul(MAGIC_NUMBERS_ROOK[0]) >> 52,
                    magic_hash_rook(0x000101010101017Eu64, 0) as u64);
 
-        // let x = MAGIC_NUMBERS_ROOK;
-        // let mut y = [0u64;64];
-        // let mut index = 0;
-        // for i in 0..8 {
-        //     for j in (0..8).rev() { y[index] = x[j+8*i]; index+=1; }
-        // }
-        // println!{"{:#018X?}", y};
-
-        // let x = MAGIC_NUMBERS_SHIFT_ROOK;
-        // let mut y = [0u8;64];
-        // let mut index = 0;
-        // for i in 0..8 {
-        //     for j in (0..8).rev() { y[index] = x[j+8*i]; index+=1; }
-        // }
-        // println!{"{:?}", y};
+        assert_eq!((0x0002040810204000u64.wrapping_mul(MAGIC_NUMBERS_BISHOP[7]) >> 58) | (0b111 << 10),
+                   magic_hash_bishop(0x0002040810204000u64, 7) as u64);
+        assert_eq!(0x0040201008040200u64.wrapping_mul(MAGIC_NUMBERS_BISHOP[0]) >> 58,
+                   magic_hash_bishop(0x0040201008040200, 0) as u64);
     }
 }
