@@ -1385,4 +1385,15 @@ mod tests {
         assert_eq!(0x808080808080807F, MoveList::generate_rook_magic_value(key4, 7));
         assert_eq!(vec2[6-1] + vec2[6] + vec2[7] + vec2[8] + vec2[9], MoveList::generate_rook_magic_value(key5, 7));
     }
+
+    #[test]
+    fn check_rook_magic_bitboard() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+        let move_list = MoveList::new(&board);
+
+        assert_eq!(0x01010101010101FE, move_list.rook_magic_bitboard[0]);
+        assert_eq!(0x808080808080807F, move_list.rook_magic_bitboard[0 | (0b111 << 12)]);
+        assert_eq!(0x0000000814080000, move_list.rook_magic_bitboard[magic_hash_rook(0x0000000814080000, 27)]);
+    }
 }
