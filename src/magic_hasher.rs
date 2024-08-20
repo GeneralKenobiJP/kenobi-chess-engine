@@ -16,7 +16,7 @@ const MAGIC_MASK_ROOK: [u64; 64] = [
     0x7E01010101010100, 0x7C02020202020200, 0x7A04040404040400, 0x7608080808080800, 0x6E10101010101000, 0x5E20202020202000, 0x3E40404040404000, 0x7E80808080808000,
 ];
 
-//! Magic numbers used for rook's magic bitboard hashing
+/// Magic numbers used for rook's magic bitboard hashing
 const MAGIC_NUMBERS_ROOK: [u64; 64] = [
     0x0080001020400080, 0x0040001000200040, 0x0080081000200080, 0x0080040800100080, 0x0080020400080080, 0x0080010200040080, 0x0080008001000200, 0x0080002040800100,
     0x0000800020400080, 0x0000400020005000, 0x0000801000200080, 0x0000800800100080, 0x0000800400080080, 0x0000800200040080, 0x0000800100020080, 0x0000800040800100,
@@ -28,7 +28,7 @@ const MAGIC_NUMBERS_ROOK: [u64; 64] = [
     0x00FFFCDDFCED714A, 0x007FFCDDFCED714A, 0x003FFFCDFFD88096, 0x0000040810002101, 0x0001000204080011, 0x0001000204000801, 0x0001000082000401, 0x0001FFFAABFAD1A2
 ];
 
-//! Shifts for magic numbers for rooks
+/// Shifts for magic numbers for rooks
 const MAGIC_NUMBERS_SHIFT_ROOK: [u8; 64] = [
     52, 53, 53, 53, 53, 53, 53, 52,
     53, 54, 54, 54, 54, 54, 54, 53,
@@ -40,9 +40,9 @@ const MAGIC_NUMBERS_SHIFT_ROOK: [u8; 64] = [
     53, 54, 54, 53, 53, 53, 53, 53
 ];
 
-//! Given a raw key indicating occupancy of relevant bits for a given rook and its origin,
-//! output a hash according to the magic bitboard hashing
-//! Formula: key * origin << shift
+/// Given a raw key indicating occupancy of relevant bits for a given rook and its origin,
+/// output a hash according to the magic bitboard hashing
+/// Formula: key * origin << shift
 pub fn magic_hash_rook(key: u64, origin: u8) -> usize {
     (((key.wrapping_mul(MAGIC_NUMBERS_ROOK[origin as usize]))
         >> MAGIC_NUMBERS_SHIFT_ROOK[origin as usize])
