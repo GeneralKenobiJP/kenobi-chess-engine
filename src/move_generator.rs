@@ -9,7 +9,7 @@ use crate::piece::Colour;
 use crate::board;
 use crate::board::{Board, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_MASK, UPPER_RANK_LOWEST_TILE};
 use crate::piece::Colour::{BLACK, WHITE};
-use crate::piece::Piece::{KING, KNIGHT};
+use crate::piece::Piece::{KING, KNIGHT, ROOK};
 use crate::magic_hasher;
 use crate::magic_hasher::{magic_hash_rook, MAGIC_MASK_ROOK};
 
@@ -690,10 +690,19 @@ impl<'a> MoveList<'a> {
         bitboard
     }
 
-    // fn generate_rook_moves(&mut self) {
-    //     let bitboard = self.generate_rook_moves_bitboard()
-    // }
-    
+    fn generate_rook_moves(&mut self) {
+        let mut rook_bitboard = self.board.piece_bitboards[3 + 6 * self.board.active_player as usize];
+
+        while rook_bitboard != 0 {
+            let tile = rook_bitboard & rook_bitboard.wrapping_neg();
+            rook_bitboard -= tile;
+
+            let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+            let bitboard = self.generate_knight_moves_bitboard(square);
+            self.convert_knight_moves(bitboard, square);
+        }
+    }
+
     fn get_rook_magic_bitboard(&self, origin: u8) -> u64 {
         let occupancy = self.board.main_bitboard & MAGIC_MASK_ROOK[origin];
         self.rook_magic_bitboard[magic_hash_rook(occupancy, origin)]
@@ -703,7 +712,18 @@ impl<'a> MoveList<'a> {
         self.get_rook_magic_bitboard(square) & (self.board.empty_bitboard | self.board.colour_bitboards[self.board.inactive_player as usize])
     }
 
-    // fn convert_rook_moves()
+    fn convert_rook_moves(&mut self, move_bitboard: u64, origin: u8) {
+        let mut bitboard = move_bitboard;
+
+        while bitboard != 0 {
+            let tile = bitboard & bitboard.wrapping_neg();
+            bitboard -= tile;
+
+            let target = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+
+            self.moves.push(Move { origin, target, promotion: 0, piece: ROOK });
+        }
+    }
 
 }
 
