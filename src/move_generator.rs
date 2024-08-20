@@ -1024,7 +1024,7 @@ mod tests {
     #[test]
     fn position_4() {
         let mut board = Board::new();
-        board.read_fen("r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/5N2/P7/RK6 w q d6 1 25");
+        board.read_fen("r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/2R2N2/P7/RK6 w q d6 1 25");
         let mut move_list = MoveList::new(&board);
 
         let expected_push_bitboard: u64 =               0b0100000000000000000010010000000000000000100000000000000000000000;
@@ -1033,6 +1033,7 @@ mod tests {
         let expected_right_pawn_capture_bitboard: u64 = 0b0000000000000000000001000000000000000000000000000000000000000000;
         let expected_king_bitboard: u64 =               0b0000000000000000000000000000000000000000000000000110000000100000;
         let expected_knight_bitboard1: u64 =            0b0000000000000000000000000000000000000001000000000001000100001010;
+        let expected_rook_bitboard1: u64 =              0x0020202020D82020;
 
         let mut expected_push_moves = Vec::<Move>::new();
         expected_push_moves.push(Move{ origin: 15, target: 23, promotion: 0, piece: Piece::PAWN });
@@ -1063,6 +1064,7 @@ mod tests {
         assert_eq!(move_list.generate_white_pawn_right_capture_bitboard(), expected_right_pawn_capture_bitboard);
         assert_eq!(move_list.generate_king_moves_bitboard(), expected_king_bitboard);
         assert_eq!(move_list.generate_knight_moves_bitboard(18), expected_knight_bitboard1);
+        assert_eq!(move_list.generate_rook_moves_bitboard(21), expected_rook_bitboard1);
 
         // PAWN MOVES
 
@@ -1115,9 +1117,32 @@ mod tests {
         move_list.generate_knight_moves();
         assert!(compare_vecs(&move_list.moves, &expected_knight_moves_all));
 
+        // ROOK MOVES
+
+        let mut expected_rook_moves1 = Vec::<Move>::new();
+        expected_rook_moves1.push( Move { origin: 21, target: 29, promotion: 0, piece: ROOK });
+        expected_rook_moves1.push( Move { origin: 21, target: 37, promotion: 0, piece: ROOK });
+        expected_rook_moves1.push( Move { origin: 21, target: 45, promotion: 0, piece: ROOK });
+        expected_rook_moves1.push( Move { origin: 21, target: 53, promotion: 0, piece: ROOK });
+        expected_rook_moves1.push( Move { origin: 21, target: 22, promotion: 0, piece: ROOK });
+        expected_rook_moves1.push( Move { origin: 21, target: 23, promotion: 0, piece: ROOK });
+        expected_rook_moves1.push( Move { origin: 21, target: 20, promotion: 0, piece: ROOK });
+        expected_rook_moves1.push( Move { origin: 21, target: 19, promotion: 0, piece: ROOK });
+        expected_rook_moves1.push( Move { origin: 21, target: 13, promotion: 0, piece: ROOK });
+        expected_rook_moves1.push( Move { origin: 21, target: 5, promotion: 0, piece: ROOK });
+        let mut expected_rook_moves_all = [expected_rook_moves1.clone()].concat();
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_rook_moves(expected_rook_bitboard1, 21);
+        assert!(compare_vecs(&move_list.moves, &expected_rook_moves1));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.generate_rook_moves();
+        assert!(compare_vecs(&move_list.moves, &expected_rook_moves_all));
+
         // ALL MOVES
 
-        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all].concat();
+        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all].concat();
 
         move_list.moves = Vec::<Move>::new();
         move_list.generate_moves();
