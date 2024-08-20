@@ -11,7 +11,7 @@ use crate::board::{Board, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_M
 use crate::piece::Colour::{BLACK, WHITE};
 use crate::piece::Piece::{KING, KNIGHT};
 use crate::magic_hasher;
-use crate::magic_hasher::magic_hash_rook;
+use crate::magic_hasher::{magic_hash_rook, MAGIC_MASK_ROOK};
 
 const KNIGHT_SHIFTS: [i8; 8] = [17, 10, -6, -15, -17, -10, 6, 15]; // Beginning on NW, counter-clockwise
 
@@ -689,6 +689,21 @@ impl<'a> MoveList<'a> {
 
         bitboard
     }
+
+    // fn generate_rook_moves(&mut self) {
+    //     let bitboard = self.generate_rook_moves_bitboard()
+    // }
+    
+    fn get_rook_magic_bitboard(&self, origin: u8) -> u64 {
+        let occupancy = self.board.main_bitboard & MAGIC_MASK_ROOK[origin];
+        self.rook_magic_bitboard[magic_hash_rook(occupancy, origin)]
+    }
+
+    fn generate_rook_moves_bitboard(&self, square: u8) -> u64 {
+        self.get_rook_magic_bitboard(square) & (self.board.empty_bitboard | self.board.colour_bitboards[self.board.inactive_player as usize])
+    }
+
+    // fn convert_rook_moves()
 
 }
 
