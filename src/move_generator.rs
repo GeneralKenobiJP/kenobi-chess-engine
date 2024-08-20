@@ -11,7 +11,7 @@ use crate::board::{Board, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_M
 use crate::piece::Colour::{BLACK, WHITE};
 use crate::piece::Piece::{KING, KNIGHT, ROOK};
 use crate::magic_hasher;
-use crate::magic_hasher::{magic_hash_rook, MAGIC_MASK_ROOK};
+use crate::magic_hasher::{magic_hash_bishop, magic_hash_rook, MAGIC_MASK_BISHOP, MAGIC_MASK_ROOK};
 
 const KNIGHT_SHIFTS: [i8; 8] = [17, 10, -6, -15, -17, -10, 6, 15]; // Beginning on NW, counter-clockwise
 
@@ -28,7 +28,8 @@ struct MoveList<'a> {
     moves: Vec<Move>,
     king_lookup_table: [u64; 64], // should be treated as immutable after setup
     knight_lookup_table: [u64; 64], // should be treated as immutable after setup
-    rook_magic_bitboard: Vec<u64>
+    rook_magic_bitboard: Vec<u64>,
+    bishop_magic_bitboard: Vec<u64>
 }
 
 impl<'a> MoveList<'a> {
@@ -38,7 +39,8 @@ impl<'a> MoveList<'a> {
             moves: Vec::new(),
             king_lookup_table: Self::setup_king_lookup_table(),
             knight_lookup_table: Self::setup_knight_lookup_table(),
-            rook_magic_bitboard: Self::setup_rook_magic_bitboard()
+            rook_magic_bitboard: Self::setup_rook_magic_bitboard(),
+            bishop_magic_bitboard: Self::setup_bishop_magic_bitboard()
         }
     }
 
@@ -552,25 +554,26 @@ impl<'a> MoveList<'a> {
     /// Outputs bits of the occupancy mask in vector in such a manner
     /// that after concatenation it would be the full rook occupancy mask for the given square
     fn generate_rook_magic_key_mask(square: u8, origin: u64) -> Vec<u64> {
-        let mut full_mask: u64 = 0;
+        // let mut full_mask: u64 = 0;
+        let mut full_mask: u64 = MAGIC_MASK_ROOK[square as usize];
 
         // Note that we omit the edges
 
-        let rank_start: u8 = square - square % 8 + 1;
-        let mut rank_tile: u64 = 1 << rank_start;
-        for i in 0..6 {
-            full_mask |= rank_tile;
-
-            rank_tile <<= 1;
-        }
-
-        let file_start: u8 = square % 8 + 8;
-        let mut file_tile: u64 = 1 << file_start;
-        for i in 0..6 {
-            full_mask |= file_tile;
-
-            file_tile <<= 8;
-        }
+        // let rank_start: u8 = square - square % 8 + 1;
+        // let mut rank_tile: u64 = 1 << rank_start;
+        // for i in 0..6 {
+        //     full_mask |= rank_tile;
+        //
+        //     rank_tile <<= 1;
+        // }
+        //
+        // let file_start: u8 = square % 8 + 8;
+        // let mut file_tile: u64 = 1 << file_start;
+        // for i in 0..6 {
+        //     full_mask |= file_tile;
+        //
+        //     file_tile <<= 8;
+        // }
 
         let mut full_mask_vector = Vec::<u64>::new();
         while full_mask > 0 {
@@ -737,6 +740,210 @@ impl<'a> MoveList<'a> {
             self.moves.push(Move { origin, target, promotion: 0, piece: ROOK });
         }
     }
+
+    /// BISHOP MOVE GENERATION
+
+    /// Outputs a magic bitboard of possible bishop moves at given square and given occupancy
+    /// Used by the constructor of the board for initialization of the magic bitboard
+    fn setup_bishop_magic_bitboard() -> Vec<u64> {
+        let mut magic_bitboard = vec![0u64;262145];
+
+        for square in 0..64 {
+            let origin = 1 << square;
+
+            let full_mask_vector = Self::generate_bishop_magic_key_mask(square, origin);
+
+            // Occupancy combinations
+
+            for combination_mask in 0..(1 << full_mask_vector.len()) {
+                // let raw_key = Self::generate_bishop_magic_raw_key(&full_mask_vector, combination_mask);
+                // let value = Self::generate_bishop_magic_value(raw_key, square);
+                // let key = magic_hash_bishop(raw_key, square);
+
+                // magic_bitboard[key] = value;
+            }
+
+        }
+
+        magic_bitboard
+    }
+
+    /// Generates full bishop occupancy mask for a given square
+    /// Supposes there is a piece on every relevant tile
+    /// Used for creating permutations of occupancies while creating magic bitboards
+    /// parameters:
+    ///     - square - number of the square we are considering (u8)
+    ///     - origin - u64 number with one bit set to 1 that identifies the given square (eq. to 1 << square)
+    /// Outputs bits of the occupancy mask in vector in such a manner
+    /// that after concatenation it would be the full rook occupancy mask for the given square
+    fn generate_bishop_magic_key_mask(square: u8, origin: u64) -> Vec<u64> {
+        let mut full_mask: u64 = MAGIC_MASK_BISHOP[square as usize];
+
+        let mut full_mask_vector = Vec::<u64>::new();
+        while full_mask > 0 {
+            let tile = full_mask & full_mask.wrapping_neg();
+            full_mask -= tile;
+
+            if tile != origin { full_mask_vector.push(tile); }
+        }
+        full_mask_vector
+    }
+
+    // /// Generate a raw key for magic rook bitboard (unhashed)
+    // /// given a mask vector of bits and a combination mask indicating which bits to consider
+    // /// Example: [0100 0000, 0001 0000, 0000 1000, 0000 0001], 0b1011
+    // ///         should output 0100 1001
+    // fn generate_rook_magic_raw_key(full_mask_vector: &Vec<u64>, combination_mask: i32) -> u64 {
+    //     let mut mask = combination_mask;
+    //     let mut key: u64 = 0;
+    //     let mut index = 0;
+    //     while mask > 0 {
+    //         if mask % 2 == 1 { key |= full_mask_vector[index]; }
+    //         index += 1;
+    //         mask >>= 1;
+    //     }
+    //     key
+    // }
+    //
+    // /// Generates a bitboard of possible rook moves,
+    // /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    // fn generate_rook_magic_value(key: u64, origin: u8) -> u64 {
+    //     Self::generate_rook_magic_bitboard_left(key, origin)
+    //     | Self::generate_rook_magic_bitboard_right(key, origin)
+    //     | Self::generate_rook_magic_bitboard_top(key, origin)
+    //     | Self::generate_rook_magic_bitboard_bottom(key, origin)
+    // }
+    //
+    // /// Generates a bitboard of possible rook West moves,
+    // /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    // /// Called by generate_rook_magic_value, should not be called independently
+    // fn generate_rook_magic_bitboard_left(key: u64, origin: u8) -> u64 {
+    //     let mut bitboard: u64 = 0;
+    //
+    //     if origin % 8 == 7 {return bitboard;}
+    //
+    //     let mut square = origin + 1;
+    //
+    //     while square % 8 != 7 {
+    //         bitboard |= 1 << square;
+    //         if (key >> square) % 2 == 1 { break; }
+    //
+    //         square += 1;
+    //     }
+    //     bitboard |= 1 << square;
+    //
+    //     bitboard
+    // }
+    //
+    // /// Generates a bitboard of possible rook East moves,
+    // /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    // /// Called by generate_rook_magic_value, should not be called independently
+    // fn generate_rook_magic_bitboard_right(key: u64, origin: u8) -> u64 {
+    //     let mut bitboard: u64 = 0;
+    //
+    //     if origin % 8 == 0 {return bitboard;}
+    //
+    //     let mut square = origin - 1;
+    //
+    //     while square % 8 != 0 {
+    //         bitboard |= 1 << square;
+    //         if (key >> square) % 2 == 1 { break; }
+    //
+    //         square -= 1;
+    //     }
+    //     bitboard |= 1 << square;
+    //
+    //     bitboard
+    // }
+    //
+    // /// Generates a bitboard of possible rook North moves,
+    // /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    // /// Called by generate_rook_magic_value, should not be called independently
+    // fn generate_rook_magic_bitboard_top(key: u64, origin: u8) -> u64 {
+    //     let mut bitboard: u64 = 0;
+    //
+    //     if origin / 8 == 7 {return bitboard;}
+    //
+    //     let mut square = origin + 8;
+    //
+    //     while square / 8 != 7 {
+    //         bitboard |= 1 << square;
+    //         if (key >> square) % 2 == 1 { break; }
+    //
+    //         square += 8;
+    //     }
+    //     bitboard |= 1 << square;
+    //
+    //     bitboard
+    // }
+    //
+    // /// Generates a bitboard of possible rook South moves,
+    // /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    // /// Called by generate_rook_magic_value, should not be called independently
+    // fn generate_rook_magic_bitboard_bottom(key: u64, origin: u8) -> u64 {
+    //     let mut bitboard: u64 = 0;
+    //
+    //     if origin / 8 == 0 {return bitboard;}
+    //
+    //     let mut square = origin - 8;
+    //
+    //     while square / 8 != 0 {
+    //         bitboard |= 1 << square;
+    //         if (key >> square) % 2 == 1 { break; }
+    //
+    //         square -= 8;
+    //     }
+    //     bitboard |= 1 << square;
+    //
+    //     bitboard
+    // }
+    //
+    // /// Generates moves of rooks based on the current board situation and updates self
+    // fn generate_rook_moves(&mut self) {
+    //     let mut rook_bitboard = self.board.piece_bitboards[3 + 6 * self.board.active_player as usize];
+    //
+    //     while rook_bitboard != 0 {
+    //         let tile = rook_bitboard & rook_bitboard.wrapping_neg();
+    //         rook_bitboard -= tile;
+    //
+    //         let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+    //         let bitboard = self.generate_rook_moves_bitboard(square);
+    //         self.convert_rook_moves(bitboard, square);
+    //     }
+    // }
+    //
+    // /// Retrieves rook magic bitboard based on a given origin and current board situation
+    // /// Constructs occupancy mask from the current board situation and
+    // /// masks it with the relevant magic mask to obtain a raw key,
+    // /// then hashes using magic hash to obtain a hashed key
+    // fn get_rook_magic_bitboard(&self, origin: u8) -> u64 {
+    //     let occupancy = self.board.main_bitboard & MAGIC_MASK_ROOK[origin as usize];
+    //     self.rook_magic_bitboard[magic_hash_rook(occupancy, origin)]
+    // }
+    //
+    // /// Outputs a bitboard of rook moves, based on the current board occupancy, given the rook's square
+    // fn generate_rook_moves_bitboard(&self, square: u8) -> u64 {
+    //     self.get_rook_magic_bitboard(square) & (self.board.empty_bitboard | self.board.colour_bitboards[self.board.inactive_player as usize])
+    // }
+    //
+    // /// Converts a bitboard of rook moves into a list of moves and updates self
+    // /// Takes origin square of the rook as input
+    // /// Should be used separately for each owned knight
+    // /// parameters:
+    // ///     move_bitboard - bitboards of squares targeted by a move subgroup
+    // ///     origin - number of the square the given rook is on
+    // fn convert_rook_moves(&mut self, move_bitboard: u64, origin: u8) {
+    //     let mut bitboard = move_bitboard;
+    //
+    //     while bitboard != 0 {
+    //         let tile = bitboard & bitboard.wrapping_neg();
+    //         bitboard -= tile;
+    //
+    //         let target = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+    //
+    //         self.moves.push(Move { origin, target, promotion: 0, piece: ROOK });
+    //     }
+    // }
 
 }
 
