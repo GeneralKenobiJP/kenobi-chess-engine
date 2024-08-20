@@ -2,13 +2,16 @@
 //! Generates a vector of moves based on the input board position
 //! Involves bitboards, magic bitboards, etc.
 
+use std::collections::HashSet;
 use crate::piece;
 use crate::piece::Piece;
 use crate::piece::Colour;
 use crate::board;
 use crate::board::{Board, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_MASK, UPPER_RANK_LOWEST_TILE};
 use crate::piece::Colour::{BLACK, WHITE};
-use crate::piece::Piece::{KING, KNIGHT};
+use crate::piece::Piece::{KING, KNIGHT, ROOK};
+use crate::magic_hasher;
+use crate::magic_hasher::{magic_hash_rook, MAGIC_MASK_ROOK};
 
 const KNIGHT_SHIFTS: [i8; 8] = [17, 10, -6, -15, -17, -10, 6, 15]; // Beginning on NW, counter-clockwise
 
@@ -24,7 +27,8 @@ struct MoveList<'a> {
     board: &'a Board,
     moves: Vec<Move>,
     king_lookup_table: [u64; 64], // should be treated as immutable after setup
-    knight_lookup_table: [u64; 64] // should be treated as immutable after setup
+    knight_lookup_table: [u64; 64], // should be treated as immutable after setup
+    rook_magic_bitboard: Vec<u64>
 }
 
 impl<'a> MoveList<'a> {
@@ -33,7 +37,8 @@ impl<'a> MoveList<'a> {
             board,
             moves: Vec::new(),
             king_lookup_table: Self::setup_king_lookup_table(),
-            knight_lookup_table: Self::setup_knight_lookup_table()
+            knight_lookup_table: Self::setup_knight_lookup_table(),
+            rook_magic_bitboard: Self::setup_rook_magic_bitboard()
         }
     }
 
@@ -54,6 +59,7 @@ impl<'a> MoveList<'a> {
         }
 
         self.generate_knight_moves();
+        self.generate_rook_moves();
     }
 
     /// KING MOVE GENERATION
@@ -310,6 +316,7 @@ impl<'a> MoveList<'a> {
     }
 
     /// Outputs a bitboard of single push white pawn moves, based on the current board situation
+    /// We do not need to consider edges because of promotions
     fn generate_white_push_bitboard(&self) -> u64 {
         self.board.piece_bitboards[Piece::PAWN as usize] << 8
             & self.board.empty_bitboard
@@ -412,6 +419,7 @@ impl<'a> MoveList<'a> {
     }
 
     /// Outputs a bitboard of single push black pawn moves, based on the current board situation
+    /// We do not need to consider edges because of promotions
     fn generate_black_push_bitboard(&self) -> u64 {
         self.board.piece_bitboards[Piece::PAWN as usize + 6] >> 8
             & self.board.empty_bitboard
@@ -508,8 +516,231 @@ impl<'a> MoveList<'a> {
         }
     }
 
+    /// ROOK MOVE GENERATION
+
+    /// Outputs a magic bitboard of possible rook moves at given square and given occupancy
+    /// Used by the constructor of the board for initialization of the magic bitboard
+    fn setup_rook_magic_bitboard() -> Vec<u64> {
+        let mut magic_bitboard = vec![0u64;1048577];
+
+        for square in 0..64 {
+            let origin = 1 << square;
+
+            let full_mask_vector = Self::generate_rook_magic_key_mask(square, origin);
+
+            // Occupancy combinations
+
+            for combination_mask in 0..(1 << full_mask_vector.len()) {
+                let raw_key = Self::generate_rook_magic_raw_key(&full_mask_vector, combination_mask);
+                let value = Self::generate_rook_magic_value(raw_key, square);
+                let key = magic_hash_rook(raw_key, square);
+
+                magic_bitboard[key] = value;
+            }
+
+        }
+
+        magic_bitboard
+    }
+
+    /// Generates full rook occupancy mask for a given square
+    /// Supposes there is a piece on every relevant tile
+    /// Used for creating permutations of occupancies while creating magic bitboards
+    /// parameters:
+    ///     - square - number of the square we are considering (u8)
+    ///     - origin - u64 number with one bit set to 1 that identifies the given square (eq. to 1 << square)
+    /// Outputs bits of the occupancy mask in vector in such a manner
+    /// that after concatenation it would be the full rook occupancy mask for the given square
+    fn generate_rook_magic_key_mask(square: u8, origin: u64) -> Vec<u64> {
+        let mut full_mask: u64 = 0;
+
+        // Note that we omit the edges
+
+        let rank_start: u8 = square - square % 8 + 1;
+        let mut rank_tile: u64 = 1 << rank_start;
+        for i in 0..6 {
+            full_mask |= rank_tile;
+
+            rank_tile <<= 1;
+        }
+
+        let file_start: u8 = square % 8 + 8;
+        let mut file_tile: u64 = 1 << file_start;
+        for i in 0..6 {
+            full_mask |= file_tile;
+
+            file_tile <<= 8;
+        }
+
+        let mut full_mask_vector = Vec::<u64>::new();
+        while full_mask > 0 {
+            let tile = full_mask & full_mask.wrapping_neg();
+            full_mask -= tile;
+
+            if tile != origin { full_mask_vector.push(tile); }
+        }
+        full_mask_vector
+    }
+
+    /// Generate a raw key for magic rook bitboard (unhashed)
+    /// given a mask vector of bits and a combination mask indicating which bits to consider
+    /// Example: [0100 0000, 0001 0000, 0000 1000, 0000 0001], 0b1011
+    ///         should output 0100 1001
+    fn generate_rook_magic_raw_key(full_mask_vector: &Vec<u64>, combination_mask: i32) -> u64 {
+        let mut mask = combination_mask;
+        let mut key: u64 = 0;
+        let mut index = 0;
+        while mask > 0 {
+            if mask % 2 == 1 { key |= full_mask_vector[index]; }
+            index += 1;
+            mask >>= 1;
+        }
+        key
+    }
+
+    /// Generates a bitboard of possible rook moves,
+    /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    fn generate_rook_magic_value(key: u64, origin: u8) -> u64 {
+        Self::generate_rook_magic_bitboard_left(key, origin)
+        | Self::generate_rook_magic_bitboard_right(key, origin)
+        | Self::generate_rook_magic_bitboard_top(key, origin)
+        | Self::generate_rook_magic_bitboard_bottom(key, origin)
+    }
+
+    /// Generates a bitboard of possible rook West moves,
+    /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    /// Called by generate_rook_magic_value, should not be called independently
+    fn generate_rook_magic_bitboard_left(key: u64, origin: u8) -> u64 {
+        let mut bitboard: u64 = 0;
+
+        if origin % 8 == 7 {return bitboard;}
+
+        let mut square = origin + 1;
+
+        while square % 8 != 7 {
+            bitboard |= 1 << square;
+            if (key >> square) % 2 == 1 { break; }
+
+            square += 1;
+        }
+        bitboard |= 1 << square;
+
+        bitboard
+    }
+
+    /// Generates a bitboard of possible rook East moves,
+    /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    /// Called by generate_rook_magic_value, should not be called independently
+    fn generate_rook_magic_bitboard_right(key: u64, origin: u8) -> u64 {
+        let mut bitboard: u64 = 0;
+
+        if origin % 8 == 0 {return bitboard;}
+
+        let mut square = origin - 1;
+
+        while square % 8 != 0 {
+            bitboard |= 1 << square;
+            if (key >> square) % 2 == 1 { break; }
+
+            square -= 1;
+        }
+        bitboard |= 1 << square;
+
+        bitboard
+    }
+
+    /// Generates a bitboard of possible rook North moves,
+    /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    /// Called by generate_rook_magic_value, should not be called independently
+    fn generate_rook_magic_bitboard_top(key: u64, origin: u8) -> u64 {
+        let mut bitboard: u64 = 0;
+
+        if origin / 8 == 7 {return bitboard;}
+
+        let mut square = origin + 8;
+
+        while square / 8 != 7 {
+            bitboard |= 1 << square;
+            if (key >> square) % 2 == 1 { break; }
+
+            square += 8;
+        }
+        bitboard |= 1 << square;
+
+        bitboard
+    }
+
+    /// Generates a bitboard of possible rook South moves,
+    /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    /// Called by generate_rook_magic_value, should not be called independently
+    fn generate_rook_magic_bitboard_bottom(key: u64, origin: u8) -> u64 {
+        let mut bitboard: u64 = 0;
+
+        if origin / 8 == 0 {return bitboard;}
+
+        let mut square = origin - 8;
+
+        while square / 8 != 0 {
+            bitboard |= 1 << square;
+            if (key >> square) % 2 == 1 { break; }
+
+            square -= 8;
+        }
+        bitboard |= 1 << square;
+
+        bitboard
+    }
+
+    /// Generates moves of rooks based on the current board situation and updates self
+    fn generate_rook_moves(&mut self) {
+        let mut rook_bitboard = self.board.piece_bitboards[3 + 6 * self.board.active_player as usize];
+
+        while rook_bitboard != 0 {
+            let tile = rook_bitboard & rook_bitboard.wrapping_neg();
+            rook_bitboard -= tile;
+
+            let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+            let bitboard = self.generate_rook_moves_bitboard(square);
+            self.convert_rook_moves(bitboard, square);
+        }
+    }
+
+    /// Retrieves rook magic bitboard based on a given origin and current board situation
+    /// Constructs occupancy mask from the current board situation and
+    /// masks it with the relevant magic mask to obtain a raw key,
+    /// then hashes using magic hash to obtain a hashed key
+    fn get_rook_magic_bitboard(&self, origin: u8) -> u64 {
+        let occupancy = self.board.main_bitboard & MAGIC_MASK_ROOK[origin as usize];
+        self.rook_magic_bitboard[magic_hash_rook(occupancy, origin)]
+    }
+
+    /// Outputs a bitboard of rook moves, based on the current board occupancy, given the rook's square
+    fn generate_rook_moves_bitboard(&self, square: u8) -> u64 {
+        self.get_rook_magic_bitboard(square) & (self.board.empty_bitboard | self.board.colour_bitboards[self.board.inactive_player as usize])
+    }
+
+    /// Converts a bitboard of rook moves into a list of moves and updates self
+    /// Takes origin square of the rook as input
+    /// Should be used separately for each owned knight
+    /// parameters:
+    ///     move_bitboard - bitboards of squares targeted by a move subgroup
+    ///     origin - number of the square the given rook is on
+    fn convert_rook_moves(&mut self, move_bitboard: u64, origin: u8) {
+        let mut bitboard = move_bitboard;
+
+        while bitboard != 0 {
+            let tile = bitboard & bitboard.wrapping_neg();
+            bitboard -= tile;
+
+            let target = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+
+            self.moves.push(Move { origin, target, promotion: 0, piece: ROOK });
+        }
+    }
 
 }
+
+/// /// /// TESTS
 
 #[cfg(test)]
 mod tests {
@@ -544,6 +775,8 @@ mod tests {
         let expected_king_bitboard: u64 = 0;
         let expected_knight_bitboard1: u64 = 0b0000000000000000000000000000000000000000101000000000000000000000;
         let expected_knight_bitboard2: u64 = 0b0000000000000000000000000000000000000000000001010000000000000000;
+        let expected_rook_bitboard1: u64 = 0;
+        let expected_rook_bitboard2: u64 = 0;
 
         let mut expected_push_moves = Vec::<Move>::new();
         expected_push_moves.push(Move{ origin: 8, target: 16, promotion: 0, piece: Piece::PAWN });
@@ -577,6 +810,8 @@ mod tests {
         assert_eq!(move_list.generate_king_moves_bitboard(), expected_king_bitboard);
         assert_eq!(move_list.generate_knight_moves_bitboard(6), expected_knight_bitboard1);
         assert_eq!(move_list.generate_knight_moves_bitboard(1), expected_knight_bitboard2);
+        assert_eq!(move_list.generate_rook_moves_bitboard(0), expected_rook_bitboard1);
+        assert_eq!(move_list.generate_rook_moves_bitboard(7), expected_rook_bitboard2);
 
         // PAWN MOVES
 
@@ -630,9 +865,27 @@ mod tests {
         move_list.generate_knight_moves();
         assert!(compare_vecs(&move_list.moves, &expected_knight_moves_all));
 
+        // ROOK MOVES
+
+        let mut expected_rook_moves1 = Vec::<Move>::new();
+        let mut expected_rook_moves2 = Vec::<Move>::new();
+        let mut expected_rook_moves_all = [expected_rook_moves1.clone(), expected_rook_moves2.clone()].concat();
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_rook_moves(expected_rook_bitboard1, 0);
+        assert!(compare_vecs(&move_list.moves, &expected_rook_moves1));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_rook_moves(expected_rook_bitboard2, 7);
+        assert!(compare_vecs(&move_list.moves, &expected_rook_moves2));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.generate_rook_moves();
+        assert!(compare_vecs(&move_list.moves, &expected_rook_moves_all));
+
         // ALL MOVES
 
-        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all].concat();
+        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all].concat();
 
         move_list.moves = Vec::<Move>::new();
         move_list.generate_moves();
@@ -652,6 +905,8 @@ mod tests {
         let expected_king_bitboard: u64 = 0;
         let expected_knight_bitboard1: u64 = 0b0000000000000000101000000000000000000000000000000000000000000000;
         let expected_knight_bitboard2: u64 = 0b0000000000000000000001010000000000000000000000000000000000000000;
+        let expected_rook_bitboard1: u64 = 0;
+        let expected_rook_bitboard2: u64 = 0;
 
         let mut expected_push_moves = Vec::<Move>::new();
         expected_push_moves.push(Move{ origin: 55, target: 47, promotion: 0, piece: Piece::PAWN });
@@ -683,6 +938,8 @@ mod tests {
         assert_eq!(move_list.generate_king_moves_bitboard(), expected_king_bitboard);
         assert_eq!(move_list.generate_knight_moves_bitboard(62), expected_knight_bitboard1);
         assert_eq!(move_list.generate_knight_moves_bitboard(57), expected_knight_bitboard2);
+        assert_eq!(move_list.generate_rook_moves_bitboard(63), expected_rook_bitboard1);
+        assert_eq!(move_list.generate_rook_moves_bitboard(56), expected_rook_bitboard2);
 
         // PAWN MOVES
 
@@ -736,9 +993,27 @@ mod tests {
         move_list.generate_knight_moves();
         assert!(compare_vecs(&move_list.moves, &expected_knight_moves_all));
 
+        // ROOK MOVES
+
+        let mut expected_rook_moves1 = Vec::<Move>::new();
+        let mut expected_rook_moves2 = Vec::<Move>::new();
+        let expected_rook_moves_all = [expected_rook_moves1.clone(), expected_rook_moves2.clone()].concat();
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_rook_moves(expected_rook_bitboard1, 63);
+        assert!(compare_vecs(&move_list.moves, &expected_rook_moves1));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_rook_moves(expected_rook_bitboard2, 56);
+        assert!(compare_vecs(&move_list.moves, &expected_rook_moves2));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.generate_rook_moves();
+        assert!(compare_vecs(&move_list.moves, &expected_rook_moves_all));
+
         // ALL MOVES
 
-        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all].concat();
+        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all].concat();
 
         move_list.moves = Vec::<Move>::new();
         move_list.generate_moves();
@@ -749,7 +1024,7 @@ mod tests {
     #[test]
     fn position_4() {
         let mut board = Board::new();
-        board.read_fen("r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/5N2/P7/RK6 w q d6 1 25");
+        board.read_fen("r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/2R2N2/P7/RK6 w q d6 1 25");
         let mut move_list = MoveList::new(&board);
 
         let expected_push_bitboard: u64 =               0b0100000000000000000010010000000000000000100000000000000000000000;
@@ -758,6 +1033,7 @@ mod tests {
         let expected_right_pawn_capture_bitboard: u64 = 0b0000000000000000000001000000000000000000000000000000000000000000;
         let expected_king_bitboard: u64 =               0b0000000000000000000000000000000000000000000000000110000000100000;
         let expected_knight_bitboard1: u64 =            0b0000000000000000000000000000000000000001000000000001000100001010;
+        let expected_rook_bitboard1: u64 =              0x0020202020D82020;
 
         let mut expected_push_moves = Vec::<Move>::new();
         expected_push_moves.push(Move{ origin: 15, target: 23, promotion: 0, piece: Piece::PAWN });
@@ -788,6 +1064,7 @@ mod tests {
         assert_eq!(move_list.generate_white_pawn_right_capture_bitboard(), expected_right_pawn_capture_bitboard);
         assert_eq!(move_list.generate_king_moves_bitboard(), expected_king_bitboard);
         assert_eq!(move_list.generate_knight_moves_bitboard(18), expected_knight_bitboard1);
+        assert_eq!(move_list.generate_rook_moves_bitboard(21), expected_rook_bitboard1);
 
         // PAWN MOVES
 
@@ -840,9 +1117,32 @@ mod tests {
         move_list.generate_knight_moves();
         assert!(compare_vecs(&move_list.moves, &expected_knight_moves_all));
 
+        // ROOK MOVES
+
+        let mut expected_rook_moves1 = Vec::<Move>::new();
+        expected_rook_moves1.push( Move { origin: 21, target: 29, promotion: 0, piece: ROOK });
+        expected_rook_moves1.push( Move { origin: 21, target: 37, promotion: 0, piece: ROOK });
+        expected_rook_moves1.push( Move { origin: 21, target: 45, promotion: 0, piece: ROOK });
+        expected_rook_moves1.push( Move { origin: 21, target: 53, promotion: 0, piece: ROOK });
+        expected_rook_moves1.push( Move { origin: 21, target: 22, promotion: 0, piece: ROOK });
+        expected_rook_moves1.push( Move { origin: 21, target: 23, promotion: 0, piece: ROOK });
+        expected_rook_moves1.push( Move { origin: 21, target: 20, promotion: 0, piece: ROOK });
+        expected_rook_moves1.push( Move { origin: 21, target: 19, promotion: 0, piece: ROOK });
+        expected_rook_moves1.push( Move { origin: 21, target: 13, promotion: 0, piece: ROOK });
+        expected_rook_moves1.push( Move { origin: 21, target: 5, promotion: 0, piece: ROOK });
+        let mut expected_rook_moves_all = [expected_rook_moves1.clone()].concat();
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_rook_moves(expected_rook_bitboard1, 21);
+        assert!(compare_vecs(&move_list.moves, &expected_rook_moves1));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.generate_rook_moves();
+        assert!(compare_vecs(&move_list.moves, &expected_rook_moves_all));
+
         // ALL MOVES
 
-        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all].concat();
+        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all].concat();
 
         move_list.moves = Vec::<Move>::new();
         move_list.generate_moves();
@@ -1063,5 +1363,154 @@ mod tests {
         assert_eq!(0b0000000000000000000000000000000000000000010000000010000000000000, move_list.knight_lookup_table[7]);
         assert_eq!(0b0000000000000000000000000001010000100010000000000010001000010100, move_list.knight_lookup_table[19]);
         assert_eq!(0b0000010000000000000001000000001000000000000000000000000000000000, move_list.knight_lookup_table[48]);
+    }
+
+    #[test]
+    fn check_rook_magic_bitboard_value_generation() {
+        let key: u64 =          0b0000000000000000000001000000000000001000000000000000000000000000;
+        let origin: u8 = 26;
+
+        let value_left: u64 =   0b0000000000000000000000000000000000001000000000000000000000000000;
+        let value_right: u64 =  0b0000000000000000000000000000000000000011000000000000000000000000;
+        let value_top: u64 =    0b0000000000000000000001000000010000000000000000000000000000000000;
+        let value_bottom: u64 = 0b0000000000000000000000000000000000000000000001000000010000000100;
+
+        assert_eq!(value_left, MoveList::generate_rook_magic_bitboard_left(key, origin));
+        assert_eq!(value_right, MoveList::generate_rook_magic_bitboard_right(key, origin));
+        assert_eq!(value_top, MoveList::generate_rook_magic_bitboard_top(key, origin));
+        assert_eq!(value_bottom, MoveList::generate_rook_magic_bitboard_bottom(key, origin));
+        assert_eq!(value_left | value_right | value_top | value_bottom, MoveList::generate_rook_magic_value(key, origin));
+    }
+
+    #[test]
+    fn check_rook_magic_bitboard_value_generation_edge() {
+        let key: u64 =          0;
+        let origin: u8 = 0;
+
+        let value_left: u64 =   0b0000000000000000000000000000000000000000000000000000000011111110;
+        let value_right: u64 =  0b0000000000000000000000000000000000000000000000000000000000000000;
+        let value_top: u64 =    0b0000000100000001000000010000000100000001000000010000000100000000;
+        let value_bottom: u64 = 0b0000000000000000000000000000000000000000000000000000000000000000;
+
+        assert_eq!(value_left, MoveList::generate_rook_magic_bitboard_left(key, origin));
+        assert_eq!(value_right, MoveList::generate_rook_magic_bitboard_right(key, origin));
+        assert_eq!(value_top, MoveList::generate_rook_magic_bitboard_top(key, origin));
+        assert_eq!(value_bottom, MoveList::generate_rook_magic_bitboard_bottom(key, origin));
+        assert_eq!(value_left | value_right | value_top | value_bottom, MoveList::generate_rook_magic_value(key, origin));
+    }
+
+    #[test]
+    fn check_rook_magic_bitboard_raw_key_generation() {
+        let mut key_mask_vector = Vec::<u64>::new();
+        // key_mask_vector.push(0b0000000000000000000000000000000000000000000000000000000000000100);
+        key_mask_vector.push(0b0000000000000000000000000000000000000000000000000000010000000000);
+        key_mask_vector.push(0b0000000000000000000000000000000000000000000001000000000000000000);
+        // key_mask_vector.push(0b0000000000000000000000000000000000000001000000000000000000000000);
+        key_mask_vector.push(0b0000000000000000000000000000000000000010000000000000000000000000);
+        key_mask_vector.push(0b0000000000000000000000000000000000001000000000000000000000000000);
+        key_mask_vector.push(0b0000000000000000000000000000000000010000000000000000000000000000);
+        key_mask_vector.push(0b0000000000000000000000000000000000100000000000000000000000000000);
+        key_mask_vector.push(0b0000000000000000000000000000000001000000000000000000000000000000);
+        // key_mask_vector.push(0b0000000000000000000000000000000010000000000000000000000000000000);
+        key_mask_vector.push(0b0000000000000000000000000000010000000000000000000000000000000000);
+        key_mask_vector.push(0b0000000000000000000001000000000000000000000000000000000000000000);
+        key_mask_vector.push(0b0000000000000100000000000000000000000000000000000000000000000000);
+        // key_mask_vector.push(0b0000010000000000000000000000000000000000000000000000000000000000);
+
+        let combination_mask = 0b00000000001011;
+
+        let expected_raw_mask=0b0000000000000000000000000000000000001000000001000000010000000000;
+
+        assert_eq!(expected_raw_mask, MoveList::generate_rook_magic_raw_key(&key_mask_vector, combination_mask));
+    }
+
+    #[test]
+    fn check_rook_magic_bitboard_mask_vector_generation() {
+        let mut key_mask_vector = Vec::<u64>::new();
+        key_mask_vector.push(0b0000000000000000000000000000000000000000000000000000010000000000);
+        key_mask_vector.push(0b0000000000000000000000000000000000000000000001000000000000000000);
+        key_mask_vector.push(0b0000000000000000000000000000000000000010000000000000000000000000);
+        key_mask_vector.push(0b0000000000000000000000000000000000001000000000000000000000000000);
+        key_mask_vector.push(0b0000000000000000000000000000000000010000000000000000000000000000);
+        key_mask_vector.push(0b0000000000000000000000000000000000100000000000000000000000000000);
+        key_mask_vector.push(0b0000000000000000000000000000000001000000000000000000000000000000);
+        key_mask_vector.push(0b0000000000000000000000000000010000000000000000000000000000000000);
+        key_mask_vector.push(0b0000000000000000000001000000000000000000000000000000000000000000);
+        key_mask_vector.push(0b0000000000000100000000000000000000000000000000000000000000000000);
+
+        // let mut expected_full_mask: u64= 0;
+        // for i in key_mask_vector { expected_full_mask += i; }
+
+        assert_eq!(key_mask_vector, MoveList::generate_rook_magic_key_mask(26, 1<<26));
+    }
+
+    #[test]
+    fn rook_key_mask_vector() {
+        let mut expected_vec1 = vec![0x0001000000000000, 0x0000010000000000, 0x0000000100000000, 0x0000000001000000, 0x000000000010000, 0x0000000000000100,
+                        0x0000000000000040, 0x0000000000000020, 0x0000000000000010, 0x0000000000000008, 0x0000000000000004, 0x0000000000000002];
+        expected_vec1.reverse();
+        assert_eq!(expected_vec1, MoveList::generate_rook_magic_key_mask(0,0));
+
+        let mut expected_vec2 = vec![0x0080000000000000, 0x0000800000000000, 0x0000008000000000, 0x0000000080000000, 0x000000000800000, 0x0000000000008000,
+                        0x0000000000000040, 0x0000000000000020, 0x0000000000000010, 0x0000000000000008, 0x0000000000000004, 0x0000000000000002];
+        expected_vec2.reverse();
+        assert_eq!(expected_vec2, MoveList::generate_rook_magic_key_mask(7,1 << 7));
+
+        let mut expected_vec3 = vec![0x0008000000000000, 0x0000080000000000, 0x0000000800000000, 0x0000000000080000, 0x0000000000000800,
+                                     0x0000000040000000, 0x0000000020000000, 0x0000000010000000, 0x0000000004000000, 0x0000000002000000];
+        expected_vec3.sort();
+        let mut actual = MoveList::generate_rook_magic_key_mask(27,1 << 27);
+        actual.sort();
+        assert_eq!(expected_vec3, actual); // rook on e4
+    }
+
+    #[test]
+    fn rook_raw_mask() {
+        let mut vec1 = vec![0x0001000000000000, 0x0000010000000000, 0x0000000100000000, 0x0000000001000000, 0x000000000010000, 0x0000000000000100,
+                        0x0000000000000040, 0x0000000000000020, 0x0000000000000010, 0x0000000000000008, 0x0000000000000004, 0x0000000000000002];
+        vec1.reverse();
+
+        let combination_mask = 0b1001101;
+
+        let expected = vec1[0] + vec1[2] + vec1[3] + vec1[6];
+
+        assert_eq!(expected, MoveList::generate_rook_magic_raw_key(&vec1, combination_mask));
+    }
+
+    #[test]
+    fn rook_magic_bitboard() {
+        let mut vec1 = vec![0x0001000000000000, 0x0000010000000000, 0x0000000100000000, 0x0000000001000000, 0x000000000010000, 0x0000000000000100,
+                        0x0000000000000040, 0x0000000000000020, 0x0000000000000010, 0x0000000000000008, 0x0000000000000004, 0x0000000000000002];
+        vec1.reverse();
+
+        let key1 = vec1[0] + vec1[2] + vec1[3] + vec1[6];
+        let key2 = 0;
+        let key3 = vec1[1] + vec1[3] + vec1[9] + vec1[10];
+
+        // no occupancy => 0x01010101010101FE
+        assert_eq!(vec1[0] + vec1[6], MoveList::generate_rook_magic_value(key1, 0));
+        assert_eq!(0x01010101010101FE, MoveList::generate_rook_magic_value(key2, 0));
+        assert_eq!(vec1[0] + vec1[1] + vec1[6] + vec1[7] + vec1[8] + vec1[9], MoveList::generate_rook_magic_value(key3, 0));
+
+        let mut vec2 = vec![0x0080000000000000, 0x0000800000000000, 0x0000008000000000, 0x0000000080000000, 0x000000000800000, 0x0000000000008000,
+                        0x0000000000000040, 0x0000000000000020, 0x0000000000000010, 0x0000000000000008, 0x0000000000000004, 0x0000000000000002];
+        vec2.reverse();
+
+        let key4 = 0;
+        let key5 = vec2[6-1] + vec2[6-3] + vec2[9] + vec2[10];
+
+        assert_eq!(0x808080808080807F, MoveList::generate_rook_magic_value(key4, 7));
+        assert_eq!(vec2[6-1] + vec2[6] + vec2[7] + vec2[8] + vec2[9], MoveList::generate_rook_magic_value(key5, 7));
+    }
+
+    #[test]
+    fn check_rook_magic_bitboard() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+        let move_list = MoveList::new(&board);
+
+        assert_eq!(0x01010101010101FE, move_list.rook_magic_bitboard[0]);
+        assert_eq!(0x808080808080807F, move_list.rook_magic_bitboard[0 | (0b111 << 12)]);
+        assert_eq!(0x0000000814080000, move_list.rook_magic_bitboard[magic_hash_rook(0x0000000814080000, 27)]);
     }
 }
