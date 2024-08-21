@@ -9,7 +9,7 @@ use crate::piece::Colour;
 use crate::board;
 use crate::board::{Board, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_MASK, UPPER_RANK_LOWEST_TILE};
 use crate::piece::Colour::{BLACK, WHITE};
-use crate::piece::Piece::{KING, KNIGHT, ROOK};
+use crate::piece::Piece::{BISHOP, KING, KNIGHT, ROOK};
 use crate::magic_hasher;
 use crate::magic_hasher::{magic_hash_bishop, magic_hash_rook, MAGIC_MASK_BISHOP, MAGIC_MASK_ROOK};
 
@@ -686,7 +686,7 @@ impl<'a> MoveList<'a> {
 
     /// Converts a bitboard of rook moves into a list of moves and updates self
     /// Takes origin square of the rook as input
-    /// Should be used separately for each owned knight
+    /// Should be used separately for each owned rook
     /// parameters:
     ///     move_bitboard - bitboards of squares targeted by a move subgroup
     ///     origin - number of the square the given rook is on
@@ -887,25 +887,25 @@ impl<'a> MoveList<'a> {
     fn generate_bishop_moves_bitboard(&self, square: u8) -> u64 {
         self.get_bishop_magic_bitboard(square) & (self.board.empty_bitboard | self.board.colour_bitboards[self.board.inactive_player as usize])
     }
-    //
-    // /// Converts a bitboard of rook moves into a list of moves and updates self
-    // /// Takes origin square of the rook as input
-    // /// Should be used separately for each owned knight
-    // /// parameters:
-    // ///     move_bitboard - bitboards of squares targeted by a move subgroup
-    // ///     origin - number of the square the given rook is on
-    // fn convert_rook_moves(&mut self, move_bitboard: u64, origin: u8) {
-    //     let mut bitboard = move_bitboard;
-    //
-    //     while bitboard != 0 {
-    //         let tile = bitboard & bitboard.wrapping_neg();
-    //         bitboard -= tile;
-    //
-    //         let target = u64::checked_ilog2(tile).unwrap_or_default() as u8;
-    //
-    //         self.moves.push(Move { origin, target, promotion: 0, piece: ROOK });
-    //     }
-    // }
+
+    /// Converts a bitboard of bishop moves into a list of moves and updates self
+    /// Takes origin square of the rook as input
+    /// Should be used separately for each owned bishop
+    /// parameters:
+    ///     move_bitboard - bitboards of squares targeted by a move subgroup
+    ///     origin - number of the square the given bishop is on
+    fn convert_bishop_moves(&mut self, move_bitboard: u64, origin: u8) {
+        let mut bitboard = move_bitboard;
+
+        while bitboard != 0 {
+            let tile = bitboard & bitboard.wrapping_neg();
+            bitboard -= tile;
+
+            let target = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+
+            self.moves.push(Move { origin, target, promotion: 0, piece: BISHOP });
+        }
+    }
 
 }
 
