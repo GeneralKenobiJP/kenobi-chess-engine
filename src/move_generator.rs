@@ -526,9 +526,7 @@ impl<'a> MoveList<'a> {
         let mut magic_bitboard = vec![0u64;1048577];
 
         for square in 0..64 {
-            let origin = 1 << square;
-
-            let full_mask_vector = Self::generate_rook_magic_key_mask(square, origin);
+            let full_mask_vector = Self::generate_rook_magic_key_mask(square);
 
             // Occupancy combinations
 
@@ -550,37 +548,17 @@ impl<'a> MoveList<'a> {
     /// Used for creating permutations of occupancies while creating magic bitboards
     /// parameters:
     ///     - square - number of the square we are considering (u8)
-    ///     - origin - u64 number with one bit set to 1 that identifies the given square (eq. to 1 << square)
     /// Outputs bits of the occupancy mask in vector in such a manner
     /// that after concatenation it would be the full rook occupancy mask for the given square
-    fn generate_rook_magic_key_mask(square: u8, origin: u64) -> Vec<u64> {
-        // let mut full_mask: u64 = 0;
+    fn generate_rook_magic_key_mask(square: u8) -> Vec<u64> {
         let mut full_mask: u64 = MAGIC_MASK_ROOK[square as usize];
-
-        // Note that we omit the edges
-
-        // let rank_start: u8 = square - square % 8 + 1;
-        // let mut rank_tile: u64 = 1 << rank_start;
-        // for i in 0..6 {
-        //     full_mask |= rank_tile;
-        //
-        //     rank_tile <<= 1;
-        // }
-        //
-        // let file_start: u8 = square % 8 + 8;
-        // let mut file_tile: u64 = 1 << file_start;
-        // for i in 0..6 {
-        //     full_mask |= file_tile;
-        //
-        //     file_tile <<= 8;
-        // }
 
         let mut full_mask_vector = Vec::<u64>::new();
         while full_mask > 0 {
             let tile = full_mask & full_mask.wrapping_neg();
             full_mask -= tile;
 
-            if tile != origin { full_mask_vector.push(tile); }
+            full_mask_vector.push(tile);
         }
         full_mask_vector
     }
@@ -751,9 +729,7 @@ impl<'a> MoveList<'a> {
         let mut magic_bitboard = vec![0u64;262145];
 
         for square in 0..64 {
-            let origin = 1 << square;
-
-            let full_mask_vector = Self::generate_bishop_magic_key_mask(square, origin);
+            let full_mask_vector = Self::generate_bishop_magic_key_mask(square);
 
             // Occupancy combinations
 
@@ -775,10 +751,9 @@ impl<'a> MoveList<'a> {
     /// Used for creating permutations of occupancies while creating magic bitboards
     /// parameters:
     ///     - square - number of the square we are considering (u8)
-    ///     - origin - u64 number with one bit set to 1 that identifies the given square (eq. to 1 << square)
     /// Outputs bits of the occupancy mask in vector in such a manner
     /// that after concatenation it would be the full rook occupancy mask for the given square
-    fn generate_bishop_magic_key_mask(square: u8, origin: u64) -> Vec<u64> {
+    fn generate_bishop_magic_key_mask(square: u8) -> Vec<u64> {
         let mut full_mask: u64 = MAGIC_MASK_BISHOP[square as usize];
 
         let mut full_mask_vector = Vec::<u64>::new();
@@ -786,7 +761,7 @@ impl<'a> MoveList<'a> {
             let tile = full_mask & full_mask.wrapping_neg();
             full_mask -= tile;
 
-            if tile != origin { full_mask_vector.push(tile); }
+            full_mask_vector.push(tile);
         }
         full_mask_vector
     }
@@ -1635,7 +1610,7 @@ mod tests {
         // let mut expected_full_mask: u64= 0;
         // for i in key_mask_vector { expected_full_mask += i; }
 
-        assert_eq!(key_mask_vector, MoveList::generate_rook_magic_key_mask(26, 1<<26));
+        assert_eq!(key_mask_vector, MoveList::generate_rook_magic_key_mask(26));
     }
 
     #[test]
@@ -1643,17 +1618,17 @@ mod tests {
         let mut expected_vec1 = vec![0x0001000000000000, 0x0000010000000000, 0x0000000100000000, 0x0000000001000000, 0x000000000010000, 0x0000000000000100,
                         0x0000000000000040, 0x0000000000000020, 0x0000000000000010, 0x0000000000000008, 0x0000000000000004, 0x0000000000000002];
         expected_vec1.reverse();
-        assert_eq!(expected_vec1, MoveList::generate_rook_magic_key_mask(0,0));
+        assert_eq!(expected_vec1, MoveList::generate_rook_magic_key_mask(0));
 
         let mut expected_vec2 = vec![0x0080000000000000, 0x0000800000000000, 0x0000008000000000, 0x0000000080000000, 0x000000000800000, 0x0000000000008000,
                         0x0000000000000040, 0x0000000000000020, 0x0000000000000010, 0x0000000000000008, 0x0000000000000004, 0x0000000000000002];
         expected_vec2.reverse();
-        assert_eq!(expected_vec2, MoveList::generate_rook_magic_key_mask(7,1 << 7));
+        assert_eq!(expected_vec2, MoveList::generate_rook_magic_key_mask(7));
 
         let mut expected_vec3 = vec![0x0008000000000000, 0x0000080000000000, 0x0000000800000000, 0x0000000000080000, 0x0000000000000800,
                                      0x0000000040000000, 0x0000000020000000, 0x0000000010000000, 0x0000000004000000, 0x0000000002000000];
         expected_vec3.sort();
-        let mut actual = MoveList::generate_rook_magic_key_mask(27,1 << 27);
+        let mut actual = MoveList::generate_rook_magic_key_mask(27);
         actual.sort();
         assert_eq!(expected_vec3, actual); // rook on e4
     }
@@ -1760,9 +1735,9 @@ mod tests {
         // let mut expected_full_mask: u64= 0;
         // for i in key_mask_vector { expected_full_mask += i; }
 
-        assert_eq!(key_mask_vector, MoveList::generate_bishop_magic_key_mask(26, 1<<26));
+        assert_eq!(key_mask_vector, MoveList::generate_bishop_magic_key_mask(26));
     }
-    
+
     // #[test]
     // fn rook_raw_mask() {
     //     let mut vec1 = vec![0x0001000000000000, 0x0000010000000000, 0x0000000100000000, 0x0000000001000000, 0x000000000010000, 0x0000000000000100,
