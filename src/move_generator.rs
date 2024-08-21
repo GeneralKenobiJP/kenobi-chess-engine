@@ -906,19 +906,19 @@ impl<'a> MoveList<'a> {
 
     /// QUEEN MOVE GENERATION
 
-    // /// Generates moves of bishops based on the current board situation and updates self
-    // fn generate_bishop_moves(&mut self) {
-    //     let mut bishop_bitboard = self.board.piece_bitboards[4 + 6 * self.board.active_player as usize];
-    //
-    //     while bishop_bitboard != 0 {
-    //         let tile = bishop_bitboard & bishop_bitboard.wrapping_neg();
-    //         bishop_bitboard -= tile;
-    //
-    //         let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
-    //         let bitboard = self.generate_bishop_moves_bitboard(square);
-    //         self.convert_bishop_moves(bitboard, square);
-    //     }
-    // }
+    /// Generates moves of queens based on the current board situation and updates self
+    fn generate_queen_moves(&mut self) {
+        let mut queen_bitboard = self.board.piece_bitboards[2 + 6 * self.board.active_player as usize];
+
+        while queen_bitboard != 0 {
+            let tile = queen_bitboard & queen_bitboard.wrapping_neg();
+            queen_bitboard -= tile;
+
+            let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+            let bitboard = self.generate_queen_moves_bitboard(square);
+            self.convert_queen_moves(bitboard, square);
+        }
+    }
 
     /// Outputs a bitboard of queen moves, based on the current board occupancy, given the queen's square
     fn generate_queen_moves_bitboard(&self, square: u8) -> u64 {
