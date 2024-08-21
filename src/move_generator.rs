@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use crate::piece::Piece;
 use crate::board::{Board, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_MASK, UPPER_RANK_LOWEST_TILE};
 use crate::piece::Colour::{BLACK, WHITE};
-use crate::piece::Piece::{BISHOP, KING, KNIGHT, ROOK};
+use crate::piece::Piece::{BISHOP, KING, KNIGHT, QUEEN, ROOK};
 use crate::magic_hasher::{magic_hash_bishop, magic_hash_rook, MAGIC_MASK_BISHOP, MAGIC_MASK_ROOK};
 
 const KNIGHT_SHIFTS: [i8; 8] = [17, 10, -6, -15, -17, -10, 6, 15]; // Beginning on NW, counter-clockwise
@@ -59,6 +59,7 @@ impl<'a> MoveList<'a> {
         self.generate_knight_moves();
         self.generate_rook_moves();
         self.generate_bishop_moves();
+        self.generate_queen_moves();
     }
 
     /// KING MOVE GENERATION
@@ -886,7 +887,7 @@ impl<'a> MoveList<'a> {
     }
 
     /// Converts a bitboard of bishop moves into a list of moves and updates self
-    /// Takes origin square of the rook as input
+    /// Takes origin square of the bishop as input
     /// Should be used separately for each owned bishop
     /// parameters:
     ///     move_bitboard - bitboards of squares targeted by a move subgroup
@@ -901,6 +902,46 @@ impl<'a> MoveList<'a> {
             let target = u64::checked_ilog2(tile).unwrap_or_default() as u8;
 
             self.moves.push(Move { origin, target, promotion: 0, piece: BISHOP });
+        }
+    }
+
+    /// QUEEN MOVE GENERATION
+
+    /// Generates moves of queens based on the current board situation and updates self
+    fn generate_queen_moves(&mut self) {
+        let mut queen_bitboard = self.board.piece_bitboards[2 + 6 * self.board.active_player as usize];
+
+        while queen_bitboard != 0 {
+            let tile = queen_bitboard & queen_bitboard.wrapping_neg();
+            queen_bitboard -= tile;
+
+            let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+            let bitboard = self.generate_queen_moves_bitboard(square);
+            self.convert_queen_moves(bitboard, square);
+        }
+    }
+
+    /// Outputs a bitboard of queen moves, based on the current board occupancy, given the queen's square
+    fn generate_queen_moves_bitboard(&self, square: u8) -> u64 {
+        self.generate_rook_moves_bitboard(square) | self.generate_bishop_moves_bitboard(square)
+    }
+
+    /// Converts a bitboard of queen moves into a list of moves and updates self
+    /// Takes origin square of the queen as input
+    /// Should be used separately for each owned queen
+    /// parameters:
+    ///     move_bitboard - bitboards of squares targeted by a move subgroup
+    ///     origin - number of the square the given queen is on
+    fn convert_queen_moves(&mut self, move_bitboard: u64, origin: u8) {
+        let mut bitboard = move_bitboard;
+
+        while bitboard != 0 {
+            let tile = bitboard & bitboard.wrapping_neg();
+            bitboard -= tile;
+
+            let target = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+
+            self.moves.push(Move { origin, target, promotion: 0, piece: QUEEN });
         }
     }
 
@@ -945,6 +986,7 @@ mod tests {
         let expected_rook_bitboard2: u64 = 0;
         let expected_bishop_bitboard1: u64 = 0;
         let expected_bishop_bitboard2: u64 = 0;
+        let expected_queen_bitboard: u64 = 0;
 
         let mut expected_push_moves = Vec::<Move>::new();
         expected_push_moves.push(Move{ origin: 8, target: 16, promotion: 0, piece: Piece::PAWN });
@@ -982,6 +1024,7 @@ mod tests {
         assert_eq!(move_list.generate_rook_moves_bitboard(7), expected_rook_bitboard2);
         assert_eq!(move_list.generate_bishop_moves_bitboard(5), expected_bishop_bitboard1);
         assert_eq!(move_list.generate_bishop_moves_bitboard(2), expected_bishop_bitboard2);
+        assert_eq!(move_list.generate_queen_moves_bitboard(3), expected_queen_bitboard);
 
         // PAWN MOVES
 
@@ -1071,9 +1114,21 @@ mod tests {
         move_list.generate_bishop_moves();
         assert!(compare_vecs(&move_list.moves, &expected_bishop_moves_all));
 
+        // QUEEN MOVES
+
+        let mut expected_queen_moves = Vec::<Move>::new();
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_queen_moves(expected_queen_bitboard, 3);
+        assert!(compare_vecs(&move_list.moves, &expected_queen_moves));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.generate_queen_moves();
+        assert!(compare_vecs(&move_list.moves, &expected_queen_moves));
+
         // ALL MOVES
 
-        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all, expected_bishop_moves_all].concat();
+        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all, expected_bishop_moves_all, expected_queen_moves].concat();
 
         move_list.moves = Vec::<Move>::new();
         move_list.generate_moves();
@@ -1097,6 +1152,7 @@ mod tests {
         let expected_rook_bitboard2: u64 = 0;
         let expected_bishop_bitboard1: u64 = 0;
         let expected_bishop_bitboard2: u64 = 0;
+        let expected_queen_bitboard: u64 = 0;
 
         let mut expected_push_moves = Vec::<Move>::new();
         expected_push_moves.push(Move{ origin: 55, target: 47, promotion: 0, piece: Piece::PAWN });
@@ -1132,6 +1188,7 @@ mod tests {
         assert_eq!(move_list.generate_rook_moves_bitboard(56), expected_rook_bitboard2);
         assert_eq!(move_list.generate_bishop_moves_bitboard(61), expected_bishop_bitboard1);
         assert_eq!(move_list.generate_bishop_moves_bitboard(56), expected_bishop_bitboard2);
+        assert_eq!(move_list.generate_queen_moves_bitboard(60), expected_queen_bitboard);
 
         // PAWN MOVES
 
@@ -1221,9 +1278,21 @@ mod tests {
         move_list.generate_bishop_moves();
         assert!(compare_vecs(&move_list.moves, &expected_bishop_moves_all));
 
+        // QUEEN MOVES
+
+        let mut expected_queen_moves = Vec::<Move>::new();
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_queen_moves(expected_queen_bitboard, 3);
+        assert!(compare_vecs(&move_list.moves, &expected_queen_moves));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.generate_queen_moves();
+        assert!(compare_vecs(&move_list.moves, &expected_queen_moves));
+
         // ALL MOVES
 
-        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all, expected_bishop_moves_all].concat();
+        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all, expected_bishop_moves_all, expected_queen_moves].concat();
 
         move_list.moves = Vec::<Move>::new();
         move_list.generate_moves();
@@ -1245,6 +1314,7 @@ mod tests {
         let expected_knight_bitboard1: u64 =            0b0000000000000000000000000000000000000001000000000001000100001010;
         let expected_rook_bitboard1: u64 =              0x0020202020D82020;
         let expected_bishop_bitboard1: u64 =            0x20100A0008102000;
+        let expected_queen_bitboard: u64 =              0x000000000D030202;
 
         let mut expected_push_moves = Vec::<Move>::new();
         expected_push_moves.push(Move{ origin: 15, target: 23, promotion: 0, piece: Piece::PAWN });
@@ -1277,6 +1347,7 @@ mod tests {
         assert_eq!(move_list.generate_knight_moves_bitboard(18), expected_knight_bitboard1);
         assert_eq!(move_list.generate_rook_moves_bitboard(21), expected_rook_bitboard1);
         assert_eq!(move_list.generate_bishop_moves_bitboard(34), expected_bishop_bitboard1);
+        assert_eq!(move_list.generate_queen_moves_bitboard(25), expected_queen_bitboard);
 
         // PAWN MOVES
 
@@ -1372,9 +1443,28 @@ mod tests {
         move_list.generate_bishop_moves();
         assert!(compare_vecs(&move_list.moves, &expected_bishop_moves_all));
 
+        // QUEEN MOVES
+
+        let mut expected_queen_moves = Vec::<Move>::new();
+
+        move_list.moves = Vec::<Move>::new();
+        expected_queen_moves.push( Move { origin: 25, target: 1, promotion: 0, piece: QUEEN });
+        expected_queen_moves.push( Move { origin: 25, target: 9, promotion: 0, piece: QUEEN });
+        expected_queen_moves.push( Move { origin: 25, target: 16, promotion: 0, piece: QUEEN });
+        expected_queen_moves.push( Move { origin: 25, target: 17, promotion: 0, piece: QUEEN });
+        expected_queen_moves.push( Move { origin: 25, target: 24, promotion: 0, piece: QUEEN });
+        expected_queen_moves.push( Move { origin: 25, target: 26, promotion: 0, piece: QUEEN });
+        expected_queen_moves.push( Move { origin: 25, target: 27, promotion: 0, piece: QUEEN });
+        move_list.convert_queen_moves(expected_queen_bitboard, 25);
+        assert!(compare_vecs(&move_list.moves, &expected_queen_moves));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.generate_queen_moves();
+        assert!(compare_vecs(&move_list.moves, &expected_queen_moves));
+
         // ALL MOVES
 
-        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all, expected_bishop_moves_all].concat();
+        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all, expected_bishop_moves_all, expected_queen_moves].concat();
 
         move_list.moves = Vec::<Move>::new();
         move_list.generate_moves();
