@@ -1314,6 +1314,7 @@ mod tests {
         let expected_knight_bitboard1: u64 =            0b0000000000000000000000000000000000000001000000000001000100001010;
         let expected_rook_bitboard1: u64 =              0x0020202020D82020;
         let expected_bishop_bitboard1: u64 =            0x20100A0008102000;
+        let expected_queen_bitboard: u64 =              0x000000000D030202;
 
         let mut expected_push_moves = Vec::<Move>::new();
         expected_push_moves.push(Move{ origin: 15, target: 23, promotion: 0, piece: Piece::PAWN });
@@ -1346,6 +1347,7 @@ mod tests {
         assert_eq!(move_list.generate_knight_moves_bitboard(18), expected_knight_bitboard1);
         assert_eq!(move_list.generate_rook_moves_bitboard(21), expected_rook_bitboard1);
         assert_eq!(move_list.generate_bishop_moves_bitboard(34), expected_bishop_bitboard1);
+        assert_eq!(move_list.generate_queen_moves_bitboard(25), expected_queen_bitboard);
 
         // PAWN MOVES
 
@@ -1441,9 +1443,28 @@ mod tests {
         move_list.generate_bishop_moves();
         assert!(compare_vecs(&move_list.moves, &expected_bishop_moves_all));
 
+        // QUEEN MOVES
+
+        let mut expected_queen_moves = Vec::<Move>::new();
+
+        move_list.moves = Vec::<Move>::new();
+        expected_queen_moves.push( Move { origin: 25, target: 1, promotion: 0, piece: QUEEN });
+        expected_queen_moves.push( Move { origin: 25, target: 9, promotion: 0, piece: QUEEN });
+        expected_queen_moves.push( Move { origin: 25, target: 16, promotion: 0, piece: QUEEN });
+        expected_queen_moves.push( Move { origin: 25, target: 17, promotion: 0, piece: QUEEN });
+        expected_queen_moves.push( Move { origin: 25, target: 24, promotion: 0, piece: QUEEN });
+        expected_queen_moves.push( Move { origin: 25, target: 26, promotion: 0, piece: QUEEN });
+        expected_queen_moves.push( Move { origin: 25, target: 27, promotion: 0, piece: QUEEN });
+        move_list.convert_queen_moves(expected_queen_bitboard, 25);
+        assert!(compare_vecs(&move_list.moves, &expected_queen_moves));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.generate_queen_moves();
+        assert!(compare_vecs(&move_list.moves, &expected_queen_moves));
+
         // ALL MOVES
 
-        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all, expected_bishop_moves_all].concat();
+        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all, expected_bishop_moves_all, expected_queen_moves].concat();
 
         move_list.moves = Vec::<Move>::new();
         move_list.generate_moves();
