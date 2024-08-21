@@ -984,7 +984,7 @@ mod tests {
         assert_eq!(move_list.generate_knight_moves_bitboard(1), expected_knight_bitboard2);
         assert_eq!(move_list.generate_rook_moves_bitboard(0), expected_rook_bitboard1);
         assert_eq!(move_list.generate_rook_moves_bitboard(7), expected_rook_bitboard2);
-        assert_eq!(move_list.generate_bishop_moves_bitboard(5), expected_bishop_bitboard2);
+        assert_eq!(move_list.generate_bishop_moves_bitboard(5), expected_bishop_bitboard1);
         assert_eq!(move_list.generate_bishop_moves_bitboard(2), expected_bishop_bitboard2);
 
         // PAWN MOVES
@@ -1064,11 +1064,11 @@ mod tests {
         let mut expected_bishop_moves_all = [expected_bishop_moves1.clone(), expected_bishop_moves2.clone()].concat();
 
         move_list.moves = Vec::<Move>::new();
-        move_list.convert_bishop_moves(expected_bishop_bitboard1, 0);
+        move_list.convert_bishop_moves(expected_bishop_bitboard1, 5);
         assert!(compare_vecs(&move_list.moves, &expected_bishop_moves1));
 
         move_list.moves = Vec::<Move>::new();
-        move_list.convert_bishop_moves(expected_bishop_bitboard2, 7);
+        move_list.convert_bishop_moves(expected_bishop_bitboard2, 2);
         assert!(compare_vecs(&move_list.moves, &expected_bishop_moves2));
 
         move_list.moves = Vec::<Move>::new();
@@ -1099,6 +1099,8 @@ mod tests {
         let expected_knight_bitboard2: u64 = 0b0000000000000000000001010000000000000000000000000000000000000000;
         let expected_rook_bitboard1: u64 = 0;
         let expected_rook_bitboard2: u64 = 0;
+        let expected_bishop_bitboard1: u64 = 0;
+        let expected_bishop_bitboard2: u64 = 0;
 
         let mut expected_push_moves = Vec::<Move>::new();
         expected_push_moves.push(Move{ origin: 55, target: 47, promotion: 0, piece: Piece::PAWN });
@@ -1132,6 +1134,8 @@ mod tests {
         assert_eq!(move_list.generate_knight_moves_bitboard(57), expected_knight_bitboard2);
         assert_eq!(move_list.generate_rook_moves_bitboard(63), expected_rook_bitboard1);
         assert_eq!(move_list.generate_rook_moves_bitboard(56), expected_rook_bitboard2);
+        assert_eq!(move_list.generate_bishop_moves_bitboard(61), expected_bishop_bitboard1);
+        assert_eq!(move_list.generate_bishop_moves_bitboard(56), expected_bishop_bitboard2);
 
         // PAWN MOVES
 
@@ -1203,9 +1207,27 @@ mod tests {
         move_list.generate_rook_moves();
         assert!(compare_vecs(&move_list.moves, &expected_rook_moves_all));
 
+        // BISHOP MOVES
+
+        let mut expected_bishop_moves1 = Vec::<Move>::new();
+        let mut expected_bishop_moves2 = Vec::<Move>::new();
+        let mut expected_bishop_moves_all = [expected_bishop_moves1.clone(), expected_bishop_moves2.clone()].concat();
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_bishop_moves(expected_bishop_bitboard1, 61);
+        assert!(compare_vecs(&move_list.moves, &expected_bishop_moves1));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_bishop_moves(expected_bishop_bitboard2, 56);
+        assert!(compare_vecs(&move_list.moves, &expected_bishop_moves2));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.generate_bishop_moves();
+        assert!(compare_vecs(&move_list.moves, &expected_bishop_moves_all));
+
         // ALL MOVES
 
-        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all].concat();
+        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all, expected_bishop_moves_all].concat();
 
         move_list.moves = Vec::<Move>::new();
         move_list.generate_moves();
@@ -1226,6 +1248,7 @@ mod tests {
         let expected_king_bitboard: u64 =               0b0000000000000000000000000000000000000000000000000110000000100000;
         let expected_knight_bitboard1: u64 =            0b0000000000000000000000000000000000000001000000000001000100001010;
         let expected_rook_bitboard1: u64 =              0x0020202020D82020;
+        let expected_bishop_bitboard1: u64 =            0x20100A0008102000;
 
         let mut expected_push_moves = Vec::<Move>::new();
         expected_push_moves.push(Move{ origin: 15, target: 23, promotion: 0, piece: Piece::PAWN });
@@ -1257,6 +1280,7 @@ mod tests {
         assert_eq!(move_list.generate_king_moves_bitboard(), expected_king_bitboard);
         assert_eq!(move_list.generate_knight_moves_bitboard(18), expected_knight_bitboard1);
         assert_eq!(move_list.generate_rook_moves_bitboard(21), expected_rook_bitboard1);
+        assert_eq!(move_list.generate_bishop_moves_bitboard(34), expected_bishop_bitboard1);
 
         // PAWN MOVES
 
@@ -1332,9 +1356,29 @@ mod tests {
         move_list.generate_rook_moves();
         assert!(compare_vecs(&move_list.moves, &expected_rook_moves_all));
 
+        // BISHOP MOVES
+
+        let mut expected_bishop_moves1 = Vec::<Move>::new();
+        expected_bishop_moves1.push( Move { origin: 34, target: 13, promotion: 0, piece: BISHOP });
+        expected_bishop_moves1.push( Move { origin: 34, target: 20, promotion: 0, piece: BISHOP });
+        expected_bishop_moves1.push( Move { origin: 34, target: 27, promotion: 0, piece: BISHOP });
+        expected_bishop_moves1.push( Move { origin: 34, target: 41, promotion: 0, piece: BISHOP });
+        expected_bishop_moves1.push( Move { origin: 34, target: 43, promotion: 0, piece: BISHOP });
+        expected_bishop_moves1.push( Move { origin: 34, target: 52, promotion: 0, piece: BISHOP });
+        expected_bishop_moves1.push( Move { origin: 34, target: 61, promotion: 0, piece: BISHOP });
+        let mut expected_bishop_moves_all = [expected_bishop_moves1.clone()].concat();
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_bishop_moves(expected_bishop_bitboard1, 34);
+        assert!(compare_vecs(&move_list.moves, &expected_bishop_moves1));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.generate_bishop_moves();
+        assert!(compare_vecs(&move_list.moves, &expected_bishop_moves_all));
+
         // ALL MOVES
 
-        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all].concat();
+        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all, expected_bishop_moves_all].concat();
 
         move_list.moves = Vec::<Move>::new();
         move_list.generate_moves();
