@@ -1739,19 +1739,6 @@ mod tests {
     }
 
     // #[test]
-    // fn rook_raw_mask() {
-    //     let mut vec1 = vec![0x0001000000000000, 0x0000010000000000, 0x0000000100000000, 0x0000000001000000, 0x000000000010000, 0x0000000000000100,
-    //                     0x0000000000000040, 0x0000000000000020, 0x0000000000000010, 0x0000000000000008, 0x0000000000000004, 0x0000000000000002];
-    //     vec1.reverse();
-    //
-    //     let combination_mask = 0b1001101;
-    //
-    //     let expected = vec1[0] + vec1[2] + vec1[3] + vec1[6];
-    //
-    //     assert_eq!(expected, MoveList::generate_magic_raw_key(&vec1, combination_mask));
-    // }
-    //
-    // #[test]
     // fn rook_magic_bitboard() {
     //     let mut vec1 = vec![0x0001000000000000, 0x0000010000000000, 0x0000000100000000, 0x0000000001000000, 0x000000000010000, 0x0000000000000100,
     //                     0x0000000000000040, 0x0000000000000020, 0x0000000000000010, 0x0000000000000008, 0x0000000000000004, 0x0000000000000002];
@@ -1777,14 +1764,14 @@ mod tests {
     //     assert_eq!(vec2[6-1] + vec2[6] + vec2[7] + vec2[8] + vec2[9], MoveList::generate_rook_magic_value(key5, 7));
     // }
     //
-    // #[test]
-    // fn check_rook_magic_bitboard() {
-    //     let mut board = Board::new();
-    //     board.read_fen(START_POSITION);
-    //     let move_list = MoveList::new(&board);
-    //
-    //     assert_eq!(0x01010101010101FE, move_list.rook_magic_bitboard[0]);
-    //     assert_eq!(0x808080808080807F, move_list.rook_magic_bitboard[0 | (0b111 << 12)]);
-    //     assert_eq!(0x0000000814080000, move_list.rook_magic_bitboard[magic_hash_rook(0x0000000814080000, 27)]);
-    // }
+    #[test]
+    fn check_bishop_magic_bitboard() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+        let move_list = MoveList::new(&board);
+
+        assert_eq!(0x8040201008040200, move_list.bishop_magic_bitboard[0]);
+        assert_eq!(0x0102040810204000, move_list.bishop_magic_bitboard[0 | (0b111 << 10)]);
+        assert_eq!(0x0000001400140000, move_list.bishop_magic_bitboard[magic_hash_bishop(0x0000001400140000, 27)]);
+    }
 }
