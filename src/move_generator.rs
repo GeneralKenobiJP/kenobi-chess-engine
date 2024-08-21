@@ -874,19 +874,19 @@ impl<'a> MoveList<'a> {
     //     }
     // }
     //
-    // /// Retrieves rook magic bitboard based on a given origin and current board situation
-    // /// Constructs occupancy mask from the current board situation and
-    // /// masks it with the relevant magic mask to obtain a raw key,
-    // /// then hashes using magic hash to obtain a hashed key
-    // fn get_rook_magic_bitboard(&self, origin: u8) -> u64 {
-    //     let occupancy = self.board.main_bitboard & MAGIC_MASK_ROOK[origin as usize];
-    //     self.rook_magic_bitboard[magic_hash_rook(occupancy, origin)]
-    // }
-    //
-    // /// Outputs a bitboard of rook moves, based on the current board occupancy, given the rook's square
-    // fn generate_rook_moves_bitboard(&self, square: u8) -> u64 {
-    //     self.get_rook_magic_bitboard(square) & (self.board.empty_bitboard | self.board.colour_bitboards[self.board.inactive_player as usize])
-    // }
+    /// Retrieves bishop magic bitboard based on a given origin and current board situation
+    /// Constructs occupancy mask from the current board situation and
+    /// masks it with the relevant magic mask to obtain a raw key,
+    /// then hashes using magic hash to obtain a hashed key
+    fn get_bishop_magic_bitboard(&self, origin: u8) -> u64 {
+        let occupancy = self.board.main_bitboard & MAGIC_MASK_BISHOP[origin as usize];
+        self.bishop_magic_bitboard[magic_hash_bishop(occupancy, origin)]
+    }
+
+    /// Outputs a bitboard of bishop moves, based on the current board occupancy, given the bishop's square
+    fn generate_bishop_moves_bitboard(&self, square: u8) -> u64 {
+        self.get_bishop_magic_bitboard(square) & (self.board.empty_bitboard | self.board.colour_bitboards[self.board.inactive_player as usize])
+    }
     //
     // /// Converts a bitboard of rook moves into a list of moves and updates self
     // /// Takes origin square of the rook as input
