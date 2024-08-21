@@ -1720,6 +1720,24 @@ mod tests {
                    MoveList::generate_bishop_magic_value(key, origin));
     }
 
+    #[test]
+    fn check_bishop_magic_bitboard_value_generation_insignificant_blockers() {
+        let key: u64 =              0x0000020400042200;
+        let origin: u8 = 27;
+
+        let value_north_west: u64 = 0x8040201000000000;
+        let value_north_east: u64 = 0x0000000400000000;
+        let value_south_east: u64 = 0x0000000000040000;
+        let value_south_west: u64 = 0x0000000000102000;
+
+        assert_eq!(value_north_west, MoveList::generate_bishop_magic_bitboard_north_west(key, origin));
+        assert_eq!(value_north_east, MoveList::generate_bishop_magic_bitboard_north_east(key, origin));
+        assert_eq!(value_south_east, MoveList::generate_bishop_magic_bitboard_south_east(key, origin));
+        assert_eq!(value_south_west, MoveList::generate_bishop_magic_bitboard_south_west(key, origin));
+        assert_eq!(value_north_west | value_north_east | value_south_east | value_south_west,
+                   MoveList::generate_bishop_magic_value(key, origin));
+    }
+
 
     #[test]
     fn check_bishop_magic_bitboard_mask_vector_generation() {
@@ -1738,32 +1756,6 @@ mod tests {
         assert_eq!(key_mask_vector, MoveList::generate_bishop_magic_key_mask(26));
     }
 
-    // #[test]
-    // fn rook_magic_bitboard() {
-    //     let mut vec1 = vec![0x0001000000000000, 0x0000010000000000, 0x0000000100000000, 0x0000000001000000, 0x000000000010000, 0x0000000000000100,
-    //                     0x0000000000000040, 0x0000000000000020, 0x0000000000000010, 0x0000000000000008, 0x0000000000000004, 0x0000000000000002];
-    //     vec1.reverse();
-    //
-    //     let key1 = vec1[0] + vec1[2] + vec1[3] + vec1[6];
-    //     let key2 = 0;
-    //     let key3 = vec1[1] + vec1[3] + vec1[9] + vec1[10];
-    //
-    //     // no occupancy => 0x01010101010101FE
-    //     assert_eq!(vec1[0] + vec1[6], MoveList::generate_rook_magic_value(key1, 0));
-    //     assert_eq!(0x01010101010101FE, MoveList::generate_rook_magic_value(key2, 0));
-    //     assert_eq!(vec1[0] + vec1[1] + vec1[6] + vec1[7] + vec1[8] + vec1[9], MoveList::generate_rook_magic_value(key3, 0));
-    //
-    //     let mut vec2 = vec![0x0080000000000000, 0x0000800000000000, 0x0000008000000000, 0x0000000080000000, 0x000000000800000, 0x0000000000008000,
-    //                     0x0000000000000040, 0x0000000000000020, 0x0000000000000010, 0x0000000000000008, 0x0000000000000004, 0x0000000000000002];
-    //     vec2.reverse();
-    //
-    //     let key4 = 0;
-    //     let key5 = vec2[6-1] + vec2[6-3] + vec2[9] + vec2[10];
-    //
-    //     assert_eq!(0x808080808080807F, MoveList::generate_rook_magic_value(key4, 7));
-    //     assert_eq!(vec2[6-1] + vec2[6] + vec2[7] + vec2[8] + vec2[9], MoveList::generate_rook_magic_value(key5, 7));
-    // }
-    //
     #[test]
     fn check_bishop_magic_bitboard() {
         let mut board = Board::new();
