@@ -859,21 +859,21 @@ impl<'a> MoveList<'a> {
 
         bitboard
     }
-    //
-    // /// Generates moves of rooks based on the current board situation and updates self
-    // fn generate_rook_moves(&mut self) {
-    //     let mut rook_bitboard = self.board.piece_bitboards[3 + 6 * self.board.active_player as usize];
-    //
-    //     while rook_bitboard != 0 {
-    //         let tile = rook_bitboard & rook_bitboard.wrapping_neg();
-    //         rook_bitboard -= tile;
-    //
-    //         let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
-    //         let bitboard = self.generate_rook_moves_bitboard(square);
-    //         self.convert_rook_moves(bitboard, square);
-    //     }
-    // }
-    //
+
+    /// Generates moves of bishops based on the current board situation and updates self
+    fn generate_bishop_moves(&mut self) {
+        let mut bishop_bitboard = self.board.piece_bitboards[4 + 6 * self.board.active_player as usize];
+
+        while bishop_bitboard != 0 {
+            let tile = bishop_bitboard & bishop_bitboard.wrapping_neg();
+            bishop_bitboard -= tile;
+
+            let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+            let bitboard = self.generate_bishop_moves_bitboard(square);
+            self.convert_bishop_moves(bitboard, square);
+        }
+    }
+
     /// Retrieves bishop magic bitboard based on a given origin and current board situation
     /// Constructs occupancy mask from the current board situation and
     /// masks it with the relevant magic mask to obtain a raw key,
