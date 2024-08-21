@@ -904,6 +904,46 @@ impl<'a> MoveList<'a> {
         }
     }
 
+    /// QUEEN MOVE GENERATION
+
+    // /// Generates moves of bishops based on the current board situation and updates self
+    // fn generate_bishop_moves(&mut self) {
+    //     let mut bishop_bitboard = self.board.piece_bitboards[4 + 6 * self.board.active_player as usize];
+    //
+    //     while bishop_bitboard != 0 {
+    //         let tile = bishop_bitboard & bishop_bitboard.wrapping_neg();
+    //         bishop_bitboard -= tile;
+    //
+    //         let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+    //         let bitboard = self.generate_bishop_moves_bitboard(square);
+    //         self.convert_bishop_moves(bitboard, square);
+    //     }
+    // }
+
+    /// Outputs a bitboard of queen moves, based on the current board occupancy, given the queen's square
+    fn generate_queen_moves_bitboard(&self, square: u8) -> u64 {
+        self.generate_rook_moves_bitboard(square) | self.generate_bishop_moves_bitboard(square)
+    }
+    //
+    // /// Converts a bitboard of bishop moves into a list of moves and updates self
+    // /// Takes origin square of the rook as input
+    // /// Should be used separately for each owned bishop
+    // /// parameters:
+    // ///     move_bitboard - bitboards of squares targeted by a move subgroup
+    // ///     origin - number of the square the given bishop is on
+    // fn convert_bishop_moves(&mut self, move_bitboard: u64, origin: u8) {
+    //     let mut bitboard = move_bitboard;
+    //
+    //     while bitboard != 0 {
+    //         let tile = bitboard & bitboard.wrapping_neg();
+    //         bitboard -= tile;
+    //
+    //         let target = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+    //
+    //         self.moves.push(Move { origin, target, promotion: 0, piece: BISHOP });
+    //     }
+    // }
+
 }
 
 /// /// /// TESTS
