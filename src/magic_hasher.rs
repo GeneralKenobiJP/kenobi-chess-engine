@@ -1,6 +1,7 @@
 //! Magic Hashing
 //! Implements hashing for magic bitboards
 //! Used for rook and bishops (and thus also for queens)
+//! All data is little-endian (h1-a1, h2-a2, ..., h8-a8)
 
 use std::hash::{Hash, Hasher};
 
@@ -40,20 +41,62 @@ const MAGIC_NUMBERS_SHIFT_ROOK: [u8; 64] = [
     53, 54, 54, 53, 53, 53, 53, 53
 ];
 
+/// Mask containing relevant bits for each bishop position
+pub const MAGIC_MASK_BISHOP: [u64; 64] = [
+    0x0040201008040200, 0x0000402010080400, 0x0000004020100A00, 0x0000000040221400, 0x0000000002442800, 0x0000000204085000, 0x0000020408102000, 0x0002040810204000,
+    0x0020100804020000, 0x0040201008040000, 0x00004020100A0000, 0x0000004022140000, 0x0000000244280000, 0x0000020408500000, 0x0002040810200000, 0x0004081020400000,
+    0x0010080402000200, 0x0020100804000400, 0x004020100A000A00, 0x0000402214001400, 0x0000024428002800, 0x0002040850005000, 0x0004081020002000, 0x0008102040004000,
+    0x0008040200020400, 0x0010080400040800, 0x0020100A000A1000, 0x0040221400142200, 0x0002442800284400, 0x0004085000500800, 0x0008102000201000, 0x0010204000402000,
+    0x0004020002040800, 0x0008040004081000, 0x00100A000A102000, 0x0022140014224000, 0x0044280028440200, 0x0008500050080400, 0x0010200020100800, 0x0020400040201000,
+    0x0002000204081000, 0x0004000408102000, 0x000A000A10204000, 0x0014001422400000, 0x0028002844020000, 0x0050005008040200, 0x0020002010080400, 0x0040004020100800,
+    0x0000020408102000, 0x0000040810204000, 0x00000A1020400000, 0x0000142240000000, 0x0000284402000000, 0x0000500804020000, 0x0000201008040200, 0x0000402010080400,
+    0x0002040810204000, 0x0004081020400000, 0x000A102040000000, 0x0014224000000000, 0x0028440200000000, 0x0050080402000000, 0x0020100804020000, 0x0040201008040200
+];
+
+/// Magic numbers used for bishop's magic bitboard hashing
+const MAGIC_NUMBERS_BISHOP: [u64; 64] = [
+    0x0002020202020200, 0x0002020202020000, 0x0004010202000000, 0x0004040080000000, 0x0001104000000000, 0x0000821040000000, 0x0000410410400000, 0x0000104104104000,
+    0x0000040404040400, 0x0000020202020200, 0x0000040102020000, 0x0000040400800000, 0x0000011040000000, 0x0000008210400000, 0x0000004104104000, 0x0000002082082000,
+    0x0004000808080800, 0x0002000404040400, 0x0001000202020200, 0x0000800802004000, 0x0000800400A00000, 0x0000200100884000, 0x0000400082082000, 0x0000200041041000,
+    0x0002080010101000, 0x0001040008080800, 0x0000208004010400, 0x0000404004010200, 0x0000840000802000, 0x0000404002011000, 0x0000808001041000, 0x0000404000820800,
+    0x0001041000202000, 0x0000820800101000, 0x0000104400080800, 0x0000020080080080, 0x0000404040040100, 0x0000808100020100, 0x0001010100020800, 0x0000808080010400,
+    0x0000820820004000, 0x0000410410002000, 0x0000082088001000, 0x0000002011000800, 0x0000080100400400, 0x0001010101000200, 0x0002020202000400, 0x0001010101000200,
+    0x0000410410400000, 0x0000208208200000, 0x0000002084100000, 0x0000000020880000, 0x0000001002020000, 0x0000040408020000, 0x0004040404040000, 0x0002020202020000,
+    0x0000104104104000, 0x0000002082082000, 0x0000000020841000, 0x0000000000208800, 0x0000000010020200, 0x0000000404080200, 0x0000040404040400, 0x0002020202020200
+];
+
+/// Shifts for magic numbers for bishops
+const MAGIC_NUMBERS_SHIFT_BISHOP: [u8; 64] = [
+    58, 59, 59, 59, 59, 59, 59, 58,
+    59, 59, 59, 59, 59, 59, 59, 59,
+    59, 59, 57, 57, 57, 57, 59, 59,
+    59, 59, 57, 55, 55, 57, 59, 59,
+    59, 59, 57, 55, 55, 57, 59, 59,
+    59, 59, 57, 57, 57, 57, 59, 59,
+    59, 59, 59, 59, 59, 59, 59, 59,
+    58, 59, 59, 59, 59, 59, 59, 58
+];
+
 /// Given a raw key indicating occupancy of relevant bits for a given rook and its origin,
 /// output a hash according to the magic bitboard hashing
-/// Formula: key * origin << shift
+/// Formula: ((key * origin) << shift) | (origin << 12)
 pub fn magic_hash_rook(key: u64, origin: u8) -> usize {
     (((key.wrapping_mul(MAGIC_NUMBERS_ROOK[origin as usize]))
         >> MAGIC_NUMBERS_SHIFT_ROOK[origin as usize])
         | ((origin as u64) << 12)) as usize
 }
 
+/// Given a raw key indicating occupancy of relevant bits for a given bishop and its origin,
+/// output a hash according to the magic bitboard hashing
+/// Formula: ((key * origin) << shift) | (origin << 12)
+pub fn magic_hash_bishop(key: u64, origin: u8) -> usize {
+    (((key.wrapping_mul(MAGIC_NUMBERS_BISHOP[origin as usize]))
+        >> MAGIC_NUMBERS_SHIFT_BISHOP[origin as usize])
+        | ((origin as u64) << 10)) as usize
+}
+
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
-    use std::hash::{BuildHasher, Hasher, RandomState};
-    use crate::board::{Board, START_POSITION};
     use super::*;
 
     #[test]
@@ -63,20 +106,9 @@ mod tests {
         assert_eq!(0x000101010101017Eu64.wrapping_mul(MAGIC_NUMBERS_ROOK[0]) >> 52,
                    magic_hash_rook(0x000101010101017Eu64, 0) as u64);
 
-        // let x = MAGIC_NUMBERS_ROOK;
-        // let mut y = [0u64;64];
-        // let mut index = 0;
-        // for i in 0..8 {
-        //     for j in (0..8).rev() { y[index] = x[j+8*i]; index+=1; }
-        // }
-        // println!{"{:#018X?}", y};
-
-        // let x = MAGIC_NUMBERS_SHIFT_ROOK;
-        // let mut y = [0u8;64];
-        // let mut index = 0;
-        // for i in 0..8 {
-        //     for j in (0..8).rev() { y[index] = x[j+8*i]; index+=1; }
-        // }
-        // println!{"{:?}", y};
+        assert_eq!((0x0002040810204000u64.wrapping_mul(MAGIC_NUMBERS_BISHOP[7]) >> 58) | (0b111 << 10),
+                   magic_hash_bishop(0x0002040810204000u64, 7) as u64);
+        assert_eq!(0x0040201008040200u64.wrapping_mul(MAGIC_NUMBERS_BISHOP[0]) >> 58,
+                   magic_hash_bishop(0x0040201008040200, 0) as u64);
     }
 }

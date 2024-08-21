@@ -3,15 +3,11 @@
 //! Involves bitboards, magic bitboards, etc.
 
 use std::collections::HashSet;
-use crate::piece;
 use crate::piece::Piece;
-use crate::piece::Colour;
-use crate::board;
 use crate::board::{Board, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_MASK, UPPER_RANK_LOWEST_TILE};
 use crate::piece::Colour::{BLACK, WHITE};
-use crate::piece::Piece::{KING, KNIGHT, ROOK};
-use crate::magic_hasher;
-use crate::magic_hasher::{magic_hash_rook, MAGIC_MASK_ROOK};
+use crate::piece::Piece::{BISHOP, KING, KNIGHT, ROOK};
+use crate::magic_hasher::{magic_hash_bishop, magic_hash_rook, MAGIC_MASK_BISHOP, MAGIC_MASK_ROOK};
 
 const KNIGHT_SHIFTS: [i8; 8] = [17, 10, -6, -15, -17, -10, 6, 15]; // Beginning on NW, counter-clockwise
 
@@ -28,7 +24,8 @@ struct MoveList<'a> {
     moves: Vec<Move>,
     king_lookup_table: [u64; 64], // should be treated as immutable after setup
     knight_lookup_table: [u64; 64], // should be treated as immutable after setup
-    rook_magic_bitboard: Vec<u64>
+    rook_magic_bitboard: Vec<u64>,
+    bishop_magic_bitboard: Vec<u64>
 }
 
 impl<'a> MoveList<'a> {
@@ -38,7 +35,8 @@ impl<'a> MoveList<'a> {
             moves: Vec::new(),
             king_lookup_table: Self::setup_king_lookup_table(),
             knight_lookup_table: Self::setup_knight_lookup_table(),
-            rook_magic_bitboard: Self::setup_rook_magic_bitboard()
+            rook_magic_bitboard: Self::setup_rook_magic_bitboard(),
+            bishop_magic_bitboard: Self::setup_bishop_magic_bitboard()
         }
     }
 
@@ -60,6 +58,7 @@ impl<'a> MoveList<'a> {
 
         self.generate_knight_moves();
         self.generate_rook_moves();
+        self.generate_bishop_moves();
     }
 
     /// KING MOVE GENERATION
@@ -524,14 +523,12 @@ impl<'a> MoveList<'a> {
         let mut magic_bitboard = vec![0u64;1048577];
 
         for square in 0..64 {
-            let origin = 1 << square;
-
-            let full_mask_vector = Self::generate_rook_magic_key_mask(square, origin);
+            let full_mask_vector = Self::generate_rook_magic_key_mask(square);
 
             // Occupancy combinations
 
             for combination_mask in 0..(1 << full_mask_vector.len()) {
-                let raw_key = Self::generate_rook_magic_raw_key(&full_mask_vector, combination_mask);
+                let raw_key = Self::generate_magic_raw_key(&full_mask_vector, combination_mask);
                 let value = Self::generate_rook_magic_value(raw_key, square);
                 let key = magic_hash_rook(raw_key, square);
 
@@ -548,54 +545,19 @@ impl<'a> MoveList<'a> {
     /// Used for creating permutations of occupancies while creating magic bitboards
     /// parameters:
     ///     - square - number of the square we are considering (u8)
-    ///     - origin - u64 number with one bit set to 1 that identifies the given square (eq. to 1 << square)
     /// Outputs bits of the occupancy mask in vector in such a manner
     /// that after concatenation it would be the full rook occupancy mask for the given square
-    fn generate_rook_magic_key_mask(square: u8, origin: u64) -> Vec<u64> {
-        let mut full_mask: u64 = 0;
-
-        // Note that we omit the edges
-
-        let rank_start: u8 = square - square % 8 + 1;
-        let mut rank_tile: u64 = 1 << rank_start;
-        for i in 0..6 {
-            full_mask |= rank_tile;
-
-            rank_tile <<= 1;
-        }
-
-        let file_start: u8 = square % 8 + 8;
-        let mut file_tile: u64 = 1 << file_start;
-        for i in 0..6 {
-            full_mask |= file_tile;
-
-            file_tile <<= 8;
-        }
+    fn generate_rook_magic_key_mask(square: u8) -> Vec<u64> {
+        let mut full_mask: u64 = MAGIC_MASK_ROOK[square as usize];
 
         let mut full_mask_vector = Vec::<u64>::new();
         while full_mask > 0 {
             let tile = full_mask & full_mask.wrapping_neg();
             full_mask -= tile;
 
-            if tile != origin { full_mask_vector.push(tile); }
+            full_mask_vector.push(tile);
         }
         full_mask_vector
-    }
-
-    /// Generate a raw key for magic rook bitboard (unhashed)
-    /// given a mask vector of bits and a combination mask indicating which bits to consider
-    /// Example: [0100 0000, 0001 0000, 0000 1000, 0000 0001], 0b1011
-    ///         should output 0100 1001
-    fn generate_rook_magic_raw_key(full_mask_vector: &Vec<u64>, combination_mask: i32) -> u64 {
-        let mut mask = combination_mask;
-        let mut key: u64 = 0;
-        let mut index = 0;
-        while mask > 0 {
-            if mask % 2 == 1 { key |= full_mask_vector[index]; }
-            index += 1;
-            mask >>= 1;
-        }
-        key
     }
 
     /// Generates a bitboard of possible rook moves,
@@ -721,7 +683,7 @@ impl<'a> MoveList<'a> {
 
     /// Converts a bitboard of rook moves into a list of moves and updates self
     /// Takes origin square of the rook as input
-    /// Should be used separately for each owned knight
+    /// Should be used separately for each owned rook
     /// parameters:
     ///     move_bitboard - bitboards of squares targeted by a move subgroup
     ///     origin - number of the square the given rook is on
@@ -735,6 +697,210 @@ impl<'a> MoveList<'a> {
             let target = u64::checked_ilog2(tile).unwrap_or_default() as u8;
 
             self.moves.push(Move { origin, target, promotion: 0, piece: ROOK });
+        }
+    }
+
+    /// ROOK/BISHOP
+
+    /// Generate a raw key for magic bitboard (unhashed)
+    /// given a mask vector of bits and a combination mask indicating which bits to consider
+    /// Example: [0100 0000, 0001 0000, 0000 1000, 0000 0001], 0b1011
+    ///         should output 0100 1001
+    fn generate_magic_raw_key(full_mask_vector: &Vec<u64>, combination_mask: i32) -> u64 {
+        let mut mask = combination_mask;
+        let mut key: u64 = 0;
+        let mut index = 0;
+        while mask > 0 {
+            if mask % 2 == 1 { key |= full_mask_vector[index]; }
+            index += 1;
+            mask >>= 1;
+        }
+        key
+    }
+
+    /// BISHOP MOVE GENERATION
+
+    /// Outputs a magic bitboard of possible bishop moves at given square and given occupancy
+    /// Used by the constructor of the board for initialization of the magic bitboard
+    fn setup_bishop_magic_bitboard() -> Vec<u64> {
+        let mut magic_bitboard = vec![0u64;262145];
+
+        for square in 0..64 {
+            let full_mask_vector = Self::generate_bishop_magic_key_mask(square);
+
+            // Occupancy combinations
+
+            for combination_mask in 0..(1 << full_mask_vector.len()) {
+                let raw_key = Self::generate_magic_raw_key(&full_mask_vector, combination_mask);
+                let value = Self::generate_bishop_magic_value(raw_key, square);
+                let key = magic_hash_bishop(raw_key, square);
+
+                magic_bitboard[key] = value;
+            }
+
+        }
+
+        magic_bitboard
+    }
+
+    /// Generates full bishop occupancy mask for a given square
+    /// Supposes there is a piece on every relevant tile
+    /// Used for creating permutations of occupancies while creating magic bitboards
+    /// parameters:
+    ///     - square - number of the square we are considering (u8)
+    /// Outputs bits of the occupancy mask in vector in such a manner
+    /// that after concatenation it would be the full rook occupancy mask for the given square
+    fn generate_bishop_magic_key_mask(square: u8) -> Vec<u64> {
+        let mut full_mask: u64 = MAGIC_MASK_BISHOP[square as usize];
+
+        let mut full_mask_vector = Vec::<u64>::new();
+        while full_mask > 0 {
+            let tile = full_mask & full_mask.wrapping_neg();
+            full_mask -= tile;
+
+            full_mask_vector.push(tile);
+        }
+        full_mask_vector
+    }
+
+
+    /// Generates a bitboard of possible bishop moves,
+    /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    fn generate_bishop_magic_value(key: u64, origin: u8) -> u64 {
+        Self::generate_bishop_magic_bitboard_north_west(key, origin)
+        | Self::generate_bishop_magic_bitboard_north_east(key, origin)
+        | Self::generate_bishop_magic_bitboard_south_east(key, origin)
+        | Self::generate_bishop_magic_bitboard_south_west(key, origin)
+    }
+
+    /// Generates a bitboard of possible bishop North-West moves,
+    /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    /// Called by generate_bishop_magic_value, should not be called independently
+    fn generate_bishop_magic_bitboard_north_west(key: u64, origin: u8) -> u64 {
+        let mut bitboard: u64 = 0;
+
+        if origin % 8 == 7 || origin / 8 == 7 {return bitboard;}
+
+        let mut square = origin + 9;
+
+        while square % 8 != 7 && square / 8 != 7 {
+            bitboard |= 1 << square;
+            if (key >> square) % 2 == 1 { break; }
+
+            square += 9;
+        }
+        bitboard |= 1 << square;
+
+        bitboard
+    }
+
+    /// Generates a bitboard of possible bishop North-East moves,
+    /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    /// Called by generate_bishop_magic_value, should not be called independently
+    fn generate_bishop_magic_bitboard_north_east(key: u64, origin: u8) -> u64 {
+        let mut bitboard: u64 = 0;
+
+        if origin % 8 == 0 || origin / 8 == 7 {return bitboard;}
+
+        let mut square = origin + 7;
+
+        while square % 8 != 0 && square / 8 != 7 {
+            bitboard |= 1 << square;
+            if (key >> square) % 2 == 1 { break; }
+
+            square += 7;
+        }
+        bitboard |= 1 << square;
+
+        bitboard
+    }
+
+    /// Generates a bitboard of possible rook South-East moves,
+    /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    /// Called by generate_bishop_magic_value, should not be called independently
+    fn generate_bishop_magic_bitboard_south_east(key: u64, origin: u8) -> u64 {
+        let mut bitboard: u64 = 0;
+
+        if origin / 8 == 0 || origin % 8 == 0 {return bitboard;}
+
+        let mut square = origin - 9;
+
+        while square / 8 != 0 && square % 8 != 0 {
+            bitboard |= 1 << square;
+            if (key >> square) % 2 == 1 { break; }
+
+            square -= 9;
+        }
+        bitboard |= 1 << square;
+
+        bitboard
+    }
+
+    /// Generates a bitboard of possible rook South-West moves,
+    /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    /// Called by generate_bishop_magic_value, should not be called independently
+    fn generate_bishop_magic_bitboard_south_west(key: u64, origin: u8) -> u64 {
+        let mut bitboard: u64 = 0;
+
+        if origin / 8 == 0 || origin % 8 == 7 {return bitboard;}
+
+        let mut square = origin - 7;
+
+        while square / 8 != 0 && square % 8 != 7 {
+            bitboard |= 1 << square;
+            if (key >> square) % 2 == 1 { break; }
+
+            square -= 7;
+        }
+        bitboard |= 1 << square;
+
+        bitboard
+    }
+
+    /// Generates moves of bishops based on the current board situation and updates self
+    fn generate_bishop_moves(&mut self) {
+        let mut bishop_bitboard = self.board.piece_bitboards[4 + 6 * self.board.active_player as usize];
+
+        while bishop_bitboard != 0 {
+            let tile = bishop_bitboard & bishop_bitboard.wrapping_neg();
+            bishop_bitboard -= tile;
+
+            let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+            let bitboard = self.generate_bishop_moves_bitboard(square);
+            self.convert_bishop_moves(bitboard, square);
+        }
+    }
+
+    /// Retrieves bishop magic bitboard based on a given origin and current board situation
+    /// Constructs occupancy mask from the current board situation and
+    /// masks it with the relevant magic mask to obtain a raw key,
+    /// then hashes using magic hash to obtain a hashed key
+    fn get_bishop_magic_bitboard(&self, origin: u8) -> u64 {
+        let occupancy = self.board.main_bitboard & MAGIC_MASK_BISHOP[origin as usize];
+        self.bishop_magic_bitboard[magic_hash_bishop(occupancy, origin)]
+    }
+
+    /// Outputs a bitboard of bishop moves, based on the current board occupancy, given the bishop's square
+    fn generate_bishop_moves_bitboard(&self, square: u8) -> u64 {
+        self.get_bishop_magic_bitboard(square) & (self.board.empty_bitboard | self.board.colour_bitboards[self.board.inactive_player as usize])
+    }
+
+    /// Converts a bitboard of bishop moves into a list of moves and updates self
+    /// Takes origin square of the rook as input
+    /// Should be used separately for each owned bishop
+    /// parameters:
+    ///     move_bitboard - bitboards of squares targeted by a move subgroup
+    ///     origin - number of the square the given bishop is on
+    fn convert_bishop_moves(&mut self, move_bitboard: u64, origin: u8) {
+        let mut bitboard = move_bitboard;
+
+        while bitboard != 0 {
+            let tile = bitboard & bitboard.wrapping_neg();
+            bitboard -= tile;
+
+            let target = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+
+            self.moves.push(Move { origin, target, promotion: 0, piece: BISHOP });
         }
     }
 
@@ -777,6 +943,8 @@ mod tests {
         let expected_knight_bitboard2: u64 = 0b0000000000000000000000000000000000000000000001010000000000000000;
         let expected_rook_bitboard1: u64 = 0;
         let expected_rook_bitboard2: u64 = 0;
+        let expected_bishop_bitboard1: u64 = 0;
+        let expected_bishop_bitboard2: u64 = 0;
 
         let mut expected_push_moves = Vec::<Move>::new();
         expected_push_moves.push(Move{ origin: 8, target: 16, promotion: 0, piece: Piece::PAWN });
@@ -812,6 +980,8 @@ mod tests {
         assert_eq!(move_list.generate_knight_moves_bitboard(1), expected_knight_bitboard2);
         assert_eq!(move_list.generate_rook_moves_bitboard(0), expected_rook_bitboard1);
         assert_eq!(move_list.generate_rook_moves_bitboard(7), expected_rook_bitboard2);
+        assert_eq!(move_list.generate_bishop_moves_bitboard(5), expected_bishop_bitboard1);
+        assert_eq!(move_list.generate_bishop_moves_bitboard(2), expected_bishop_bitboard2);
 
         // PAWN MOVES
 
@@ -883,9 +1053,27 @@ mod tests {
         move_list.generate_rook_moves();
         assert!(compare_vecs(&move_list.moves, &expected_rook_moves_all));
 
+        // BISHOP MOVES
+
+        let mut expected_bishop_moves1 = Vec::<Move>::new();
+        let mut expected_bishop_moves2 = Vec::<Move>::new();
+        let mut expected_bishop_moves_all = [expected_bishop_moves1.clone(), expected_bishop_moves2.clone()].concat();
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_bishop_moves(expected_bishop_bitboard1, 5);
+        assert!(compare_vecs(&move_list.moves, &expected_bishop_moves1));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_bishop_moves(expected_bishop_bitboard2, 2);
+        assert!(compare_vecs(&move_list.moves, &expected_bishop_moves2));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.generate_bishop_moves();
+        assert!(compare_vecs(&move_list.moves, &expected_bishop_moves_all));
+
         // ALL MOVES
 
-        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all].concat();
+        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all, expected_bishop_moves_all].concat();
 
         move_list.moves = Vec::<Move>::new();
         move_list.generate_moves();
@@ -907,6 +1095,8 @@ mod tests {
         let expected_knight_bitboard2: u64 = 0b0000000000000000000001010000000000000000000000000000000000000000;
         let expected_rook_bitboard1: u64 = 0;
         let expected_rook_bitboard2: u64 = 0;
+        let expected_bishop_bitboard1: u64 = 0;
+        let expected_bishop_bitboard2: u64 = 0;
 
         let mut expected_push_moves = Vec::<Move>::new();
         expected_push_moves.push(Move{ origin: 55, target: 47, promotion: 0, piece: Piece::PAWN });
@@ -940,6 +1130,8 @@ mod tests {
         assert_eq!(move_list.generate_knight_moves_bitboard(57), expected_knight_bitboard2);
         assert_eq!(move_list.generate_rook_moves_bitboard(63), expected_rook_bitboard1);
         assert_eq!(move_list.generate_rook_moves_bitboard(56), expected_rook_bitboard2);
+        assert_eq!(move_list.generate_bishop_moves_bitboard(61), expected_bishop_bitboard1);
+        assert_eq!(move_list.generate_bishop_moves_bitboard(56), expected_bishop_bitboard2);
 
         // PAWN MOVES
 
@@ -1011,9 +1203,27 @@ mod tests {
         move_list.generate_rook_moves();
         assert!(compare_vecs(&move_list.moves, &expected_rook_moves_all));
 
+        // BISHOP MOVES
+
+        let mut expected_bishop_moves1 = Vec::<Move>::new();
+        let mut expected_bishop_moves2 = Vec::<Move>::new();
+        let mut expected_bishop_moves_all = [expected_bishop_moves1.clone(), expected_bishop_moves2.clone()].concat();
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_bishop_moves(expected_bishop_bitboard1, 61);
+        assert!(compare_vecs(&move_list.moves, &expected_bishop_moves1));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_bishop_moves(expected_bishop_bitboard2, 56);
+        assert!(compare_vecs(&move_list.moves, &expected_bishop_moves2));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.generate_bishop_moves();
+        assert!(compare_vecs(&move_list.moves, &expected_bishop_moves_all));
+
         // ALL MOVES
 
-        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all].concat();
+        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all, expected_bishop_moves_all].concat();
 
         move_list.moves = Vec::<Move>::new();
         move_list.generate_moves();
@@ -1034,6 +1244,7 @@ mod tests {
         let expected_king_bitboard: u64 =               0b0000000000000000000000000000000000000000000000000110000000100000;
         let expected_knight_bitboard1: u64 =            0b0000000000000000000000000000000000000001000000000001000100001010;
         let expected_rook_bitboard1: u64 =              0x0020202020D82020;
+        let expected_bishop_bitboard1: u64 =            0x20100A0008102000;
 
         let mut expected_push_moves = Vec::<Move>::new();
         expected_push_moves.push(Move{ origin: 15, target: 23, promotion: 0, piece: Piece::PAWN });
@@ -1065,6 +1276,7 @@ mod tests {
         assert_eq!(move_list.generate_king_moves_bitboard(), expected_king_bitboard);
         assert_eq!(move_list.generate_knight_moves_bitboard(18), expected_knight_bitboard1);
         assert_eq!(move_list.generate_rook_moves_bitboard(21), expected_rook_bitboard1);
+        assert_eq!(move_list.generate_bishop_moves_bitboard(34), expected_bishop_bitboard1);
 
         // PAWN MOVES
 
@@ -1140,9 +1352,29 @@ mod tests {
         move_list.generate_rook_moves();
         assert!(compare_vecs(&move_list.moves, &expected_rook_moves_all));
 
+        // BISHOP MOVES
+
+        let mut expected_bishop_moves1 = Vec::<Move>::new();
+        expected_bishop_moves1.push( Move { origin: 34, target: 13, promotion: 0, piece: BISHOP });
+        expected_bishop_moves1.push( Move { origin: 34, target: 20, promotion: 0, piece: BISHOP });
+        expected_bishop_moves1.push( Move { origin: 34, target: 27, promotion: 0, piece: BISHOP });
+        expected_bishop_moves1.push( Move { origin: 34, target: 41, promotion: 0, piece: BISHOP });
+        expected_bishop_moves1.push( Move { origin: 34, target: 43, promotion: 0, piece: BISHOP });
+        expected_bishop_moves1.push( Move { origin: 34, target: 52, promotion: 0, piece: BISHOP });
+        expected_bishop_moves1.push( Move { origin: 34, target: 61, promotion: 0, piece: BISHOP });
+        let mut expected_bishop_moves_all = [expected_bishop_moves1.clone()].concat();
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.convert_bishop_moves(expected_bishop_bitboard1, 34);
+        assert!(compare_vecs(&move_list.moves, &expected_bishop_moves1));
+
+        move_list.moves = Vec::<Move>::new();
+        move_list.generate_bishop_moves();
+        assert!(compare_vecs(&move_list.moves, &expected_bishop_moves_all));
+
         // ALL MOVES
 
-        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all].concat();
+        let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all, expected_bishop_moves_all].concat();
 
         move_list.moves = Vec::<Move>::new();
         move_list.generate_moves();
@@ -1218,7 +1450,7 @@ mod tests {
         board.read_fen("8/8/8/8/8/8/5p2/R3K2R w KQ - 1 1");
         let mut move_list = MoveList::new(&board);
 
-        let mut expected_move_list = Vec::<Move>::new();
+        let expected_move_list = Vec::<Move>::new();
 
         move_list.generate_white_castling();
 
@@ -1231,7 +1463,7 @@ mod tests {
         board.read_fen("8/8/8/8/8/8/5p2/RP2KP1R w KQ - 1 1");
         let mut move_list = MoveList::new(&board);
 
-        let mut expected_move_list = Vec::<Move>::new();
+        let expected_move_list = Vec::<Move>::new();
 
         move_list.generate_white_castling();
 
@@ -1304,7 +1536,7 @@ mod tests {
         board.read_fen("r3k2r/5P2/8/8/8/8/8/8 b kq - 1 1");
         let mut move_list = MoveList::new(&board);
 
-        let mut expected_move_list = Vec::<Move>::new();
+        let expected_move_list = Vec::<Move>::new();
 
         move_list.generate_black_castling();
 
@@ -1317,7 +1549,7 @@ mod tests {
         board.read_fen("rp2kp1r/8/8/8/8/8/8/8 b kq - 1 1");
         let mut move_list = MoveList::new(&board);
 
-        let mut expected_move_list = Vec::<Move>::new();
+        let expected_move_list = Vec::<Move>::new();
 
         move_list.generate_black_castling();
 
@@ -1344,7 +1576,7 @@ mod tests {
         board.read_fen("8/8/8/8/8/5n2/8/R3K2R w KQ - 1 1");
         let mut move_list = MoveList::new(&board);
 
-        let mut expected_move_list = Vec::<Move>::new();
+        let expected_move_list = Vec::<Move>::new();
 
         move_list.generate_white_castling();
 
@@ -1421,7 +1653,7 @@ mod tests {
 
         let expected_raw_mask=0b0000000000000000000000000000000000001000000001000000010000000000;
 
-        assert_eq!(expected_raw_mask, MoveList::generate_rook_magic_raw_key(&key_mask_vector, combination_mask));
+        assert_eq!(expected_raw_mask, MoveList::generate_magic_raw_key(&key_mask_vector, combination_mask));
     }
 
     #[test]
@@ -1441,7 +1673,7 @@ mod tests {
         // let mut expected_full_mask: u64= 0;
         // for i in key_mask_vector { expected_full_mask += i; }
 
-        assert_eq!(key_mask_vector, MoveList::generate_rook_magic_key_mask(26, 1<<26));
+        assert_eq!(key_mask_vector, MoveList::generate_rook_magic_key_mask(26));
     }
 
     #[test]
@@ -1449,17 +1681,17 @@ mod tests {
         let mut expected_vec1 = vec![0x0001000000000000, 0x0000010000000000, 0x0000000100000000, 0x0000000001000000, 0x000000000010000, 0x0000000000000100,
                         0x0000000000000040, 0x0000000000000020, 0x0000000000000010, 0x0000000000000008, 0x0000000000000004, 0x0000000000000002];
         expected_vec1.reverse();
-        assert_eq!(expected_vec1, MoveList::generate_rook_magic_key_mask(0,0));
+        assert_eq!(expected_vec1, MoveList::generate_rook_magic_key_mask(0));
 
         let mut expected_vec2 = vec![0x0080000000000000, 0x0000800000000000, 0x0000008000000000, 0x0000000080000000, 0x000000000800000, 0x0000000000008000,
                         0x0000000000000040, 0x0000000000000020, 0x0000000000000010, 0x0000000000000008, 0x0000000000000004, 0x0000000000000002];
         expected_vec2.reverse();
-        assert_eq!(expected_vec2, MoveList::generate_rook_magic_key_mask(7,1 << 7));
+        assert_eq!(expected_vec2, MoveList::generate_rook_magic_key_mask(7));
 
         let mut expected_vec3 = vec![0x0008000000000000, 0x0000080000000000, 0x0000000800000000, 0x0000000000080000, 0x0000000000000800,
                                      0x0000000040000000, 0x0000000020000000, 0x0000000010000000, 0x0000000004000000, 0x0000000002000000];
         expected_vec3.sort();
-        let mut actual = MoveList::generate_rook_magic_key_mask(27,1 << 27);
+        let mut actual = MoveList::generate_rook_magic_key_mask(27);
         actual.sort();
         assert_eq!(expected_vec3, actual); // rook on e4
     }
@@ -1474,7 +1706,7 @@ mod tests {
 
         let expected = vec1[0] + vec1[2] + vec1[3] + vec1[6];
 
-        assert_eq!(expected, MoveList::generate_rook_magic_raw_key(&vec1, combination_mask));
+        assert_eq!(expected, MoveList::generate_magic_raw_key(&vec1, combination_mask));
     }
 
     #[test]
@@ -1512,5 +1744,89 @@ mod tests {
         assert_eq!(0x01010101010101FE, move_list.rook_magic_bitboard[0]);
         assert_eq!(0x808080808080807F, move_list.rook_magic_bitboard[0 | (0b111 << 12)]);
         assert_eq!(0x0000000814080000, move_list.rook_magic_bitboard[magic_hash_rook(0x0000000814080000, 27)]);
+    }
+
+    #[test]
+    fn check_bishop_magic_bitboard_value_generation() {
+        let key: u64 =          0x0000000800000000;
+        let origin: u8 = 26;
+
+        // let value: u64 =         0x0000010A000A1120;
+        let value_north_west: u64 = 0x0000000800000000;
+        let value_north_east: u64 = 0x0000010200000000;
+        let value_south_east: u64 = 0x0000000000020100;
+        let value_south_west: u64 = 0x0000000000081020;
+
+        assert_eq!(value_north_west, MoveList::generate_bishop_magic_bitboard_north_west(key, origin));
+        assert_eq!(value_north_east, MoveList::generate_bishop_magic_bitboard_north_east(key, origin));
+        assert_eq!(value_south_east, MoveList::generate_bishop_magic_bitboard_south_east(key, origin));
+        assert_eq!(value_south_west, MoveList::generate_bishop_magic_bitboard_south_west(key, origin));
+        assert_eq!(value_north_west | value_north_east | value_south_east | value_south_west,
+                   MoveList::generate_bishop_magic_value(key, origin));
+    }
+
+    #[test]
+    fn check_bishop_magic_bitboard_value_generation_edge() {
+        let key: u64 =          0;
+        let origin: u8 = 0;
+
+        let value_north_west: u64 = 0x8040201008040200;
+        let value_north_east: u64 = 0;
+        let value_south_east: u64 = 0;
+        let value_south_west: u64 = 0;
+
+        assert_eq!(value_north_west, MoveList::generate_bishop_magic_bitboard_north_west(key, origin));
+        assert_eq!(value_north_east, MoveList::generate_bishop_magic_bitboard_north_east(key, origin));
+        assert_eq!(value_south_east, MoveList::generate_bishop_magic_bitboard_south_east(key, origin));
+        assert_eq!(value_south_west, MoveList::generate_bishop_magic_bitboard_south_west(key, origin));
+        assert_eq!(value_north_west | value_north_east | value_south_east | value_south_west,
+                   MoveList::generate_bishop_magic_value(key, origin));
+    }
+
+    #[test]
+    fn check_bishop_magic_bitboard_value_generation_insignificant_blockers() {
+        let key: u64 =              0x0000020400042200;
+        let origin: u8 = 27;
+
+        let value_north_west: u64 = 0x8040201000000000;
+        let value_north_east: u64 = 0x0000000400000000;
+        let value_south_east: u64 = 0x0000000000040000;
+        let value_south_west: u64 = 0x0000000000102000;
+
+        assert_eq!(value_north_west, MoveList::generate_bishop_magic_bitboard_north_west(key, origin));
+        assert_eq!(value_north_east, MoveList::generate_bishop_magic_bitboard_north_east(key, origin));
+        assert_eq!(value_south_east, MoveList::generate_bishop_magic_bitboard_south_east(key, origin));
+        assert_eq!(value_south_west, MoveList::generate_bishop_magic_bitboard_south_west(key, origin));
+        assert_eq!(value_north_west | value_north_east | value_south_east | value_south_west,
+                   MoveList::generate_bishop_magic_value(key, origin));
+    }
+
+
+    #[test]
+    fn check_bishop_magic_bitboard_mask_vector_generation() {
+        let mut key_mask_vector = Vec::<u64>::new();
+        key_mask_vector.push(0x0000000000001000);
+        key_mask_vector.push(0x0000000000020000);
+        key_mask_vector.push(0x0000000000080000);
+        key_mask_vector.push(0x0000000200000000);
+        key_mask_vector.push(0x0000000800000000);
+        key_mask_vector.push(0x0000100000000000);
+        key_mask_vector.push(0x0020000000000000);
+
+        // let mut expected_full_mask: u64= 0;
+        // for i in key_mask_vector { expected_full_mask += i; }
+
+        assert_eq!(key_mask_vector, MoveList::generate_bishop_magic_key_mask(26));
+    }
+
+    #[test]
+    fn check_bishop_magic_bitboard() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+        let move_list = MoveList::new(&board);
+
+        assert_eq!(0x8040201008040200, move_list.bishop_magic_bitboard[0]);
+        assert_eq!(0x0102040810204000, move_list.bishop_magic_bitboard[0 | (0b111 << 10)]);
+        assert_eq!(0x0000001400140000, move_list.bishop_magic_bitboard[magic_hash_bishop(0x0000001400140000, 27)]);
     }
 }
