@@ -1744,72 +1744,25 @@ mod tests {
         assert_eq!(value_north_west | value_north_east | value_south_east | value_south_west,
                    MoveList::generate_bishop_magic_value(key, origin));
     }
-    //
-    // #[test]
-    // fn check_rook_magic_bitboard_raw_key_generation() {
-    //     let mut key_mask_vector = Vec::<u64>::new();
-    //     // key_mask_vector.push(0b0000000000000000000000000000000000000000000000000000000000000100);
-    //     key_mask_vector.push(0b0000000000000000000000000000000000000000000000000000010000000000);
-    //     key_mask_vector.push(0b0000000000000000000000000000000000000000000001000000000000000000);
-    //     // key_mask_vector.push(0b0000000000000000000000000000000000000001000000000000000000000000);
-    //     key_mask_vector.push(0b0000000000000000000000000000000000000010000000000000000000000000);
-    //     key_mask_vector.push(0b0000000000000000000000000000000000001000000000000000000000000000);
-    //     key_mask_vector.push(0b0000000000000000000000000000000000010000000000000000000000000000);
-    //     key_mask_vector.push(0b0000000000000000000000000000000000100000000000000000000000000000);
-    //     key_mask_vector.push(0b0000000000000000000000000000000001000000000000000000000000000000);
-    //     // key_mask_vector.push(0b0000000000000000000000000000000010000000000000000000000000000000);
-    //     key_mask_vector.push(0b0000000000000000000000000000010000000000000000000000000000000000);
-    //     key_mask_vector.push(0b0000000000000000000001000000000000000000000000000000000000000000);
-    //     key_mask_vector.push(0b0000000000000100000000000000000000000000000000000000000000000000);
-    //     // key_mask_vector.push(0b0000010000000000000000000000000000000000000000000000000000000000);
-    //
-    //     let combination_mask = 0b00000000001011;
-    //
-    //     let expected_raw_mask=0b0000000000000000000000000000000000001000000001000000010000000000;
-    //
-    //     assert_eq!(expected_raw_mask, MoveList::generate_magic_raw_key(&key_mask_vector, combination_mask));
-    // }
-    //
-    // #[test]
-    // fn check_rook_magic_bitboard_mask_vector_generation() {
-    //     let mut key_mask_vector = Vec::<u64>::new();
-    //     key_mask_vector.push(0b0000000000000000000000000000000000000000000000000000010000000000);
-    //     key_mask_vector.push(0b0000000000000000000000000000000000000000000001000000000000000000);
-    //     key_mask_vector.push(0b0000000000000000000000000000000000000010000000000000000000000000);
-    //     key_mask_vector.push(0b0000000000000000000000000000000000001000000000000000000000000000);
-    //     key_mask_vector.push(0b0000000000000000000000000000000000010000000000000000000000000000);
-    //     key_mask_vector.push(0b0000000000000000000000000000000000100000000000000000000000000000);
-    //     key_mask_vector.push(0b0000000000000000000000000000000001000000000000000000000000000000);
-    //     key_mask_vector.push(0b0000000000000000000000000000010000000000000000000000000000000000);
-    //     key_mask_vector.push(0b0000000000000000000001000000000000000000000000000000000000000000);
-    //     key_mask_vector.push(0b0000000000000100000000000000000000000000000000000000000000000000);
-    //
-    //     // let mut expected_full_mask: u64= 0;
-    //     // for i in key_mask_vector { expected_full_mask += i; }
-    //
-    //     assert_eq!(key_mask_vector, MoveList::generate_rook_magic_key_mask(26, 1<<26));
-    // }
-    //
-    // #[test]
-    // fn rook_key_mask_vector() {
-    //     let mut expected_vec1 = vec![0x0001000000000000, 0x0000010000000000, 0x0000000100000000, 0x0000000001000000, 0x000000000010000, 0x0000000000000100,
-    //                     0x0000000000000040, 0x0000000000000020, 0x0000000000000010, 0x0000000000000008, 0x0000000000000004, 0x0000000000000002];
-    //     expected_vec1.reverse();
-    //     assert_eq!(expected_vec1, MoveList::generate_rook_magic_key_mask(0,0));
-    //
-    //     let mut expected_vec2 = vec![0x0080000000000000, 0x0000800000000000, 0x0000008000000000, 0x0000000080000000, 0x000000000800000, 0x0000000000008000,
-    //                     0x0000000000000040, 0x0000000000000020, 0x0000000000000010, 0x0000000000000008, 0x0000000000000004, 0x0000000000000002];
-    //     expected_vec2.reverse();
-    //     assert_eq!(expected_vec2, MoveList::generate_rook_magic_key_mask(7,1 << 7));
-    //
-    //     let mut expected_vec3 = vec![0x0008000000000000, 0x0000080000000000, 0x0000000800000000, 0x0000000000080000, 0x0000000000000800,
-    //                                  0x0000000040000000, 0x0000000020000000, 0x0000000010000000, 0x0000000004000000, 0x0000000002000000];
-    //     expected_vec3.sort();
-    //     let mut actual = MoveList::generate_rook_magic_key_mask(27,1 << 27);
-    //     actual.sort();
-    //     assert_eq!(expected_vec3, actual); // rook on e4
-    // }
-    //
+
+
+    #[test]
+    fn check_bishop_magic_bitboard_mask_vector_generation() {
+        let mut key_mask_vector = Vec::<u64>::new();
+        key_mask_vector.push(0x0000000000001000);
+        key_mask_vector.push(0x0000000000020000);
+        key_mask_vector.push(0x0000000000080000);
+        key_mask_vector.push(0x0000000200000000);
+        key_mask_vector.push(0x0000000800000000);
+        key_mask_vector.push(0x0000100000000000);
+        key_mask_vector.push(0x0020000000000000);
+
+        // let mut expected_full_mask: u64= 0;
+        // for i in key_mask_vector { expected_full_mask += i; }
+
+        assert_eq!(key_mask_vector, MoveList::generate_bishop_magic_key_mask(26, 1<<26));
+    }
+    
     // #[test]
     // fn rook_raw_mask() {
     //     let mut vec1 = vec![0x0001000000000000, 0x0000010000000000, 0x0000000100000000, 0x0000000001000000, 0x000000000010000, 0x0000000000000100,
