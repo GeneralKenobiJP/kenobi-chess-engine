@@ -759,7 +759,7 @@ impl<'a> MoveList<'a> {
 
             for combination_mask in 0..(1 << full_mask_vector.len()) {
                 let raw_key = Self::generate_magic_raw_key(&full_mask_vector, combination_mask);
-                // let value = Self::generate_bishop_magic_value(raw_key, square);
+                let value = Self::generate_bishop_magic_value(raw_key, square);
                 // let key = magic_hash_bishop(raw_key, square);
 
                 // magic_bitboard[key] = value;
@@ -791,99 +791,99 @@ impl<'a> MoveList<'a> {
         full_mask_vector
     }
 
-    //
-    // /// Generates a bitboard of possible rook moves,
-    // /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
-    // fn generate_rook_magic_value(key: u64, origin: u8) -> u64 {
-    //     Self::generate_rook_magic_bitboard_left(key, origin)
-    //     | Self::generate_rook_magic_bitboard_right(key, origin)
-    //     | Self::generate_rook_magic_bitboard_top(key, origin)
-    //     | Self::generate_rook_magic_bitboard_bottom(key, origin)
-    // }
-    //
-    // /// Generates a bitboard of possible rook West moves,
-    // /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
-    // /// Called by generate_rook_magic_value, should not be called independently
-    // fn generate_rook_magic_bitboard_left(key: u64, origin: u8) -> u64 {
-    //     let mut bitboard: u64 = 0;
-    //
-    //     if origin % 8 == 7 {return bitboard;}
-    //
-    //     let mut square = origin + 1;
-    //
-    //     while square % 8 != 7 {
-    //         bitboard |= 1 << square;
-    //         if (key >> square) % 2 == 1 { break; }
-    //
-    //         square += 1;
-    //     }
-    //     bitboard |= 1 << square;
-    //
-    //     bitboard
-    // }
-    //
-    // /// Generates a bitboard of possible rook East moves,
-    // /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
-    // /// Called by generate_rook_magic_value, should not be called independently
-    // fn generate_rook_magic_bitboard_right(key: u64, origin: u8) -> u64 {
-    //     let mut bitboard: u64 = 0;
-    //
-    //     if origin % 8 == 0 {return bitboard;}
-    //
-    //     let mut square = origin - 1;
-    //
-    //     while square % 8 != 0 {
-    //         bitboard |= 1 << square;
-    //         if (key >> square) % 2 == 1 { break; }
-    //
-    //         square -= 1;
-    //     }
-    //     bitboard |= 1 << square;
-    //
-    //     bitboard
-    // }
-    //
-    // /// Generates a bitboard of possible rook North moves,
-    // /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
-    // /// Called by generate_rook_magic_value, should not be called independently
-    // fn generate_rook_magic_bitboard_top(key: u64, origin: u8) -> u64 {
-    //     let mut bitboard: u64 = 0;
-    //
-    //     if origin / 8 == 7 {return bitboard;}
-    //
-    //     let mut square = origin + 8;
-    //
-    //     while square / 8 != 7 {
-    //         bitboard |= 1 << square;
-    //         if (key >> square) % 2 == 1 { break; }
-    //
-    //         square += 8;
-    //     }
-    //     bitboard |= 1 << square;
-    //
-    //     bitboard
-    // }
-    //
-    // /// Generates a bitboard of possible rook South moves,
-    // /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
-    // /// Called by generate_rook_magic_value, should not be called independently
-    // fn generate_rook_magic_bitboard_bottom(key: u64, origin: u8) -> u64 {
-    //     let mut bitboard: u64 = 0;
-    //
-    //     if origin / 8 == 0 {return bitboard;}
-    //
-    //     let mut square = origin - 8;
-    //
-    //     while square / 8 != 0 {
-    //         bitboard |= 1 << square;
-    //         if (key >> square) % 2 == 1 { break; }
-    //
-    //         square -= 8;
-    //     }
-    //     bitboard |= 1 << square;
-    //
-    //     bitboard
-    // }
+
+    /// Generates a bitboard of possible bishop moves,
+    /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    fn generate_bishop_magic_value(key: u64, origin: u8) -> u64 {
+        Self::generate_bishop_magic_bitboard_north_west(key, origin)
+        | Self::generate_bishop_magic_bitboard_north_east(key, origin)
+        | Self::generate_bishop_magic_bitboard_south_east(key, origin)
+        | Self::generate_bishop_magic_bitboard_south_west(key, origin)
+    }
+
+    /// Generates a bitboard of possible bishop North-West moves,
+    /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    /// Called by generate_bishop_magic_value, should not be called independently
+    fn generate_bishop_magic_bitboard_north_west(key: u64, origin: u8) -> u64 {
+        let mut bitboard: u64 = 0;
+
+        if origin % 8 == 7 || origin / 8 == 7 {return bitboard;}
+
+        let mut square = origin + 9;
+
+        while square % 8 != 7 && square / 8 != 7 {
+            bitboard |= 1 << square;
+            if (key >> square) % 2 == 1 { break; }
+
+            square += 9;
+        }
+        bitboard |= 1 << square;
+
+        bitboard
+    }
+
+    /// Generates a bitboard of possible bishop North-East moves,
+    /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    /// Called by generate_bishop_magic_value, should not be called independently
+    fn generate_bishop_magic_bitboard_north_east(key: u64, origin: u8) -> u64 {
+        let mut bitboard: u64 = 0;
+
+        if origin % 8 == 0 || origin / 8 == 7 {return bitboard;}
+
+        let mut square = origin + 7;
+
+        while square % 8 != 0 && square / 8 != 7 {
+            bitboard |= 1 << square;
+            if (key >> square) % 2 == 1 { break; }
+
+            square += 7;
+        }
+        bitboard |= 1 << square;
+
+        bitboard
+    }
+
+    /// Generates a bitboard of possible rook South-East moves,
+    /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    /// Called by generate_bishop_magic_value, should not be called independently
+    fn generate_bishop_magic_bitboard_south_east(key: u64, origin: u8) -> u64 {
+        let mut bitboard: u64 = 0;
+
+        if origin / 8 == 0 || origin % 8 == 0 {return bitboard;}
+
+        let mut square = origin - 9;
+
+        while square / 8 != 0 && square % 8 != 0 {
+            bitboard |= 1 << square;
+            if (key >> square) % 2 == 1 { break; }
+
+            square -= 9;
+        }
+        bitboard |= 1 << square;
+
+        bitboard
+    }
+
+    /// Generates a bitboard of possible rook South-West moves,
+    /// given an occupancy mask (i.e. a magic bitboard raw key), and a square of origin
+    /// Called by generate_bishop_magic_value, should not be called independently
+    fn generate_bishop_magic_bitboard_south_west(key: u64, origin: u8) -> u64 {
+        let mut bitboard: u64 = 0;
+
+        if origin / 8 == 0 || origin % 8 == 7 {return bitboard;}
+
+        let mut square = origin - 7;
+
+        while square / 8 != 0 && square % 8 != 7 {
+            bitboard |= 1 << square;
+            if (key >> square) % 2 == 1 { break; }
+
+            square -= 7;
+        }
+        bitboard |= 1 << square;
+
+        bitboard
+    }
     //
     // /// Generates moves of rooks based on the current board situation and updates self
     // fn generate_rook_moves(&mut self) {
@@ -1615,7 +1615,7 @@ mod tests {
 
         let expected_raw_mask=0b0000000000000000000000000000000000001000000001000000010000000000;
 
-        assert_eq!(expected_raw_mask, MoveList::generate_rook_magic_raw_key(&key_mask_vector, combination_mask));
+        assert_eq!(expected_raw_mask, MoveList::generate_magic_raw_key(&key_mask_vector, combination_mask));
     }
 
     #[test]
@@ -1668,7 +1668,7 @@ mod tests {
 
         let expected = vec1[0] + vec1[2] + vec1[3] + vec1[6];
 
-        assert_eq!(expected, MoveList::generate_rook_magic_raw_key(&vec1, combination_mask));
+        assert_eq!(expected, MoveList::generate_magic_raw_key(&vec1, combination_mask));
     }
 
     #[test]
