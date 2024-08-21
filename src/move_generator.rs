@@ -3,14 +3,10 @@
 //! Involves bitboards, magic bitboards, etc.
 
 use std::collections::HashSet;
-use crate::piece;
 use crate::piece::Piece;
-use crate::piece::Colour;
-use crate::board;
 use crate::board::{Board, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_MASK, UPPER_RANK_LOWEST_TILE};
 use crate::piece::Colour::{BLACK, WHITE};
 use crate::piece::Piece::{BISHOP, KING, KNIGHT, ROOK};
-use crate::magic_hasher;
 use crate::magic_hasher::{magic_hash_bishop, magic_hash_rook, MAGIC_MASK_BISHOP, MAGIC_MASK_ROOK};
 
 const KNIGHT_SHIFTS: [i8; 8] = [17, 10, -6, -15, -17, -10, 6, 15]; // Beginning on NW, counter-clockwise
@@ -1454,7 +1450,7 @@ mod tests {
         board.read_fen("8/8/8/8/8/8/5p2/R3K2R w KQ - 1 1");
         let mut move_list = MoveList::new(&board);
 
-        let mut expected_move_list = Vec::<Move>::new();
+        let expected_move_list = Vec::<Move>::new();
 
         move_list.generate_white_castling();
 
@@ -1467,7 +1463,7 @@ mod tests {
         board.read_fen("8/8/8/8/8/8/5p2/RP2KP1R w KQ - 1 1");
         let mut move_list = MoveList::new(&board);
 
-        let mut expected_move_list = Vec::<Move>::new();
+        let expected_move_list = Vec::<Move>::new();
 
         move_list.generate_white_castling();
 
@@ -1540,7 +1536,7 @@ mod tests {
         board.read_fen("r3k2r/5P2/8/8/8/8/8/8 b kq - 1 1");
         let mut move_list = MoveList::new(&board);
 
-        let mut expected_move_list = Vec::<Move>::new();
+        let expected_move_list = Vec::<Move>::new();
 
         move_list.generate_black_castling();
 
@@ -1553,7 +1549,7 @@ mod tests {
         board.read_fen("rp2kp1r/8/8/8/8/8/8/8 b kq - 1 1");
         let mut move_list = MoveList::new(&board);
 
-        let mut expected_move_list = Vec::<Move>::new();
+        let expected_move_list = Vec::<Move>::new();
 
         move_list.generate_black_castling();
 
@@ -1580,7 +1576,7 @@ mod tests {
         board.read_fen("8/8/8/8/8/5n2/8/R3K2R w KQ - 1 1");
         let mut move_list = MoveList::new(&board);
 
-        let mut expected_move_list = Vec::<Move>::new();
+        let expected_move_list = Vec::<Move>::new();
 
         move_list.generate_white_castling();
 

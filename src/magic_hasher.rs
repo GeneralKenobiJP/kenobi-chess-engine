@@ -97,9 +97,6 @@ pub fn magic_hash_bishop(key: u64, origin: u8) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
-    use std::hash::{BuildHasher, Hasher, RandomState};
-    use crate::board::{Board, START_POSITION};
     use super::*;
 
     #[test]
