@@ -10,13 +10,21 @@ use crate::piece::Piece;
 use crate::piece::Colour;
 use crate::piece::Colour::{BLACK, WHITE};
 use crate::move_generator::Move;
-use crate::piece::Piece::PAWN;
+use crate::piece::Piece::{KING, PAWN, ROOK};
 
 pub const START_POSITION: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 pub const UPPER_RANK_LOWEST_TILE: u8 = 56;
 pub const LOWER_RANK_HIGHEST_TILE: u8 = 7;
 pub const NOT_FILE_A_MASK: u64 = 0b0111111101111111011111110111111101111111011111110111111101111111;
 pub const NOT_FILE_H_MASK: u64 = 0b1111111011111110111111101111111011111110111111101111111011111110;
+pub const CASTLE_WHITE_KINGSIDE_MASK: u64 =  0xFFFFFFFFFFFFFFF6;
+pub const CASTLE_WHITE_QUEENSIDE_MASK: u64 = 0xFFFFFFFFFFFFFF67;
+pub const CASTLE_BLACK_KINGSIDE_MASK: u64 =  0xF6FFFFFFFFFFFFFF;
+pub const CASTLE_BLACK_QUEENSIDE_MASK: u64 = 0x67FFFFFFFFFFFFFF;
+pub const CASTLE_WHITE_KINGSIDE_FLAGS: [u64; 2] = [0x0000000000000002, 0x0000000000000004];
+pub const CASTLE_WHITE_QUEENSIDE_FLAGS: [u64; 2] = [0x0000000000000020, 0x0000000000000010];
+pub const CASTLE_BLACK_KINGSIDE_FLAGS: [u64; 2] = [0x0200000000000000, 0x0400000000000000];
+pub const CASTLE_BLACK_QUEENSIDE_FLAGS: [u64; 2] = [0x2000000000000000, 0x1000000000000000];
 
 // #[derive(Copy)]
 pub struct Board {
@@ -87,6 +95,40 @@ impl Board {
         for index in (self.inactive_player as usize, self.inactive_player as usize + 6) {
             self.colour_bitboards[index] &= target_mask;
         }
+    }
+
+    pub fn make_castling_move(&mut self, piece_move: &Move) {
+        let flag_pointer;
+        let mask;
+
+        if piece_move.origin == 3 {
+            if piece_move.target == 1 {
+                flag_pointer = &CASTLE_WHITE_KINGSIDE_FLAGS;
+                mask = CASTLE_WHITE_KINGSIDE_MASK;
+            }
+            else {
+                flag_pointer = &CASTLE_WHITE_QUEENSIDE_FLAGS;
+                mask = CASTLE_WHITE_QUEENSIDE_MASK;
+            }
+        }
+        else {
+            if piece_move.target == 57 {
+                flag_pointer = &CASTLE_BLACK_KINGSIDE_FLAGS;
+                mask = CASTLE_BLACK_KINGSIDE_MASK;
+            }
+            else {
+                flag_pointer = &CASTLE_BLACK_QUEENSIDE_FLAGS;
+                mask = CASTLE_BLACK_QUEENSIDE_MASK;
+            }
+        }
+
+        self.main_bitboard &= mask;
+        self.colour_bitboards[self.active_player as usize] &= mask;
+        self.colour_bitboards[self.active_player as usize] |= *flag_pointer[0] | *flag_pointer[1];
+        self.piece_bitboards[self.active_player as usize + KING as usize] &= mask;
+        self.piece_bitboards[self.active_player as usize + KING as usize] |= *flag_pointer[0];
+        self.piece_bitboards[self.active_player as usize + ROOK as usize] &= mask;
+        self.piece_bitboards[self.active_player as usize + ROOK as usize] |= *flag_pointer[1];
     }
 
     /// Prints debug information about the board
