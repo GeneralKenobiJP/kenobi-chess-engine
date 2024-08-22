@@ -451,4 +451,35 @@ mod tests {
             assert_eq!(piece_bitboards[i], board.piece_bitboards[i]);
         }
     }
+
+    #[test]
+    fn quiet_move_black_pawn() {
+        let mut board = Board::new();
+        let fen = "rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b K - 1 2";
+        board.read_fen(fen);
+
+        let main_bitboard = board.main_bitboard;
+        let colour_bitboards = board.colour_bitboards.clone();
+        let piece_bitboards = board.piece_bitboards.clone();
+
+        let piece_move = Move { origin: 37, target: 29, promotion: 0, piece: PAWN };
+
+        let origin: u64 = 1 << 37;
+        let target: u64 = 1 << 29;
+
+        board.make_move(&piece_move);
+
+        assert_eq!(main_bitboard - origin + target, board.main_bitboard);
+        assert_eq!(colour_bitboards[1] - origin + target, board.colour_bitboards[1]);
+        assert_eq!(colour_bitboards[0], board.colour_bitboards[0]);
+        for i in 0..12 {
+            if i == PAWN as usize + 6
+            {
+                assert_eq!(piece_bitboards[i] - origin + target, board.piece_bitboards[i]);
+                continue;
+            }
+
+            assert_eq!(piece_bitboards[i], board.piece_bitboards[i]);
+        }
+    }
 }
