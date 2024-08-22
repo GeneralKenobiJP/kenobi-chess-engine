@@ -12,11 +12,11 @@ use crate::magic_hasher::{magic_hash_bishop, magic_hash_rook, MAGIC_MASK_BISHOP,
 const KNIGHT_SHIFTS: [i8; 8] = [17, 10, -6, -15, -17, -10, 6, 15]; // Beginning on NW, counter-clockwise
 
 #[derive(PartialEq, Eq, Hash, Clone)]
-struct Move {
-    origin: u8,
-    target: u8,
-    promotion: u8,
-    piece: Piece
+pub struct Move {
+    pub origin: u8,
+    pub target: u8,
+    pub promotion: u8,
+    pub piece: Piece
 }
 
 struct MoveList<'a> {

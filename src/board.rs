@@ -9,6 +9,8 @@ use scanner_rust::ScannerStr;
 use crate::piece::Piece;
 use crate::piece::Colour;
 use crate::piece::Colour::{BLACK, WHITE};
+use crate::move_generator::Move;
+use crate::piece::Piece::PAWN;
 
 pub const START_POSITION: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 pub const UPPER_RANK_LOWEST_TILE: u8 = 56;
@@ -59,6 +61,32 @@ impl Board {
         self.colour_bitboards[colour as usize] += bit;
         let index = piece as usize + 6 * colour as usize;
         self.piece_bitboards[index] += bit;
+    }
+
+    pub fn make_move(&mut self, piece_move: &Move) {
+        let origin = 1 << piece_move.origin;
+        let target = 1 << piece_move.target;
+        let active_player = self.active_player as usize;
+        let piece = piece_move.piece.clone() as usize;
+        let promotion = piece_move.promotion;
+        if promotion == 1 {
+            self.make_castling_move(piece_move);
+            return;
+        }
+        let final_piece = if promotion == 0 {PAWN as usize} else { promotion as usize };
+        let target_mask = !target;
+
+        self.main_bitboard ^= origin;
+        self.main_bitboard |= target;
+        self.colour_bitboards[active_player] ^= origin;
+        self.colour_bitboards[active_player] |= target;
+        self.piece_bitboards[active_player + piece] ^= origin;
+        self.piece_bitboards[active_player + final_piece] |= target;
+
+        self.colour_bitboards[self.inactive_player as usize] &= target_mask;
+        for index in (self.inactive_player as usize, self.inactive_player as usize + 6) {
+            self.colour_bitboards[index] &= target_mask;
+        }
     }
 
     /// Prints debug information about the board
