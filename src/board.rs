@@ -421,40 +421,34 @@ mod tests {
         }
     }
 
-    // #[test]
-    // fn quiet_move_bishop() {
-    //     let mut board = Board::new();
-    //     let fen = "r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/2R2N2/P7/RK6 w q d6 1 25";
-    //     board.read_fen(fen);
-    //
-    //     let main_bitboard = board.main_bitboard;
-    //     let colour_bitboards = board.colour_bitboards.clone();
-    //     let piece_bitboards = board.piece_bitboards.clone();
-    //
-    //     let piece_move = Move { origin: 15, target: 23, promotion: 0, piece: PAWN };
-    //     let piece_move2 = Move { origin: 34, target: 43, promotion: 0, piece: BISHOP };
-    //     let piece_move3 = Move { origin: 6, target: 5, promotion: 0, piece: KING };
-    //
-    //     let origin: u64 = 1 << 15;
-    //     let origin2: u64 = 1 << 34;
-    //     let origin3: u64 = 1 << 6;
-    //     let target: u64 = 1 << 23;
-    //     let target2: u64 = 1 << 43;
-    //     let target3: u64 = 1 << 5;
-    //
-    //     board.make_move(&piece_move);
-    //
-    //     assert_eq!(main_bitboard - origin + target, board.main_bitboard);
-    //     assert_eq!(colour_bitboards[0] - origin + target, board.colour_bitboards[0]);
-    //     assert_eq!(colour_bitboards[1], board.colour_bitboards[1]);
-    //     for i in 0..12 {
-    //         if i == 1
-    //         {
-    //             assert_eq!(piece_bitboards[i] - origin + target, board.piece_bitboards[i]);
-    //             continue;
-    //         }
-    //
-    //         assert_eq!(piece_bitboards[i], board.piece_bitboards[i]);
-    //     }
-    // }
+    #[test]
+    fn quiet_move_king() {
+        let mut board = Board::new();
+        let fen = "r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/2R2N2/P7/RK6 w q d6 1 25";
+        board.read_fen(fen);
+
+        let main_bitboard = board.main_bitboard;
+        let colour_bitboards = board.colour_bitboards.clone();
+        let piece_bitboards = board.piece_bitboards.clone();
+
+        let piece_move = Move { origin: 6, target: 5, promotion: 0, piece: KING };
+
+        let origin: u64 = 1 << 6;
+        let target: u64 = 1 << 5;
+
+        board.make_move(&piece_move);
+
+        assert_eq!(main_bitboard - origin + target, board.main_bitboard);
+        assert_eq!(colour_bitboards[0] - origin + target, board.colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1], board.colour_bitboards[1]);
+        for i in 0..12 {
+            if i == KING as usize
+            {
+                assert_eq!(piece_bitboards[i] - origin + target, board.piece_bitboards[i]);
+                continue;
+            }
+
+            assert_eq!(piece_bitboards[i], board.piece_bitboards[i]);
+        }
+    }
 }
