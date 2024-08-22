@@ -82,19 +82,20 @@ impl Board {
             self.make_castling_move(piece_move);
             return;
         }
-        let final_piece = if promotion == 0 {PAWN as usize} else { promotion as usize };
+        let final_piece = if promotion == 0 {piece} else { promotion as usize };
         let target_mask = !target;
 
         self.main_bitboard ^= origin;
         self.main_bitboard |= target;
         self.colour_bitboards[active_player] ^= origin;
         self.colour_bitboards[active_player] |= target;
-        self.piece_bitboards[active_player + piece] ^= origin;
-        self.piece_bitboards[active_player + final_piece] |= target;
+        self.piece_bitboards[6*active_player + piece] ^= origin;
+        self.piece_bitboards[6*active_player + final_piece] |= target;
+        println!("piece: {}, final_piece: {}", piece, final_piece);
 
         self.colour_bitboards[self.inactive_player as usize] &= target_mask;
-        for index in (self.inactive_player as usize, self.inactive_player as usize + 6) {
-            self.colour_bitboards[index] &= target_mask;
+        for index in 6*self.inactive_player as usize..=6*self.inactive_player as usize + 5 {
+            self.piece_bitboards[index] &= target_mask;
         }
     }
 
@@ -126,12 +127,12 @@ impl Board {
         }
 
         self.main_bitboard &= mask;
-        self.colour_bitboards[self.active_player as usize] &= mask;
-        self.colour_bitboards[self.active_player as usize] |= *flag_pointer[0] | *flag_pointer[1];
-        self.piece_bitboards[self.active_player as usize + KING as usize] &= mask;
-        self.piece_bitboards[self.active_player as usize + KING as usize] |= *flag_pointer[0];
-        self.piece_bitboards[self.active_player as usize + ROOK as usize] &= mask;
-        self.piece_bitboards[self.active_player as usize + ROOK as usize] |= *flag_pointer[1];
+        self.colour_bitboards[6*self.active_player as usize] &= mask;
+        self.colour_bitboards[6*self.active_player as usize] |= flag_pointer[0] | flag_pointer[1];
+        self.piece_bitboards[6*self.active_player as usize + KING as usize] &= mask;
+        self.piece_bitboards[6*self.active_player as usize + KING as usize] |= flag_pointer[0];
+        self.piece_bitboards[6*self.active_player as usize + ROOK as usize] &= mask;
+        self.piece_bitboards[6*self.active_player as usize + ROOK as usize] |= flag_pointer[1];
     }
 
     /// Prints debug information about the board
@@ -240,6 +241,7 @@ impl Board {
 
 #[cfg(test)]
 mod tests {
+    use crate::piece::Piece::BISHOP;
     use super::*;
 
     #[test]
@@ -356,4 +358,72 @@ mod tests {
         assert_eq!(board.half_moves, 1);
         assert_eq!(board.full_moves, 2);
     }
+
+    #[test]
+    fn quiet_move_pawn() {
+        let mut board = Board::new();
+        let fen = "r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/2R2N2/P7/RK6 w q d6 1 25";
+        board.read_fen(fen);
+
+        let main_bitboard = board.main_bitboard;
+        let colour_bitboards = board.colour_bitboards.clone();
+        let piece_bitboards = board.piece_bitboards.clone();
+
+        let piece_move = Move { origin: 15, target: 23, promotion: 0, piece: PAWN };
+
+        let origin: u64 = 1 << 15;
+        let target: u64 = 1 << 23;
+
+        board.make_move(&piece_move);
+
+        assert_eq!(main_bitboard - origin + target, board.main_bitboard);
+        assert_eq!(colour_bitboards[0] - origin + target, board.colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1], board.colour_bitboards[1]);
+        for i in 0..12 {
+            if i == 1
+            {
+                assert_eq!(piece_bitboards[i] - origin + target, board.piece_bitboards[i]);
+                continue;
+            }
+
+            assert_eq!(piece_bitboards[i], board.piece_bitboards[i]);
+        }
+    }
+
+    // #[test]
+    // fn quiet_move_bishop() {
+    //     let mut board = Board::new();
+    //     let fen = "r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/2R2N2/P7/RK6 w q d6 1 25";
+    //     board.read_fen(fen);
+    //
+    //     let main_bitboard = board.main_bitboard;
+    //     let colour_bitboards = board.colour_bitboards.clone();
+    //     let piece_bitboards = board.piece_bitboards.clone();
+    //
+    //     let piece_move = Move { origin: 15, target: 23, promotion: 0, piece: PAWN };
+    //     let piece_move2 = Move { origin: 34, target: 43, promotion: 0, piece: BISHOP };
+    //     let piece_move3 = Move { origin: 6, target: 5, promotion: 0, piece: KING };
+    //
+    //     let origin: u64 = 1 << 15;
+    //     let origin2: u64 = 1 << 34;
+    //     let origin3: u64 = 1 << 6;
+    //     let target: u64 = 1 << 23;
+    //     let target2: u64 = 1 << 43;
+    //     let target3: u64 = 1 << 5;
+    //
+    //     board.make_move(&piece_move);
+    //
+    //     assert_eq!(main_bitboard - origin + target, board.main_bitboard);
+    //     assert_eq!(colour_bitboards[0] - origin + target, board.colour_bitboards[0]);
+    //     assert_eq!(colour_bitboards[1], board.colour_bitboards[1]);
+    //     for i in 0..12 {
+    //         if i == 1
+    //         {
+    //             assert_eq!(piece_bitboards[i] - origin + target, board.piece_bitboards[i]);
+    //             continue;
+    //         }
+    // 
+    //         assert_eq!(piece_bitboards[i], board.piece_bitboards[i]);
+    //     }
+    // }
 }
