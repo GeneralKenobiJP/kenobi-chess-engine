@@ -71,6 +71,7 @@ impl Board {
         self.piece_bitboards[index] += bit;
     }
 
+    /// Makes a move on the board, given a move.
     pub fn make_move(&mut self, piece_move: &Move) {
         let origin = 1 << piece_move.origin;
         let target = 1 << piece_move.target;
@@ -97,6 +98,8 @@ impl Board {
         }
     }
 
+    /// Makes a castling move on the board, given a castling move.
+    /// Called by make_move, should not be called independently.
     pub fn make_castling_move(&mut self, piece_move: &Move) {
         let flag_pointer;
         let mask;
