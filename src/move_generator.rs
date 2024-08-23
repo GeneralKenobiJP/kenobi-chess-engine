@@ -93,6 +93,15 @@ impl<'a> MoveList<'a> {
         }
         if capture == 0 { capture = 1 << 15; }
         self.capture_history.push(capture);
+
+        if piece_move.piece == KING {
+            self.board.castling_rights[2*active_player] = false;
+            self.board.castling_rights[2*active_player + 1] = false;
+        }
+        else if piece_move.piece == ROOK {
+            if piece_move.origin % 8 == 0 { self.board.castling_rights[2*active_player] = false; }
+            if piece_move.origin % 8 == 7 { self.board.castling_rights[2*active_player + 1] = false; }
+        }
     }
 
     /// Makes a castling move on the board, given a castling move.
@@ -100,6 +109,9 @@ impl<'a> MoveList<'a> {
     fn make_castling_move(&mut self, piece_move: &Move) {
         let flag_pointer;
         let mask;
+
+        self.board.castling_rights[2 * self.board.active_player as usize] = false;
+        self.board.castling_rights[2 * self.board.active_player as usize + 1] = false;
 
         if piece_move.origin == 3 {
             if piece_move.target == 1 {
@@ -2199,18 +2211,22 @@ mod tests {
 
         move_list.make_move(&piece_move);
 
-        assert_eq!(main_bitboard - origin + target, board.main_bitboard);
-        assert_eq!(colour_bitboards[0] - origin + target, board.colour_bitboards[0]);
-        assert_eq!(colour_bitboards[1], board.colour_bitboards[1]);
+        assert_eq!(main_bitboard - origin + target, move_list.board.main_bitboard);
+        assert_eq!(colour_bitboards[0] - origin + target, move_list.board.colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1], move_list.board.colour_bitboards[1]);
         for i in 0..12 {
             if i == BISHOP as usize
             {
-                assert_eq!(piece_bitboards[i] - origin + target, board.piece_bitboards[i]);
+                assert_eq!(piece_bitboards[i] - origin + target, move_list.board.piece_bitboards[i]);
                 continue;
             }
 
-            assert_eq!(piece_bitboards[i], board.piece_bitboards[i]);
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
         }
+
+        assert_eq!(1 << 15, move_list.capture_history[0]);
+        assert_eq!(44, move_list.en_passant_history[0]);
+        assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
     }
 
     #[test]
@@ -2232,18 +2248,22 @@ mod tests {
 
         move_list.make_move(&piece_move);
 
-        assert_eq!(main_bitboard - origin + target, board.main_bitboard);
-        assert_eq!(colour_bitboards[0] - origin + target, board.colour_bitboards[0]);
-        assert_eq!(colour_bitboards[1], board.colour_bitboards[1]);
+        assert_eq!(main_bitboard - origin + target, move_list.board.main_bitboard);
+        assert_eq!(colour_bitboards[0] - origin + target, move_list.board.colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1], move_list.board.colour_bitboards[1]);
         for i in 0..12 {
             if i == KING as usize
             {
-                assert_eq!(piece_bitboards[i] - origin + target, board.piece_bitboards[i]);
+                assert_eq!(piece_bitboards[i] - origin + target, move_list.board.piece_bitboards[i]);
                 continue;
             }
 
-            assert_eq!(piece_bitboards[i], board.piece_bitboards[i]);
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
         }
+
+        assert_eq!(1 << 15, move_list.capture_history[0]);
+        assert_eq!(44, move_list.en_passant_history[0]);
+        assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
     }
 
     #[test]
