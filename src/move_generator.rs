@@ -243,7 +243,7 @@ impl<'a> MoveList<'a> {
         // The main idea is to virtually place a piece of type X belonging to us on the given square
         // and check if it can attack any enemy piece of the same type X.
         // In such case, the square is attacked by the enemy's piece of type X.
-        
+
         // Check if a pawn attacks the square
         if (tile & NOT_FILE_A_MASK) << 7 & self.board.piece_bitboards[7] != 0 { return true; }
         if (tile & NOT_FILE_H_MASK) << 9 & self.board.piece_bitboards[7] != 0 { return true; }
@@ -1689,6 +1689,46 @@ mod tests {
         let mut move_list = MoveList::new(&board);
 
         let expected_move_list = Vec::<Move>::new();
+
+        move_list.generate_white_castling();
+
+        assert!(compare_vecs(&move_list.moves, &expected_move_list));
+    }
+
+    #[test]
+    fn check_castling_white_bishop_check() {
+        let mut board = Board::new();
+        board.read_fen("8/8/8/8/8/4b3/8/R3K2R w KQ - 1 1");
+        let mut move_list = MoveList::new(&board);
+
+        let expected_move_list = Vec::<Move>::new();
+
+        move_list.generate_white_castling();
+
+        assert!(compare_vecs(&move_list.moves, &expected_move_list));
+    }
+
+    #[test]
+    fn check_castling_white_rook_check() {
+        let mut board = Board::new();
+        board.read_fen("8/8/8/8/8/5r2/8/R3K2R w KQ - 1 1");
+        let mut move_list = MoveList::new(&board);
+
+        let mut expected_move_list = Vec::<Move>::new();
+        expected_move_list.push(Move {origin: 3, target: 5, promotion: 1, piece: KING});
+
+        move_list.generate_white_castling();
+
+        assert!(compare_vecs(&move_list.moves, &expected_move_list));
+    }
+
+    #[test]
+    fn check_castling_white_queen_check() {
+        let mut board = Board::new();
+        board.read_fen("8/8/8/2q5/8/8/8/R3K2R w KQ - 1 1");
+        let mut move_list = MoveList::new(&board);
+
+        let mut expected_move_list = Vec::<Move>::new();
 
         move_list.generate_white_castling();
 
