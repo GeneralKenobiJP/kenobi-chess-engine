@@ -130,8 +130,8 @@ impl Board {
 
         self.main_bitboard &= mask;
         self.main_bitboard |= summed_flag;
-        self.colour_bitboards[6*self.active_player as usize] &= mask;
-        self.colour_bitboards[6*self.active_player as usize] |= summed_flag;
+        self.colour_bitboards[self.active_player as usize] &= mask;
+        self.colour_bitboards[self.active_player as usize] |= summed_flag;
         self.piece_bitboards[6*self.active_player as usize + KING as usize] &= mask;
         self.piece_bitboards[6*self.active_player as usize + KING as usize] |= flag_pointer[0];
         self.piece_bitboards[6*self.active_player as usize + ROOK as usize] &= mask;
@@ -638,4 +638,80 @@ mod tests {
             assert_eq!(piece_bitboards[i], board.piece_bitboards[i]);
         }
     }
+
+    #[test]
+    fn castling_black_kingside() {
+        let mut board = Board::new();
+        let fen = "r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 1 1";
+        board.read_fen(fen);
+
+        let main_bitboard = board.main_bitboard;
+        let colour_bitboards = board.colour_bitboards.clone();
+        let piece_bitboards = board.piece_bitboards.clone();
+
+        let piece_move = Move { origin: 59, target: 57, promotion: 1, piece: KING };
+
+        let origin: u64 = 1 << 59;
+        let target: u64 = 1 << 57;
+        let rook_origin: u64 = 1 << 56;
+        let rook_target: u64 = 1 << 58;
+
+        board.make_move(&piece_move);
+
+        assert_eq!(main_bitboard - origin + target - rook_origin + rook_target, board.main_bitboard);
+        assert_eq!(colour_bitboards[1] - origin + target - rook_origin + rook_target, board.colour_bitboards[1]);
+        assert_eq!(colour_bitboards[0], board.colour_bitboards[0]);
+        for i in 0..12 {
+            if i == KING as usize + 6
+            {
+                assert_eq!(piece_bitboards[i] - origin + target, board.piece_bitboards[i]);
+                continue;
+            }
+            if i == ROOK as usize + 6
+            {
+                assert_eq!(piece_bitboards[i] - rook_origin + rook_target, board.piece_bitboards[i]);
+                continue;
+            }
+
+            assert_eq!(piece_bitboards[i], board.piece_bitboards[i]);
+        }
+    }
+
+    // #[test]
+    // fn castling_white_queenside() {
+    //     let mut board = Board::new();
+    //     let fen = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 1 1";
+    //     board.read_fen(fen);
+    //
+    //     let main_bitboard = board.main_bitboard;
+    //     let colour_bitboards = board.colour_bitboards.clone();
+    //     let piece_bitboards = board.piece_bitboards.clone();
+    //
+    //     let piece_move = Move { origin: 3, target: 5, promotion: 1, piece: KING };
+    //
+    //     let origin: u64 = 1 << 3;
+    //     let target: u64 = 1 << 5;
+    //     let rook_origin: u64 = 1 << 7;
+    //     let rook_target: u64 = 1 << 4;
+    //
+    //     board.make_move(&piece_move);
+    //
+    //     assert_eq!(main_bitboard - origin + target - rook_origin + rook_target, board.main_bitboard);
+    //     assert_eq!(colour_bitboards[0] - origin + target - rook_origin + rook_target, board.colour_bitboards[0]);
+    //     assert_eq!(colour_bitboards[1], board.colour_bitboards[1]);
+    //     for i in 0..12 {
+    //         if i == KING as usize
+    //         {
+    //             assert_eq!(piece_bitboards[i] - origin + target, board.piece_bitboards[i]);
+    //             continue;
+    //         }
+    //         if i == ROOK as usize
+    //         {
+    //             assert_eq!(piece_bitboards[i] - rook_origin + rook_target, board.piece_bitboards[i]);
+    //             continue;
+    //         }
+    //
+    //         assert_eq!(piece_bitboards[i], board.piece_bitboards[i]);
+    //     }
+    // }
 }
