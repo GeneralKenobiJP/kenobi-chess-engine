@@ -2285,18 +2285,22 @@ mod tests {
 
         move_list.make_move(&piece_move);
 
-        assert_eq!(main_bitboard - origin + target, board.main_bitboard);
-        assert_eq!(colour_bitboards[1] - origin + target, board.colour_bitboards[1]);
-        assert_eq!(colour_bitboards[0], board.colour_bitboards[0]);
+        assert_eq!(main_bitboard - origin + target, move_list.board.main_bitboard);
+        assert_eq!(colour_bitboards[1] - origin + target, move_list.board.colour_bitboards[1]);
+        assert_eq!(colour_bitboards[0], move_list.board.colour_bitboards[0]);
         for i in 0..12 {
             if i == PAWN as usize + 6
             {
-                assert_eq!(piece_bitboards[i] - origin + target, board.piece_bitboards[i]);
+                assert_eq!(piece_bitboards[i] - origin + target, move_list.board.piece_bitboards[i]);
                 continue;
             }
 
-            assert_eq!(piece_bitboards[i], board.piece_bitboards[i]);
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
         }
+
+        assert_eq!(1 << 15, move_list.capture_history[0]);
+        assert_eq!(64, move_list.en_passant_history[0]);
+        assert_eq!([true, false, false, false], move_list.castling_rights_history[0]);
     }
 
     #[test]
@@ -2318,23 +2322,27 @@ mod tests {
 
         move_list.make_move(&piece_move);
 
-        assert_eq!(main_bitboard - origin | target, board.main_bitboard);
-        assert_eq!(colour_bitboards[0] - origin | target, board.colour_bitboards[0]);
-        assert_eq!(colour_bitboards[1] - target, board.colour_bitboards[1]);
+        assert_eq!(main_bitboard - origin | target, move_list.board.main_bitboard);
+        assert_eq!(colour_bitboards[0] - origin | target, move_list.board.colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1] - target, move_list.board.colour_bitboards[1]);
         for i in 0..12 {
             if i == PAWN as usize
             {
-                assert_eq!(piece_bitboards[i] - origin + target, board.piece_bitboards[i]);
+                assert_eq!(piece_bitboards[i] - origin + target, move_list.board.piece_bitboards[i]);
                 continue;
             }
             if i == PAWN as usize + 6
             {
-                assert_eq!(piece_bitboards[i] - target, board.piece_bitboards[i]);
+                assert_eq!(piece_bitboards[i] - target, move_list.board.piece_bitboards[i]);
                 continue;
             }
 
-            assert_eq!(piece_bitboards[i], board.piece_bitboards[i]);
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
         }
+
+        assert_eq!(41 | (1 << 6), move_list.capture_history[0]);
+        assert_eq!(44, move_list.en_passant_history[0]);
+        assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
     }
 
     #[test]
@@ -2356,28 +2364,32 @@ mod tests {
 
         move_list.make_move(&piece_move);
 
-        assert_eq!(main_bitboard - origin | target, board.main_bitboard);
-        assert_eq!(colour_bitboards[0] - origin | target, board.colour_bitboards[0]);
-        assert_eq!(colour_bitboards[1] - target, board.colour_bitboards[1]);
+        assert_eq!(main_bitboard - origin | target, move_list.board.main_bitboard);
+        assert_eq!(colour_bitboards[0] - origin | target, move_list.board.colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1] - target, move_list.board.colour_bitboards[1]);
         for i in 0..12 {
             if i == PAWN as usize
             {
-                assert_eq!(piece_bitboards[i] - origin, board.piece_bitboards[i]);
+                assert_eq!(piece_bitboards[i] - origin, move_list.board.piece_bitboards[i]);
                 continue;
             }
             if i == QUEEN as usize
             {
-                assert_eq!(piece_bitboards[i] + target, board.piece_bitboards[i]);
+                assert_eq!(piece_bitboards[i] + target, move_list.board.piece_bitboards[i]);
                 continue;
             }
             if i == ROOK as usize + 6
             {
-                assert_eq!(piece_bitboards[i] - target, board.piece_bitboards[i]);
+                assert_eq!(piece_bitboards[i] - target, move_list.board.piece_bitboards[i]);
                 continue;
             }
 
-            assert_eq!(piece_bitboards[i], board.piece_bitboards[i]);
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
         }
+
+        assert_eq!(63 | (3 << 6), move_list.capture_history[0]);
+        assert_eq!(44, move_list.en_passant_history[0]);
+        assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
     }
 
     #[test]
@@ -2401,23 +2413,26 @@ mod tests {
 
         move_list.make_move(&piece_move);
 
-        assert_eq!(main_bitboard - origin + target - rook_origin + rook_target, board.main_bitboard);
-        assert_eq!(colour_bitboards[0] - origin + target - rook_origin + rook_target, board.colour_bitboards[0]);
-        assert_eq!(colour_bitboards[1], board.colour_bitboards[1]);
+        assert_eq!(main_bitboard - origin + target - rook_origin + rook_target, move_list.board.main_bitboard);
+        assert_eq!(colour_bitboards[0] - origin + target - rook_origin + rook_target, move_list.board.colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1], move_list.board.colour_bitboards[1]);
         for i in 0..12 {
             if i == KING as usize
             {
-                assert_eq!(piece_bitboards[i] - origin + target, board.piece_bitboards[i]);
+                assert_eq!(piece_bitboards[i] - origin + target, move_list.board.piece_bitboards[i]);
                 continue;
             }
             if i == ROOK as usize
             {
-                assert_eq!(piece_bitboards[i] - rook_origin + rook_target, board.piece_bitboards[i]);
+                assert_eq!(piece_bitboards[i] - rook_origin + rook_target, move_list.board.piece_bitboards[i]);
                 continue;
             }
 
-            assert_eq!(piece_bitboards[i], board.piece_bitboards[i]);
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
         }
+
+        assert_eq!([true, true, true, true], move_list.castling_rights_history[0]);
+        assert_eq!([false, false, true, true], move_list.board.castling_rights);
     }
 
     #[test]
@@ -2481,23 +2496,26 @@ mod tests {
 
         move_list.make_move(&piece_move);
 
-        assert_eq!(main_bitboard - origin + target - rook_origin + rook_target, board.main_bitboard);
-        assert_eq!(colour_bitboards[1] - origin + target - rook_origin + rook_target, board.colour_bitboards[1]);
-        assert_eq!(colour_bitboards[0], board.colour_bitboards[0]);
+        assert_eq!(main_bitboard - origin + target - rook_origin + rook_target, move_list.board.main_bitboard);
+        assert_eq!(colour_bitboards[1] - origin + target - rook_origin + rook_target, move_list.board.colour_bitboards[1]);
+        assert_eq!(colour_bitboards[0], move_list.board.colour_bitboards[0]);
         for i in 0..12 {
             if i == KING as usize + 6
             {
-                assert_eq!(piece_bitboards[i] - origin + target, board.piece_bitboards[i]);
+                assert_eq!(piece_bitboards[i] - origin + target, move_list.board.piece_bitboards[i]);
                 continue;
             }
             if i == ROOK as usize + 6
             {
-                assert_eq!(piece_bitboards[i] - rook_origin + rook_target, board.piece_bitboards[i]);
+                assert_eq!(piece_bitboards[i] - rook_origin + rook_target, move_list.board.piece_bitboards[i]);
                 continue;
             }
 
-            assert_eq!(piece_bitboards[i], board.piece_bitboards[i]);
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
         }
+
+        assert_eq!([true, true, true, true], move_list.castling_rights_history[0]);
+        assert_eq!([true, true, false, false], move_list.board.castling_rights);
     }
 
     #[test]
