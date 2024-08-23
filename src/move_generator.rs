@@ -171,14 +171,20 @@ impl<'a> MoveList<'a> {
     fn is_edge_square_attacked_by_black(&self, square: u8) -> bool {
         let tile = 1 << square;
 
+        // The main idea is to virtually place a piece of type X belonging to us on the given square
+        // and check if it can attack any enemy piece of the same type X.
+        // In such case, the square is attacked by the enemy's piece of type X.
+
         // Check if a pawn or king attacks the square
         if (tile & NOT_FILE_A_MASK) << 7 & (self.board.piece_bitboards[7] | self.board.piece_bitboards[6]) != 0 { return true; }
         if (tile & NOT_FILE_H_MASK) << 9 & (self.board.piece_bitboards[7] | self.board.piece_bitboards[6]) != 0 { return true; }
         if tile << 8 & self.board.piece_bitboards[6] != 0 { return true; }
+        // Check if a knight/bishop/rook/queen attacks the square
         if self.knight_lookup_table[square as usize] & self.board.piece_bitboards[11] != 0 { return true; }
-        // todo: Check if a bishop attacks the square
-        // todo: Check if a rook attacks the square
-        // todo: Check if a queen attacks the square
+        if self.get_bishop_magic_bitboard(square) & self.board.piece_bitboards[10] != 0 { return true; }
+        if self.get_rook_magic_bitboard(square) & self.board.piece_bitboards[9] != 0 { return true; }
+        if (self.get_bishop_magic_bitboard(square) | self.get_rook_magic_bitboard(square))
+            & self.board.piece_bitboards[8] != 0 { return true; }
 
         false
     }
@@ -189,14 +195,20 @@ impl<'a> MoveList<'a> {
     fn is_edge_square_attacked_by_white(&self, square: u8) -> bool {
         let tile = 1 << square;
 
+        // The main idea is to virtually place a piece of type X belonging to us on the given square
+        // and check if it can attack any enemy piece of the same type X.
+        // In such case, the square is attacked by the enemy's piece of type X.
+
         // Check if a pawn or king attacks the square
         if (tile & NOT_FILE_H_MASK) >> 7 & (self.board.piece_bitboards[1] | self.board.piece_bitboards[0]) != 0 { return true; }
         if (tile & NOT_FILE_A_MASK) >> 9 & (self.board.piece_bitboards[1] | self.board.piece_bitboards[0]) != 0 { return true; }
         if tile >> 8 & self.board.piece_bitboards[0] != 0 { return true; }
+        // Check if a knight/bishop/rook/queen attacks the square
         if self.knight_lookup_table[square as usize] & self.board.piece_bitboards[5] != 0 { return true; }
-        // todo: Check if a bishop attacks the square
-        // todo: Check if a rook attacks the square
-        // todo: Check if a queen attacks the square
+        if self.get_bishop_magic_bitboard(square) & self.board.piece_bitboards[4] != 0 { return true; }
+        if self.get_rook_magic_bitboard(square) & self.board.piece_bitboards[3] != 0 { return true; }
+        if (self.get_bishop_magic_bitboard(square) | self.get_rook_magic_bitboard(square))
+            & self.board.piece_bitboards[2] != 0 { return true; }
 
         false
     }
@@ -205,16 +217,21 @@ impl<'a> MoveList<'a> {
     /// Inputs a 64-bit number with one bit set to 1 as a tile indication
     /// Outputs true/false
     fn is_square_attacked_by_white(&self, tile: u64) -> bool {
+        // The main idea is to virtually place a piece of type X belonging to us on the given square
+        // and check if it can attack any enemy piece of the same type X.
+        // In such case, the square is attacked by the enemy's piece of type X.
+
         // Check if a pawn attacks the square
         if (tile & NOT_FILE_H_MASK) >> 7 & self.board.piece_bitboards[1] != 0 { return true; }
         if (tile & NOT_FILE_A_MASK) >> 9 & self.board.piece_bitboards[1] != 0 { return true; }
 
-        let square = u64::checked_ilog2(tile).unwrap_or_default();
+        let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
         if tile & self.king_lookup_table[square as usize] != 0 { return true; }
         if self.knight_lookup_table[square as usize] & self.board.piece_bitboards[5] != 0 { return true; }
-        // todo: Check if a bishop attacks the square
-        // todo: Check if a rook attacks the square
-        // todo: Check if a queen attacks the square
+        if self.get_bishop_magic_bitboard(square) & self.board.piece_bitboards[4] != 0 { return true; }
+        if self.get_rook_magic_bitboard(square) & self.board.piece_bitboards[3] != 0 { return true; }
+        if (self.get_bishop_magic_bitboard(square) | self.get_rook_magic_bitboard(square))
+            & self.board.piece_bitboards[2] != 0 { return true; }
 
         false
     }
@@ -223,16 +240,21 @@ impl<'a> MoveList<'a> {
     /// Inputs a 64-bit number with one bit set to 1 as a tile indication
     /// Outputs true/false
     fn is_square_attacked_by_black(&self, tile: u64) -> bool {
+        // The main idea is to virtually place a piece of type X belonging to us on the given square
+        // and check if it can attack any enemy piece of the same type X.
+        // In such case, the square is attacked by the enemy's piece of type X.
+        
         // Check if a pawn attacks the square
         if (tile & NOT_FILE_A_MASK) << 7 & self.board.piece_bitboards[7] != 0 { return true; }
         if (tile & NOT_FILE_H_MASK) << 9 & self.board.piece_bitboards[7] != 0 { return true; }
 
-        let square = u64::checked_ilog2(tile).unwrap_or_default();
+        let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
         if tile & self.king_lookup_table[u64::checked_ilog2(self.board.piece_bitboards[6]).unwrap_or_default() as usize] != 0 { return true; }
         if self.knight_lookup_table[square as usize] & self.board.piece_bitboards[11] != 0 { return true; }
-        // todo: Check if a bishop attacks the square
-        // todo: Check if a rook attacks the square
-        // todo: Check if a queen attacks the square
+        if self.get_bishop_magic_bitboard(square) & self.board.piece_bitboards[10] != 0 { return true; }
+        if self.get_rook_magic_bitboard(square) & self.board.piece_bitboards[9] != 0 { return true; }
+        if (self.get_bishop_magic_bitboard(square) | self.get_rook_magic_bitboard(square))
+            & self.board.piece_bitboards[8] != 0 { return true; }
 
         false
     }
