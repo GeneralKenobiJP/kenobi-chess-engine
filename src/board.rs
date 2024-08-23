@@ -30,7 +30,7 @@ pub const UNCASTLE_WHITE_QUEENSIDE_FLAGS: [u64; 2] = [0x000000000000008, 0x00000
 pub const UNCASTLE_BLACK_KINGSIDE_FLAGS: [u64; 2] = [0x0800000000000000, 0x0100000000000000];
 pub const UNCASTLE_BLACK_QUEENSIDE_FLAGS: [u64; 2] =[0x0800000000000000, 0x8000000000000000];
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct Board {
     pub main_bitboard: u64,
     pub empty_bitboard: u64,
@@ -39,7 +39,7 @@ pub struct Board {
     pub active_player: Colour,
     pub inactive_player: Colour,
     pub castling_rights: [bool; 4], // White: KQ, Black: kq
-    pub en_passant_possibility: u32, // Tile, where en passant can be made. 64 if no such tile exists
+    pub en_passant_possibility: u8, // Tile, where en passant can be made. 64 if no such tile exists
     pub half_moves: u32, // The halfmove clock specifies a decimal number of half moves with respect to the 50 move draw rule.
     // It is reset to zero after a capture or a pawn move and incremented otherwise.
     pub full_moves: u32,
@@ -166,7 +166,7 @@ impl Board {
             let file = 'h' as u32 - chars.next().unwrap_or_default() as u32;
             let rank = chars.next().unwrap_or_default().to_digit(10).unwrap_or_default() - 1;
             let tile = file + rank * 8;
-            self.en_passant_possibility = tile;
+            self.en_passant_possibility = tile as u8;
         }
 
         let half_moves = scanner.next().unwrap_or_default().unwrap_or_default().parse().unwrap_or_default();
