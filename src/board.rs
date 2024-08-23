@@ -17,14 +17,18 @@ pub const UPPER_RANK_LOWEST_TILE: u8 = 56;
 pub const LOWER_RANK_HIGHEST_TILE: u8 = 7;
 pub const NOT_FILE_A_MASK: u64 = 0b0111111101111111011111110111111101111111011111110111111101111111;
 pub const NOT_FILE_H_MASK: u64 = 0b1111111011111110111111101111111011111110111111101111111011111110;
-pub const CASTLE_WHITE_KINGSIDE_MASK: u64 =  0xFFFFFFFFFFFFFFF6;
-pub const CASTLE_WHITE_QUEENSIDE_MASK: u64 = 0xFFFFFFFFFFFFFF67;
-pub const CASTLE_BLACK_KINGSIDE_MASK: u64 =  0xF6FFFFFFFFFFFFFF;
-pub const CASTLE_BLACK_QUEENSIDE_MASK: u64 = 0x67FFFFFFFFFFFFFF;
+pub const CASTLE_WHITE_KINGSIDE_MASK: u64 =  0xFFFFFFFFFFFFFFF0;
+pub const CASTLE_WHITE_QUEENSIDE_MASK: u64 = 0xFFFFFFFFFFFFFF07;
+pub const CASTLE_BLACK_KINGSIDE_MASK: u64 =  0xF0FFFFFFFFFFFFFF;
+pub const CASTLE_BLACK_QUEENSIDE_MASK: u64 = 0x07FFFFFFFFFFFFFF;
 pub const CASTLE_WHITE_KINGSIDE_FLAGS: [u64; 2] = [0x0000000000000002, 0x0000000000000004];
 pub const CASTLE_WHITE_QUEENSIDE_FLAGS: [u64; 2] = [0x0000000000000020, 0x0000000000000010];
 pub const CASTLE_BLACK_KINGSIDE_FLAGS: [u64; 2] = [0x0200000000000000, 0x0400000000000000];
 pub const CASTLE_BLACK_QUEENSIDE_FLAGS: [u64; 2] = [0x2000000000000000, 0x1000000000000000];
+pub const UNCASTLE_WHITE_KINGSIDE_FLAGS: [u64; 2] = [0x0000000000000008, 0x0000000000000001];
+pub const UNCASTLE_WHITE_QUEENSIDE_FLAGS: [u64; 2] = [0x000000000000008, 0x0000000000000080];
+pub const UNCASTLE_BLACK_KINGSIDE_FLAGS: [u64; 2] = [0x0800000000000000, 0x0100000000000000];
+pub const UNCASTLE_BLACK_QUEENSIDE_FLAGS: [u64; 2] =[0x0800000000000000, 0x8000000000000000];
 
 // #[derive(Copy)]
 pub struct Board {
@@ -91,7 +95,6 @@ impl Board {
         self.colour_bitboards[active_player] |= target;
         self.piece_bitboards[6*active_player + piece] ^= origin;
         self.piece_bitboards[6*active_player + final_piece] |= target;
-        println!("piece: {}, final_piece: {}", piece, final_piece);
 
         self.colour_bitboards[self.inactive_player as usize] &= target_mask;
         for index in 6*self.inactive_player as usize..=6*self.inactive_player as usize + 5 {
@@ -101,7 +104,7 @@ impl Board {
 
     /// Makes a castling move on the board, given a castling move.
     /// Called by make_move, should not be called independently.
-    pub fn make_castling_move(&mut self, piece_move: &Move) {
+    fn make_castling_move(&mut self, piece_move: &Move) {
         let flag_pointer;
         let mask;
 
@@ -136,6 +139,72 @@ impl Board {
         self.piece_bitboards[6*self.active_player as usize + KING as usize] |= flag_pointer[0];
         self.piece_bitboards[6*self.active_player as usize + ROOK as usize] &= mask;
         self.piece_bitboards[6*self.active_player as usize + ROOK as usize] |= flag_pointer[1];
+    }
+
+    // /// Unmakes a move on the board, given a move.
+    // pub fn unmake_move(&mut self, piece_move: &Move) {
+    //     let origin = 1 << piece_move.target;
+    //     let target = 1 << piece_move.origin;
+    //     let active_player = self.inactive_player as usize; // !
+    //     let piece = piece_move.piece.clone() as usize;
+    //     let promotion = piece_move.promotion;
+    //     if promotion == 1 {
+    //         self.unmake_castling_move(piece_move);
+    //         return;
+    //     }
+    //     let original_piece = if promotion == 0 {piece} else { PAWN as usize };
+    //     let target_mask = !target;
+    //
+    //     self.main_bitboard ^= origin;
+    //     self.main_bitboard |= target;
+    //     self.colour_bitboards[active_player] ^= origin;
+    //     self.colour_bitboards[active_player] |= target;
+    //     self.piece_bitboards[6*active_player + piece] ^= origin;
+    //     self.piece_bitboards[6*active_player + original_piece] |= target;
+    //
+    //     self.colour_bitboards[self.active_player as usize] &= target_mask;
+    //     for index in 6*self.active_player as usize..=6*self.active_player as usize + 5 {
+    //         self.piece_bitboards[index] &= target_mask;
+    //     }
+    // }
+
+    /// Unmakes a castling move on the board, given a castling move.
+    /// Called by unmake_move, should not be called independently.
+    fn unmake_castling_move(&mut self, piece_move: &Move) {
+        let flag_pointer;
+        let mask;
+
+        if piece_move.origin == 3 {
+            if piece_move.target == 1 {
+                flag_pointer = &UNCASTLE_WHITE_KINGSIDE_FLAGS;
+                mask = CASTLE_WHITE_KINGSIDE_MASK;
+            }
+            else {
+                flag_pointer = &UNCASTLE_WHITE_QUEENSIDE_FLAGS;
+                mask = CASTLE_WHITE_QUEENSIDE_MASK;
+            }
+        }
+        else {
+            if piece_move.target == 57 {
+                flag_pointer = &UNCASTLE_BLACK_KINGSIDE_FLAGS;
+                mask = CASTLE_BLACK_KINGSIDE_MASK;
+            }
+            else {
+                flag_pointer = &UNCASTLE_BLACK_QUEENSIDE_FLAGS;
+                mask = CASTLE_BLACK_QUEENSIDE_MASK;
+            }
+        }
+
+        let summed_flag = flag_pointer[0] | flag_pointer[1];
+
+        self.main_bitboard &= mask;
+        self.main_bitboard |= summed_flag;
+        self.colour_bitboards[self.inactive_player as usize] &= mask;
+        self.colour_bitboards[self.inactive_player as usize] |= summed_flag;
+        self.piece_bitboards[6*self.inactive_player as usize + KING as usize] &= mask;
+        self.piece_bitboards[6*self.inactive_player as usize + KING as usize] |= flag_pointer[0];
+        self.piece_bitboards[6*self.inactive_player as usize + ROOK as usize] &= mask;
+        self.piece_bitboards[6*self.inactive_player as usize + ROOK as usize] |= flag_pointer[1];
     }
 
     /// Prints debug information about the board

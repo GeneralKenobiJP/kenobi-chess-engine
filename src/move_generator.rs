@@ -19,7 +19,7 @@ pub struct Move {
     pub piece: Piece
 }
 
-struct MoveList<'a> {
+pub struct MoveList<'a> {
     board: &'a Board,
     moves: Vec<Move>,
     king_lookup_table: [u64; 64], // should be treated as immutable after setup
@@ -29,7 +29,7 @@ struct MoveList<'a> {
 }
 
 impl<'a> MoveList<'a> {
-    fn new(board: &'a Board) -> Self {
+    pub fn new(board: &'a Board) -> Self {
         MoveList {
             board,
             moves: Vec::new(),
@@ -44,8 +44,12 @@ impl<'a> MoveList<'a> {
         &self.moves
     }
 
+    // pub fn log_moves(&self) {
+    //
+    // }
+
     /// Generates moves and updates move list based on the situation on the board
-    fn generate_moves(&mut self) {
+    pub fn generate_moves(&mut self) {
         self.generate_king_moves();
 
         if self.board.active_player == WHITE
