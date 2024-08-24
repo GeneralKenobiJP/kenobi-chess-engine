@@ -6,12 +6,13 @@ use std::collections::HashSet;
 use crate::piece::Piece;
 use crate::board::{Board, CASTLE_BLACK_KINGSIDE_FLAGS, CASTLE_BLACK_KINGSIDE_MASK, CASTLE_BLACK_QUEENSIDE_FLAGS, CASTLE_BLACK_QUEENSIDE_MASK, CASTLE_WHITE_KINGSIDE_FLAGS, CASTLE_WHITE_KINGSIDE_MASK, CASTLE_WHITE_QUEENSIDE_FLAGS, CASTLE_WHITE_QUEENSIDE_MASK, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_MASK, UNCASTLE_BLACK_KINGSIDE_FLAGS, UNCASTLE_BLACK_QUEENSIDE_FLAGS, UNCASTLE_WHITE_KINGSIDE_FLAGS, UNCASTLE_WHITE_QUEENSIDE_FLAGS, UPPER_RANK_LOWEST_TILE};
 use crate::piece::Colour::{BLACK, WHITE};
-use crate::piece::Piece::{BISHOP, KING, KNIGHT, QUEEN, ROOK};
+use crate::piece::Piece::{BISHOP, KING, KNIGHT, PAWN, QUEEN, ROOK};
 use crate::magic_hasher::{magic_hash_bishop, magic_hash_rook, MAGIC_MASK_BISHOP, MAGIC_MASK_ROOK};
 
 const KNIGHT_SHIFTS: [i8; 8] = [17, 10, -6, -15, -17, -10, 6, 15]; // Beginning on NW, counter-clockwise
 const INITIAL_STACK_CAPACITY: usize = 30; // used by MoveList constructor
 const NO_CAPTURE: u8 = 1 << 4;
+const NO_PASSANT: u8 = 64;
 
 #[derive(PartialEq, Eq, Hash, Clone)]
 pub struct Move {
@@ -94,6 +95,8 @@ impl<'a> MoveList<'a> {
         if capture == 0 { capture = NO_CAPTURE; }
         self.capture_history.push(capture);
 
+        self.board.en_passant_possibility = NO_PASSANT;
+
         if piece_move.piece == KING {
             self.board.castling_rights[2*active_player] = false;
             self.board.castling_rights[2*active_player + 1] = false;
@@ -101,6 +104,11 @@ impl<'a> MoveList<'a> {
         else if piece_move.piece == ROOK {
             if piece_move.origin % 8 == 0 { self.board.castling_rights[2*active_player] = false; }
             if piece_move.origin % 8 == 7 { self.board.castling_rights[2*active_player + 1] = false; }
+        }
+        else if piece_move.piece == PAWN {
+            if piece_move.target.abs_diff(piece_move.origin) == 16 {
+                self.board.en_passant_possibility = (piece_move.target + piece_move.origin)/2;
+            }
         }
     }
 
@@ -524,7 +532,7 @@ impl<'a> MoveList<'a> {
     /// Accounts for en passant
     fn generate_white_pawn_left_capture_bitboard(&self) -> u64 {
         let mut attack_options = self.board.colour_bitboards[BLACK as usize];
-        if self.board.en_passant_possibility < 64 {
+        if self.board.en_passant_possibility < NO_PASSANT {
             let en_passant_tile = 1 << self.board.en_passant_possibility;
             attack_options |= en_passant_tile;
         }
@@ -538,7 +546,7 @@ impl<'a> MoveList<'a> {
     /// Accounts for en passant
     fn generate_white_pawn_right_capture_bitboard(&self) -> u64 {
         let mut attack_options = self.board.colour_bitboards[BLACK as usize];
-        if self.board.en_passant_possibility < 64 {
+        if self.board.en_passant_possibility < NO_PASSANT {
             let en_passant_tile = 1 << self.board.en_passant_possibility;
             attack_options |= en_passant_tile;
         }
@@ -627,7 +635,7 @@ impl<'a> MoveList<'a> {
     /// Accounts for en passant
     fn generate_black_pawn_left_capture_bitboard(&self) -> u64 {
         let mut attack_options = self.board.colour_bitboards[WHITE as usize];
-        if self.board.en_passant_possibility < 64 {
+        if self.board.en_passant_possibility < NO_PASSANT {
             let en_passant_tile = 1 << self.board.en_passant_possibility;
             attack_options |= en_passant_tile;
         }
@@ -641,7 +649,7 @@ impl<'a> MoveList<'a> {
     /// Accounts for en passant
     fn generate_black_pawn_right_capture_bitboard(&self) -> u64 {
         let mut attack_options = self.board.colour_bitboards[WHITE as usize];
-        if self.board.en_passant_possibility < 64 {
+        if self.board.en_passant_possibility < NO_PASSANT {
             let en_passant_tile = 1 << self.board.en_passant_possibility;
             attack_options |= en_passant_tile;
         }
@@ -1148,7 +1156,6 @@ impl<'a> MoveList<'a> {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
-    use scanner_rust::generic_array::typenum::{False, True};
     use crate::board::{Board, START_POSITION};
     use crate::piece::Piece::PAWN;
     use super::*;
@@ -2193,6 +2200,7 @@ mod tests {
         assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
         assert_eq!(44, move_list.en_passant_history[0]);
         assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
+        assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
     }
 
     #[test]
@@ -2231,6 +2239,7 @@ mod tests {
         assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
         assert_eq!(44, move_list.en_passant_history[0]);
         assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
+        assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
     }
 
     #[test]
@@ -2268,6 +2277,7 @@ mod tests {
         assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
         assert_eq!(44, move_list.en_passant_history[0]);
         assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
+        assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
     }
 
     #[test]
@@ -2305,6 +2315,45 @@ mod tests {
         assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
         assert_eq!(64, move_list.en_passant_history[0]);
         assert_eq!([true, false, false, false], move_list.castling_rights_history[0]);
+        assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
+    }
+
+    #[test]
+    fn double_move_black_pawn() {
+        let mut board = Board::new();
+        let fen = "rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b K - 1 2";
+        board.read_fen(fen);
+        let board_copy = board.clone();
+        let mut move_list = MoveList::new(&mut board);
+
+        let main_bitboard = board_copy.main_bitboard;
+        let colour_bitboards = board_copy.colour_bitboards.clone();
+        let piece_bitboards = board_copy.piece_bitboards.clone();
+
+        let piece_move = Move { origin: 55, target: 39, promotion: 0, piece: PAWN };
+
+        let origin: u64 = 1 << 55;
+        let target: u64 = 1 << 39;
+
+        move_list.make_move(&piece_move);
+
+        assert_eq!(main_bitboard - origin + target, move_list.board.main_bitboard);
+        assert_eq!(colour_bitboards[1] - origin + target, move_list.board.colour_bitboards[1]);
+        assert_eq!(colour_bitboards[0], move_list.board.colour_bitboards[0]);
+        for i in 0..12 {
+            if i == PAWN as usize + 6
+            {
+                assert_eq!(piece_bitboards[i] - origin + target, move_list.board.piece_bitboards[i]);
+                continue;
+            }
+
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
+        }
+
+        assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
+        assert_eq!(64, move_list.en_passant_history[0]);
+        assert_eq!([true, false, false, false], move_list.castling_rights_history[0]);
+        assert_eq!(47, move_list.board.en_passant_possibility);
     }
 
     #[test]
