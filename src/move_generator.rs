@@ -148,40 +148,40 @@ impl<'a> MoveList<'a> {
         self.capture_history.push(NO_CAPTURE);
     }
 
-    // /// Unmakes a move on the board, given a move.
-    // pub fn unmake_move(&mut self, piece_move: &Move) {
-    //     let origin = 1 << piece_move.target;
-    //     let target = 1 << piece_move.origin;
-    //     let active_player = self.board.inactive_player as usize; // !
-    //     let piece = piece_move.piece.clone() as usize;
-    //     let promotion = piece_move.promotion;
-    //     if promotion == 1 {
-    //         self.unmake_castling_move(piece_move);
-    //         return;
-    //     }
-    //     let original_piece = if promotion == 0 {piece} else { Piece::PAWN as usize };
-    //     let target_mask = !target;
-    //
-    //     self.board.main_bitboard ^= origin;
-    //     self.board.main_bitboard |= target;
-    //     self.board.colour_bitboards[active_player] ^= origin;
-    //     self.board.colour_bitboards[active_player] |= target;
-    //     self.board.piece_bitboards[6*active_player + piece] ^= origin;
-    //     self.board.piece_bitboards[6*active_player + original_piece] |= target;
-    //
-    //     let capture = self.capture_history.pop().unwrap_or_default();
-    //     if capture == NO_CAPTURE { return; }
-    //     let captured_piece = capture >> CAPTURED_PIECE_TYPE_SHIFT;
-    //     let capture
-    //     self.board.colour_bitboards[self.board.active_player as usize] |= target_mask;
-    //     for index in 6*self.board.active_player as usize..=6*self.board.active_player as usize + 5 {
-    //         self.board.piece_bitboards[index] &= target_mask;
-    //     }
-    // }
+    /// Unmakes a move on the board, given a move.
+    pub fn unmake_move(&mut self, piece_move: &Move) {
+        self.board.en_passant_possibility = self.en_passant_history.pop().unwrap_or_default();
+        self.board.castling_rights = self.castling_rights_history.pop().unwrap_or_default();
+
+        let origin = 1 << piece_move.target;
+        let target = 1 << piece_move.origin;
+        let active_player = self.board.inactive_player as usize; // !
+        let piece = piece_move.piece.clone() as usize;
+        let promotion = piece_move.promotion;
+        if promotion == 1 {
+            self.unmake_castling_move(piece_move);
+            return;
+        }
+        let original_piece = if promotion == 0 {piece} else { Piece::PAWN as usize };
+
+        self.board.main_bitboard ^= origin;
+        self.board.main_bitboard |= target;
+        self.board.colour_bitboards[active_player] ^= origin;
+        self.board.colour_bitboards[active_player] |= target;
+        self.board.piece_bitboards[6*active_player + piece] ^= origin;
+        self.board.piece_bitboards[6*active_player + original_piece] |= target;
+
+        let capture = self.capture_history.pop().unwrap_or_default();
+        if capture == NO_CAPTURE { return; }
+        self.board.colour_bitboards[self.board.active_player as usize] |= origin;
+        self.board.piece_bitboards[capture as usize] |= origin;
+    }
 
     /// Unmakes a castling move on the board, given a castling move.
     /// Called by unmake_move, should not be called independently.
     fn unmake_castling_move(&mut self, piece_move: &Move) {
+        self.capture_history.pop().unwrap_or_default();
+
         let flag_pointer;
         let mask;
 
