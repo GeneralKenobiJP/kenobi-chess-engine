@@ -89,7 +89,7 @@ impl<'a> MoveList<'a> {
             let capture_bitboard = new_bitboard ^ self.board.piece_bitboards[index];
             if capture_bitboard != 0
             {
-                capture = (index - 6*self.board.inactive_player as usize) as u8;
+                capture = index as u8;
                 self.board.piece_bitboards[index] = new_bitboard;
             }
         }
@@ -171,21 +171,25 @@ impl<'a> MoveList<'a> {
         let promotion = piece_move.promotion;
         if promotion == 1 {
             self.unmake_castling_move(piece_move);
+            self.board.switch_active_player();
             return;
         }
-        let original_piece = if promotion == 0 {piece} else { PAWN as usize };
+        let target_piece = if promotion == 0 {piece} else { promotion as usize };
 
         self.board.main_bitboard ^= origin;
         self.board.main_bitboard |= target;
         self.board.colour_bitboards[active_player] ^= origin;
         self.board.colour_bitboards[active_player] |= target;
-        self.board.piece_bitboards[6*active_player + piece] ^= origin;
-        self.board.piece_bitboards[6*active_player + original_piece] |= target;
+        self.board.piece_bitboards[6*active_player + target_piece] ^= origin;
+        self.board.piece_bitboards[6*active_player + piece] |= target;
 
         let capture = self.capture_history.pop().unwrap_or_default();
         if capture == NO_CAPTURE { return; }
+        self.board.main_bitboard |= origin;
         self.board.colour_bitboards[self.board.active_player as usize] |= origin;
         self.board.piece_bitboards[capture as usize] |= origin;
+
+        self.board.switch_active_player();
     }
 
     /// Unmakes a castling move on the board, given a castling move.
@@ -2233,6 +2237,8 @@ mod tests {
         let main_bitboard = board_copy.main_bitboard;
         let colour_bitboards = board_copy.colour_bitboards.clone();
         let piece_bitboards = board_copy.piece_bitboards.clone();
+        let en_passant = board_copy.en_passant_possibility.clone();
+        let castling_rights = board_copy.castling_rights.clone();
 
         let piece_move = Move { origin: 34, target: 43, promotion: 0, piece: BISHOP };
 
@@ -2258,6 +2264,19 @@ mod tests {
         assert_eq!(44, move_list.en_passant_history[0]);
         assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
         assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
+
+        // UNMAKE MOVE
+
+        move_list.unmake_move(&piece_move);
+
+        assert_eq!(main_bitboard, move_list.board.main_bitboard);
+        assert_eq!(colour_bitboards[0], move_list.board.colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1], move_list.board.colour_bitboards[1]);
+        for i in 0..12 {
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
+        }
+        assert_eq!(en_passant, move_list.board.en_passant_possibility);
+        assert_eq!(castling_rights, move_list.board.castling_rights);
     }
 
     #[test]
@@ -2271,6 +2290,8 @@ mod tests {
         let main_bitboard = board_copy.main_bitboard;
         let colour_bitboards = board_copy.colour_bitboards.clone();
         let piece_bitboards = board_copy.piece_bitboards.clone();
+        let en_passant = board_copy.en_passant_possibility.clone();
+        let castling_rights = board_copy.castling_rights.clone();
 
         let piece_move = Move { origin: 6, target: 5, promotion: 0, piece: KING };
 
@@ -2296,6 +2317,19 @@ mod tests {
         assert_eq!(44, move_list.en_passant_history[0]);
         assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
         assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
+
+        // UNMAKE MOVE
+
+        move_list.unmake_move(&piece_move);
+
+        assert_eq!(main_bitboard, move_list.board.main_bitboard);
+        assert_eq!(colour_bitboards[0], move_list.board.colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1], move_list.board.colour_bitboards[1]);
+        for i in 0..12 {
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
+        }
+        assert_eq!(en_passant, move_list.board.en_passant_possibility);
+        assert_eq!(castling_rights, move_list.board.castling_rights);
     }
 
     #[test]
@@ -2309,6 +2343,8 @@ mod tests {
         let main_bitboard = board_copy.main_bitboard;
         let colour_bitboards = board_copy.colour_bitboards.clone();
         let piece_bitboards = board_copy.piece_bitboards.clone();
+        let en_passant = board_copy.en_passant_possibility.clone();
+        let castling_rights = board_copy.castling_rights.clone();
 
         let piece_move = Move { origin: 37, target: 29, promotion: 0, piece: PAWN };
 
@@ -2334,6 +2370,19 @@ mod tests {
         assert_eq!(64, move_list.en_passant_history[0]);
         assert_eq!([true, false, false, false], move_list.castling_rights_history[0]);
         assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
+
+        // UNMAKE MOVE
+
+        move_list.unmake_move(&piece_move);
+
+        assert_eq!(main_bitboard, move_list.board.main_bitboard);
+        assert_eq!(colour_bitboards[0], move_list.board.colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1], move_list.board.colour_bitboards[1]);
+        for i in 0..12 {
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
+        }
+        assert_eq!(en_passant, move_list.board.en_passant_possibility);
+        assert_eq!(castling_rights, move_list.board.castling_rights);
     }
 
     #[test]
@@ -2347,6 +2396,8 @@ mod tests {
         let main_bitboard = board_copy.main_bitboard;
         let colour_bitboards = board_copy.colour_bitboards.clone();
         let piece_bitboards = board_copy.piece_bitboards.clone();
+        let en_passant = board_copy.en_passant_possibility.clone();
+        let castling_rights = board_copy.castling_rights.clone();
 
         let piece_move = Move { origin: 55, target: 39, promotion: 0, piece: PAWN };
 
@@ -2372,6 +2423,19 @@ mod tests {
         assert_eq!(64, move_list.en_passant_history[0]);
         assert_eq!([true, false, false, false], move_list.castling_rights_history[0]);
         assert_eq!(47, move_list.board.en_passant_possibility);
+
+        // UNMAKE MOVE
+
+        move_list.unmake_move(&piece_move);
+
+        assert_eq!(main_bitboard, move_list.board.main_bitboard);
+        assert_eq!(colour_bitboards[0], move_list.board.colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1], move_list.board.colour_bitboards[1]);
+        for i in 0..12 {
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
+        }
+        assert_eq!(en_passant, move_list.board.en_passant_possibility);
+        assert_eq!(castling_rights, move_list.board.castling_rights);
     }
 
     #[test]
@@ -2385,6 +2449,8 @@ mod tests {
         let main_bitboard = board_copy.main_bitboard;
         let colour_bitboards = board_copy.colour_bitboards.clone();
         let piece_bitboards = board_copy.piece_bitboards.clone();
+        let en_passant = board_copy.en_passant_possibility.clone();
+        let castling_rights = board_copy.castling_rights.clone();
 
         let piece_move = Move { origin: 32, target: 41, promotion: 0, piece: PAWN };
 
@@ -2411,9 +2477,22 @@ mod tests {
             assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
         }
 
-        assert_eq!(1, move_list.capture_history[0]);
+        assert_eq!(7, move_list.capture_history[0]);
         assert_eq!(44, move_list.en_passant_history[0]);
         assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
+
+        // UNMAKE MOVE
+
+        move_list.unmake_move(&piece_move);
+
+        assert_eq!(main_bitboard, move_list.board.main_bitboard);
+        assert_eq!(colour_bitboards[0], move_list.board.colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1], move_list.board.colour_bitboards[1]);
+        for i in 0..12 {
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
+        }
+        assert_eq!(en_passant, move_list.board.en_passant_possibility);
+        assert_eq!(castling_rights, move_list.board.castling_rights);
     }
 
     #[test]
@@ -2427,6 +2506,8 @@ mod tests {
         let main_bitboard = board_copy.main_bitboard;
         let colour_bitboards = board_copy.colour_bitboards.clone();
         let piece_bitboards = board_copy.piece_bitboards.clone();
+        let en_passant = board_copy.en_passant_possibility.clone();
+        let castling_rights = board_copy.castling_rights.clone();
 
         let piece_move = Move { origin: 54, target: 63, promotion: 2, piece: PAWN };
 
@@ -2458,9 +2539,22 @@ mod tests {
             assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
         }
 
-        assert_eq!(3, move_list.capture_history[0]);
+        assert_eq!(9, move_list.capture_history[0]);
         assert_eq!(44, move_list.en_passant_history[0]);
         assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
+
+        // UNMAKE MOVE
+
+        move_list.unmake_move(&piece_move);
+
+        assert_eq!(main_bitboard, move_list.board.main_bitboard);
+        assert_eq!(colour_bitboards[0], move_list.board.colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1], move_list.board.colour_bitboards[1]);
+        for i in 0..12 {
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
+        }
+        assert_eq!(en_passant, move_list.board.en_passant_possibility);
+        assert_eq!(castling_rights, move_list.board.castling_rights);
     }
 
     #[test]
@@ -2474,6 +2568,8 @@ mod tests {
         let main_bitboard = board_copy.main_bitboard;
         let colour_bitboards = board_copy.colour_bitboards.clone();
         let piece_bitboards = board_copy.piece_bitboards.clone();
+        let en_passant = board_copy.en_passant_possibility.clone();
+        let castling_rights = board_copy.castling_rights.clone();
 
         let piece_move = Move { origin: 3, target: 1, promotion: 1, piece: KING };
 
@@ -2505,6 +2601,19 @@ mod tests {
         assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
         assert_eq!([true, true, true, true], move_list.castling_rights_history[0]);
         assert_eq!([false, false, true, true], move_list.board.castling_rights);
+
+        // UNMAKE MOVE
+
+        move_list.unmake_move(&piece_move);
+
+        assert_eq!(main_bitboard, move_list.board.main_bitboard);
+        assert_eq!(colour_bitboards[0], move_list.board.colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1], move_list.board.colour_bitboards[1]);
+        for i in 0..12 {
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
+        }
+        assert_eq!(en_passant, move_list.board.en_passant_possibility);
+        assert_eq!(castling_rights, move_list.board.castling_rights);
     }
 
     #[test]
@@ -2558,6 +2667,8 @@ mod tests {
         let main_bitboard = board_copy.main_bitboard;
         let colour_bitboards = board_copy.colour_bitboards.clone();
         let piece_bitboards = board_copy.piece_bitboards.clone();
+        let en_passant = board_copy.en_passant_possibility.clone();
+        let castling_rights = board_copy.castling_rights.clone();
 
         let piece_move = Move { origin: 59, target: 57, promotion: 1, piece: KING };
 
@@ -2589,6 +2700,19 @@ mod tests {
         assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
         assert_eq!([true, true, true, true], move_list.castling_rights_history[0]);
         assert_eq!([true, true, false, false], move_list.board.castling_rights);
+
+        // UNMAKE MOVE
+
+        move_list.unmake_move(&piece_move);
+
+        assert_eq!(main_bitboard, move_list.board.main_bitboard);
+        assert_eq!(colour_bitboards[0], move_list.board.colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1], move_list.board.colour_bitboards[1]);
+        for i in 0..12 {
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
+        }
+        assert_eq!(en_passant, move_list.board.en_passant_possibility);
+        assert_eq!(castling_rights, move_list.board.castling_rights);
     }
 
     #[test]
