@@ -87,6 +87,13 @@ impl Board {
         println!("{}", self.full_moves);
     }
 
+    /// Switches active player to inactive and inactive to active
+    pub fn switch_active_player(&mut self) {
+        let temp = self.active_player;
+        self.active_player = self.inactive_player;
+        self.inactive_player = temp;
+    }
+
     /// Calculates distance between two given squares
     /// The squares are given as their number in the order (not bit)
     pub fn distance(square1: u8, square2: u8) -> u8 {

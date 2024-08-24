@@ -69,6 +69,7 @@ impl<'a> MoveList<'a> {
         let promotion = piece_move.promotion;
         if promotion == 1 {
             self.make_castling_move(piece_move);
+            self.board.switch_active_player();
             return;
         }
         let final_piece = if promotion == 0 {piece} else { promotion as usize };
@@ -110,6 +111,8 @@ impl<'a> MoveList<'a> {
                 self.board.en_passant_possibility = (piece_move.target + piece_move.origin)/2;
             }
         }
+
+        self.board.switch_active_player();
     }
 
     /// Makes a castling move on the board, given a castling move.
@@ -170,7 +173,7 @@ impl<'a> MoveList<'a> {
             self.unmake_castling_move(piece_move);
             return;
         }
-        let original_piece = if promotion == 0 {piece} else { Piece::PAWN as usize };
+        let original_piece = if promotion == 0 {piece} else { PAWN as usize };
 
         self.board.main_bitboard ^= origin;
         self.board.main_bitboard |= target;
@@ -2176,6 +2179,8 @@ mod tests {
         let main_bitboard = board_copy.main_bitboard;
         let colour_bitboards = board_copy.colour_bitboards.clone();
         let piece_bitboards = board_copy.piece_bitboards.clone();
+        let en_passant = board_copy.en_passant_possibility.clone();
+        let castling_rights = board_copy.castling_rights.clone();
 
         let piece_move = Move { origin: 15, target: 23, promotion: 0, piece: PAWN };
 
@@ -2201,6 +2206,19 @@ mod tests {
         assert_eq!(44, move_list.en_passant_history[0]);
         assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
         assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
+
+        // UNMAKE MOVE
+
+        move_list.unmake_move(&piece_move);
+
+        assert_eq!(main_bitboard, move_list.board.main_bitboard);
+        assert_eq!(colour_bitboards[0], move_list.board.colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1], move_list.board.colour_bitboards[1]);
+        for i in 0..12 {
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
+        }
+        assert_eq!(en_passant, move_list.board.en_passant_possibility);
+        assert_eq!(castling_rights, move_list.board.castling_rights);
     }
 
     #[test]
