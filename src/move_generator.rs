@@ -11,6 +11,7 @@ use crate::magic_hasher::{magic_hash_bishop, magic_hash_rook, MAGIC_MASK_BISHOP,
 
 const KNIGHT_SHIFTS: [i8; 8] = [17, 10, -6, -15, -17, -10, 6, 15]; // Beginning on NW, counter-clockwise
 const INITIAL_STACK_CAPACITY: usize = 30; // used by MoveList constructor
+const NO_CAPTURE: u8 = 1 << 4;
 
 #[derive(PartialEq, Eq, Hash, Clone)]
 pub struct Move {
@@ -23,7 +24,7 @@ pub struct Move {
 pub struct MoveList<'a> {
     board: &'a mut Board,
     moves: Vec<Move>,
-    capture_history: Vec<u16>, // used as stack, 0bnxxxxxx(zzz)(yyyyyy) where (zzz) = piece number, (yyyyyyy) = square number, n = no capture?
+    capture_history: Vec<u8>, // used as stack, 16 == no capture
     en_passant_history: Vec<u8>, // used as stack, 64 == no passant
     castling_rights_history: Vec<[bool;4]>, // used as stack
     king_lookup_table: [u64; 64], // should be treated as immutable after setup
@@ -80,18 +81,17 @@ impl<'a> MoveList<'a> {
         self.board.piece_bitboards[6*active_player + final_piece] |= target;
 
         self.board.colour_bitboards[self.board.inactive_player as usize] &= target_mask;
-        let mut capture: u16 = 0;
+        let mut capture: u8 = 0;
         for index in 6*self.board.inactive_player as usize..=6*self.board.inactive_player as usize + 5 {
             let new_bitboard = self.board.piece_bitboards[index] & target_mask;
             let capture_bitboard = new_bitboard ^ self.board.piece_bitboards[index];
             if capture_bitboard != 0
             {
-                capture = capture_bitboard.checked_ilog2().unwrap_or_default() as u16
-                    | ((index - 6*self.board.inactive_player as usize) << 6) as u16;
+                capture = (index - 6*self.board.inactive_player as usize) as u8;
                 self.board.piece_bitboards[index] = new_bitboard;
             }
         }
-        if capture == 0 { capture = 1 << 15; }
+        if capture == 0 { capture = NO_CAPTURE; }
         self.capture_history.push(capture);
 
         if piece_move.piece == KING {
@@ -145,7 +145,7 @@ impl<'a> MoveList<'a> {
         self.board.piece_bitboards[6*self.board.active_player as usize + ROOK as usize] &= mask;
         self.board.piece_bitboards[6*self.board.active_player as usize + ROOK as usize] |= flag_pointer[1];
 
-        self.capture_history.push(1<<15);
+        self.capture_history.push(NO_CAPTURE);
     }
 
     // /// Unmakes a move on the board, given a move.
@@ -159,7 +159,7 @@ impl<'a> MoveList<'a> {
     //         self.unmake_castling_move(piece_move);
     //         return;
     //     }
-    //     let original_piece = if promotion == 0 {piece} else { PAWN as usize };
+    //     let original_piece = if promotion == 0 {piece} else { Piece::PAWN as usize };
     //     let target_mask = !target;
     //
     //     self.board.main_bitboard ^= origin;
@@ -169,7 +169,11 @@ impl<'a> MoveList<'a> {
     //     self.board.piece_bitboards[6*active_player + piece] ^= origin;
     //     self.board.piece_bitboards[6*active_player + original_piece] |= target;
     //
-    //     self.board.colour_bitboards[self.board.active_player as usize] &= target_mask;
+    //     let capture = self.capture_history.pop().unwrap_or_default();
+    //     if capture == NO_CAPTURE { return; }
+    //     let captured_piece = capture >> CAPTURED_PIECE_TYPE_SHIFT;
+    //     let capture
+    //     self.board.colour_bitboards[self.board.active_player as usize] |= target_mask;
     //     for index in 6*self.board.active_player as usize..=6*self.board.active_player as usize + 5 {
     //         self.board.piece_bitboards[index] &= target_mask;
     //     }
@@ -2186,7 +2190,7 @@ mod tests {
             assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
         }
 
-        assert_eq!(1 << 15, move_list.capture_history[0]);
+        assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
         assert_eq!(44, move_list.en_passant_history[0]);
         assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
     }
@@ -2224,7 +2228,7 @@ mod tests {
             assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
         }
 
-        assert_eq!(1 << 15, move_list.capture_history[0]);
+        assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
         assert_eq!(44, move_list.en_passant_history[0]);
         assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
     }
@@ -2261,7 +2265,7 @@ mod tests {
             assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
         }
 
-        assert_eq!(1 << 15, move_list.capture_history[0]);
+        assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
         assert_eq!(44, move_list.en_passant_history[0]);
         assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
     }
@@ -2298,7 +2302,7 @@ mod tests {
             assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
         }
 
-        assert_eq!(1 << 15, move_list.capture_history[0]);
+        assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
         assert_eq!(64, move_list.en_passant_history[0]);
         assert_eq!([true, false, false, false], move_list.castling_rights_history[0]);
     }
@@ -2340,7 +2344,7 @@ mod tests {
             assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
         }
 
-        assert_eq!(41 | (1 << 6), move_list.capture_history[0]);
+        assert_eq!(1, move_list.capture_history[0]);
         assert_eq!(44, move_list.en_passant_history[0]);
         assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
     }
@@ -2387,7 +2391,7 @@ mod tests {
             assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
         }
 
-        assert_eq!(63 | (3 << 6), move_list.capture_history[0]);
+        assert_eq!(3, move_list.capture_history[0]);
         assert_eq!(44, move_list.en_passant_history[0]);
         assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
     }
@@ -2431,6 +2435,7 @@ mod tests {
             assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
         }
 
+        assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
         assert_eq!([true, true, true, true], move_list.castling_rights_history[0]);
         assert_eq!([false, false, true, true], move_list.board.castling_rights);
     }
@@ -2514,6 +2519,7 @@ mod tests {
             assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
         }
 
+        assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
         assert_eq!([true, true, true, true], move_list.castling_rights_history[0]);
         assert_eq!([true, true, false, false], move_list.board.castling_rights);
     }
