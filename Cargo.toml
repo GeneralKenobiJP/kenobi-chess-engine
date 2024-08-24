@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 scanner-rust = "2.0.17"
+criterion = "0.5.1"

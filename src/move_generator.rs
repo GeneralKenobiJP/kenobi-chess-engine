@@ -49,8 +49,14 @@ impl<'a> MoveList<'a> {
         }
     }
 
-    fn get_moves(&self) -> &Vec<Move> {
+    /// Getter for the move list
+    pub fn get_moves(&self) -> &Vec<Move> {
         &self.moves
+    }
+
+    /// Getter for the board
+    pub fn get_board(&self) -> &Board {
+        &self.board
     }
 
     // pub fn log_moves(&self) {
@@ -235,6 +241,8 @@ impl<'a> MoveList<'a> {
 
     /// Generates moves and updates move list based on the situation on the board
     pub fn generate_moves(&mut self) {
+        self.moves = Vec::new();
+
         self.generate_king_moves();
 
         if self.board.active_player == WHITE
@@ -1163,6 +1171,7 @@ impl<'a> MoveList<'a> {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
+    use std::time::Instant;
     use crate::board::{Board, START_POSITION};
     use crate::piece::Piece::PAWN;
     use super::*;
@@ -1343,7 +1352,10 @@ mod tests {
         let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all, expected_bishop_moves_all, expected_queen_moves].concat();
 
         move_list.moves = Vec::<Move>::new();
+        let start = Instant::now();
         move_list.generate_moves();
+        let duration = start.elapsed();
+        println!("generate_moves lasted for: {:?}", duration);
         assert!(compare_vecs(&move_list.moves, &expected_moves));
     }
 
@@ -1679,7 +1691,10 @@ mod tests {
         let expected_moves = [expected_pawn_moves, expected_king_moves, expected_knight_moves_all, expected_rook_moves_all, expected_bishop_moves_all, expected_queen_moves].concat();
 
         move_list.moves = Vec::<Move>::new();
+        let start = Instant::now();
         move_list.generate_moves();
+        let duration = start.elapsed();
+        println!("generate_moves lasted for: {:?}", duration);
         assert!(compare_vecs(&move_list.moves, &expected_moves));
     }
 
@@ -2514,7 +2529,10 @@ mod tests {
         let origin: u64 = 1 << 54;
         let target: u64 = 1 << 63;
 
+        let start = Instant::now();
         move_list.make_move(&piece_move);
+        let duration = start.elapsed();
+        println!("make_move lasted for: {:?}", duration);
 
         assert_eq!(main_bitboard - origin | target, move_list.board.main_bitboard);
         assert_eq!(colour_bitboards[0] - origin | target, move_list.board.colour_bitboards[0]);
@@ -2545,7 +2563,10 @@ mod tests {
 
         // UNMAKE MOVE
 
+        let start = Instant::now();
         move_list.unmake_move(&piece_move);
+        let duration = start.elapsed();
+        println!("unmake_move lasted for: {:?}", duration);
 
         assert_eq!(main_bitboard, move_list.board.main_bitboard);
         assert_eq!(colour_bitboards[0], move_list.board.colour_bitboards[0]);

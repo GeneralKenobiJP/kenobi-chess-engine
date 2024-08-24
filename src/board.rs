@@ -87,7 +87,7 @@ impl Board {
         println!("{}", self.full_moves);
     }
 
-    /// Switches active player to inactive and inactive to active
+    /// Switches active player to inactive and inactive one to active
     pub fn switch_active_player(&mut self) {
         let temp = self.active_player;
         self.active_player = self.inactive_player;
@@ -188,7 +188,6 @@ impl Board {
 
 #[cfg(test)]
 mod tests {
-    use crate::piece::Piece::{BISHOP, QUEEN};
     use super::*;
 
     #[test]
