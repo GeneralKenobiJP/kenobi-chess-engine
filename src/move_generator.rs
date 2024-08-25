@@ -103,8 +103,7 @@ impl<'a> MoveList<'a> {
 
         self.board.main_bitboard ^= origin;
         self.board.main_bitboard |= target;
-        self.board.empty_bitboard |= origin;
-        self.board.empty_bitboard ^= target;
+        self.board.empty_bitboard = !self.board.main_bitboard;
         self.board.colour_bitboards[active_player] ^= origin;
         self.board.colour_bitboards[active_player] |= target;
         self.board.piece_bitboards[6*active_player + piece] ^= origin;
@@ -206,8 +205,7 @@ impl<'a> MoveList<'a> {
 
         self.board.main_bitboard ^= origin;
         self.board.main_bitboard |= target;
-        self.board.empty_bitboard |= origin;
-        self.board.empty_bitboard ^= target;
+        self.board.empty_bitboard = !self.board.main_bitboard;
         self.board.colour_bitboards[active_player] ^= origin;
         self.board.colour_bitboards[active_player] |= target;
         self.board.piece_bitboards[6*active_player + target_piece] ^= origin;
