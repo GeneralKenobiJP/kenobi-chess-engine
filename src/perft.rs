@@ -59,20 +59,20 @@ pub fn perft(move_list: &mut MoveList, depth: u32) -> u64 {
 //
 //     nodes
 // }
-
-impl TreeStats {
-    pub fn new() -> Self {
-        TreeStats {
-            nodes: 0,
-            captures: 0,
-            en_passants: 0,
-            castles: 0,
-            promotions: 0,
-            checks: 0,
-            checkmates: 0
-        }
-    }
-}
+//
+// impl TreeStats {
+//     pub fn new() -> Self {
+//         TreeStats {
+//             nodes: 0,
+//             captures: 0,
+//             en_passants: 0,
+//             castles: 0,
+//             promotions: 0,
+//             checks: 0,
+//             checkmates: 0
+//         }
+//     }
+// }
 
 
 
@@ -88,7 +88,7 @@ mod tests {
         board.read_fen(START_POSITION);
         let mut move_list = MoveList::new(&mut board);
 
-        let depth = 7;
+        let depth = 2;
 
         let start = Instant::now();
         let nodes = perft(&mut move_list, depth);

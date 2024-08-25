@@ -184,12 +184,14 @@ impl Board {
 
         // self.print_board();
     }
-    
+
+    /// Given a u8 square representation, outputs an human-readable format of the square name.
+    /// E.g.: 14 -> b2
     pub fn decode_square(square: u8) -> String {
         let mut algebraic = String::new();
 
         algebraic.push(char::from_u32('h' as u32 - square as u32 % 8).unwrap_or_default());
-        algebraic.push(char::from_digit(square as u32 / 8, 10).unwrap_or_default());
+        algebraic.push(char::from_digit(square as u32 / 8 + 1, 10).unwrap_or_default());
 
         algebraic
     }
@@ -312,5 +314,10 @@ mod tests {
         assert_eq!(board.en_passant_possibility, 64);
         assert_eq!(board.half_moves, 1);
         assert_eq!(board.full_moves, 2);
+    }
+
+    #[test]
+    fn decode_square() {
+        assert_eq!("b2", Board::decode_square(14));
     }
 }

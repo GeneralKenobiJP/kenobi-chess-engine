@@ -23,8 +23,22 @@ pub struct Move {
 }
 
 impl Move {
+    /// Converts Move object to an algebraic notation used by UCI
+    /// E.g.: Move{54, 63, 2, PAWN} -> b7a8q
     pub fn to_algebraic_notation(&self) -> String {
-        self.origin
+        let mut notation = String::new();
+        notation.push_str(&*Board::decode_square(self.origin));
+        notation.push_str(&*Board::decode_square(self.target));
+
+        match self.promotion {
+            2 => notation.push('q'),
+            3 => notation.push('r'),
+            4 => notation.push('b'),
+            5 => notation.push('n'),
+            _ => ()
+        }
+
+        notation
     }
 }
 
@@ -1192,6 +1206,14 @@ mod tests {
         let set2: HashSet<Move> = HashSet::from_iter(vec2.iter().cloned());
 
         return set1 == set2;
+    }
+
+    #[test]
+    fn algebraic_notation() {
+        let piece_move1 = Move{origin: 54, target: 63, promotion: 2, piece: PAWN};
+        let piece_move2 = Move{origin: 0, target: 6, promotion: 0, piece: ROOK};
+        assert_eq!("b7a8q", piece_move1.to_algebraic_notation());
+        assert_eq!("h1b1", piece_move2.to_algebraic_notation());
     }
 
     #[test]
