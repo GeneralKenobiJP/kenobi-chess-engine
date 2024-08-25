@@ -484,8 +484,16 @@ impl<'a> MoveList<'a> {
 
     /// Checks if the king of the current player is in check
     /// Outputs true/false
-    fn is_in_check(&self) -> bool {
+    pub fn is_in_check(&self) -> bool {
         if self.board.active_player == BLACK {
+            return self.is_square_attacked_by_white(self.board.piece_bitboards[6]);
+        }
+        self.is_square_attacked_by_black(self.board.piece_bitboards[0])
+    }
+    /// Checks if the king of the inactive player is in check
+    /// Outputs true/false
+    pub fn is_opponent_in_check(&self) -> bool {
+        if self.board.active_player == WHITE {
             return self.is_square_attacked_by_white(self.board.piece_bitboards[6]);
         }
         self.is_square_attacked_by_black(self.board.piece_bitboards[0])
