@@ -2,6 +2,9 @@ use crate::board::Board;
 use crate::move_generator::{MoveList, Move};
 use crate::piece::Colour::{BLACK, WHITE};
 
+/// Walks the move generation tree of strictly legal moves to count all the leaf nodes of a certain depth.
+/// Used for debugging.
+/// Outputs the number of nodes it generated, given a move list (containing a board with position) and a depth.
 pub fn perft(move_list: &mut MoveList, depth: u32) -> u64 {
     let mut nodes = 0u64;
 
@@ -26,6 +29,10 @@ pub fn perft(move_list: &mut MoveList, depth: u32) -> u64 {
     nodes
 }
 
+/// Walks the move generation tree of strictly legal moves to count all the leaf nodes of a certain depth.
+/// Used for debugging.
+/// Outputs the number of nodes it generated, given a move list (containing a board with position) and a depth.
+/// Logs in the console number of nodes descending from each first move.
 pub fn perft_log(move_list: &mut MoveList, depth: u32) -> u64 {
     let mut nodes = 0u64;
 
