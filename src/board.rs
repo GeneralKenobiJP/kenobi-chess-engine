@@ -184,6 +184,15 @@ impl Board {
 
         // self.print_board();
     }
+    
+    pub fn decode_square(square: u8) -> String {
+        let mut algebraic = String::new();
+
+        algebraic.push(char::from_u32('h' as u32 - square as u32 % 8).unwrap_or_default());
+        algebraic.push(char::from_digit(square as u32 / 8, 10).unwrap_or_default());
+
+        algebraic
+    }
 }
 
 #[cfg(test)]

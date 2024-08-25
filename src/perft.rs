@@ -1,42 +1,80 @@
 use crate::board::Board;
 use crate::move_generator::{MoveList, Move};
+use crate::piece::Colour::{BLACK, WHITE};
 
-// pub fn perft(board: &mut Board, depth: u32) {
-//     let mut move_list = MoveList::new(board);
-//
-//     if depth == 0 {
-//         return;
-//     }
-//
-//     move_list.generate_moves();
-//
-//     let mut moves = move_list.get_moves().clone();
-//
-//     for piece_move in moves
-//     {
-//         move_list.make_move(&piece_move);
-//         perft(&mut move_list.get_board().clone(), depth - 1);
-//         move_list.unmake_move(&piece_move);
-//     }
-// }
-//
-pub fn perft(move_list: &mut MoveList, depth: u32) {
-
-    if depth == 0 {
-        return;
-    }
+pub fn perft(move_list: &mut MoveList, depth: u32) -> u64 {
+    let mut nodes = 0u64;
 
     move_list.generate_moves();
+
+    if depth == 1 {
+        // println!("No. of leaves: {}", move_list.get_moves().len());
+        // println!("Main bitboard: {}", move_list.get_board().main_bitboard);
+        // println!("Own bitboard: {}", move_list.get_board().colour_bitboards[move_list.get_board().active_player as usize]);
+        return move_list.get_moves().len() as u64;
+    }
 
     let mut moves = move_list.get_moves().clone();
 
     for piece_move in moves
     {
         move_list.make_move(&piece_move);
-        perft(move_list, depth - 1);
+        nodes += perft(move_list, depth - 1);
         move_list.unmake_move(&piece_move);
     }
+
+    nodes
 }
+
+// struct TreeStats {
+//     nodes: u64,
+//     captures: u64,
+//     en_passants: u64,
+//     castles: u64,
+//     promotions: u64,
+//     checks: u64,
+//     checkmates: u64
+// }
+//
+// pub fn perft_stats(move_list: &mut MoveList, depth: u32, tree_stats: &mut TreeStats) {
+//     let mut nodes = 0u64;
+//
+//     move_list.generate_moves();
+//
+//     if depth == 1 {
+//         // println!("No. of leaves: {}", move_list.get_moves().len());
+//         // println!("Main bitboard: {}", move_list.get_board().main_bitboard);
+//         // println!("Own bitboard: {}", move_list.get_board().colour_bitboards[move_list.get_board().active_player as usize]);
+//
+//     }
+//
+//     let mut moves = move_list.get_moves().clone();
+//
+//     for piece_move in moves
+//     {
+//         move_list.make_move(&piece_move);
+//         nodes += perft(move_list, depth - 1);
+//         move_list.unmake_move(&piece_move);
+//     }
+//
+//     nodes
+// }
+
+impl TreeStats {
+    pub fn new() -> Self {
+        TreeStats {
+            nodes: 0,
+            captures: 0,
+            en_passants: 0,
+            castles: 0,
+            promotions: 0,
+            checks: 0,
+            checkmates: 0
+        }
+    }
+}
+
+
 
 #[cfg(test)]
 mod tests {
@@ -50,9 +88,12 @@ mod tests {
         board.read_fen(START_POSITION);
         let mut move_list = MoveList::new(&mut board);
 
+        let depth = 7;
+
         let start = Instant::now();
-        perft(&mut move_list, 5);
+        let nodes = perft(&mut move_list, depth);
         let duration = start.elapsed();
+        println!("perft {} returned {} nodes", depth, nodes);
         println!("bench_perft lasted for: {:?}", duration);
     }
 }

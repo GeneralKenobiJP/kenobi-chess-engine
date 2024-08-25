@@ -22,6 +22,12 @@ pub struct Move {
     pub piece: Piece
 }
 
+impl Move {
+    pub fn to_algebraic_notation(&self) -> String {
+        self.origin
+    }
+}
+
 pub struct MoveList<'a> {
     board: &'a mut Board,
     moves: Vec<Move>,
@@ -190,7 +196,7 @@ impl<'a> MoveList<'a> {
         self.board.piece_bitboards[6*active_player + piece] |= target;
 
         let capture = self.capture_history.pop().unwrap_or_default();
-        if capture == NO_CAPTURE { return; }
+        if capture == NO_CAPTURE { self.board.switch_active_player(); return; }
         self.board.main_bitboard |= origin;
         self.board.colour_bitboards[self.board.active_player as usize] |= origin;
         self.board.piece_bitboards[capture as usize] |= origin;
@@ -2774,5 +2780,18 @@ mod tests {
 
             assert_eq!(piece_bitboards[i], board.piece_bitboards[i]);
         }
+    }
+
+    #[test]
+    fn bench_is_in_check() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+
+        let mut move_list = MoveList::new(&mut board);
+
+        let start = Instant::now();
+        move_list.is_in_check();
+        let duration = start.elapsed();
+        println!("is_in_check lasted for {:?}", duration);
     }
 }
