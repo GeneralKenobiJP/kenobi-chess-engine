@@ -126,6 +126,7 @@ pub fn perft_log(move_list: &mut MoveList, depth: u32) -> u64 {
 mod tests {
     use std::time::Instant;
     use crate::board::START_POSITION;
+    use crate::piece::Piece::KING;
     use super::*;
 
     #[test]
@@ -134,7 +135,7 @@ mod tests {
         board.read_fen(START_POSITION);
         let mut move_list = MoveList::new(&mut board);
 
-        let depth = 5;
+        let depth = 4;
 
         let start = Instant::now();
         let nodes = perft(&mut move_list, depth);
@@ -190,5 +191,22 @@ mod tests {
         let nodes = perft(&mut move_list, depth);
         println!("perft {} returned {} nodes", depth, nodes);
         assert_eq!(0, nodes);
+    }
+
+    #[test]
+    fn perft_position_2() {
+        let mut board = Board::new();
+        board.read_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
+        let mut move_list = MoveList::new(&mut board);
+
+        // move_list.make_move(&Move{origin: 3, target: 4, promotion: 0, piece: KING});
+
+        move_list.generate_moves();
+        println!("{:?}", move_list.get_moves());
+
+        let depth = 2;
+
+        let nodes = perft_log(&mut move_list, depth);
+        println!("perft {} returned {} nodes", depth, nodes);
     }
 }

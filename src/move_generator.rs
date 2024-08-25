@@ -380,8 +380,8 @@ impl<'a> MoveList<'a> {
             self.moves.push(Move { origin: 59, target: 57, promotion: 1, piece: KING });
         }
 
-        let queenside_bitboard: u64 = 0b0111000000000000000000000000000000000000000000000000000000110000;
-        if self.board.castling_rights[3] && self.board.main_bitboard & queenside_bitboard == 0
+        let queenside_bitboard: u64 = 0b0111000000000000000000000000000000000000000000000000000000000000;
+        if self.board.castling_rights[3] && (self.board.main_bitboard & queenside_bitboard) == 0
             && !self.is_edge_square_attacked_by_white(60) && !self.is_edge_square_attacked_by_white(61)
         {
             self.moves.push(Move { origin: 59, target: 61, promotion: 1, piece: KING });
