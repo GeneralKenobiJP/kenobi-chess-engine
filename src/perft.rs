@@ -1,8 +1,10 @@
+//! Perft = performance test, move path enumeration
+//!
 //! Current perft correctness:
-//! Initial position: up to perft 5; perft 6 failed
-//! Position 2 (kiwipete): up to perft 2; perft 3 failed
-//! Position 3: up to perft 0; perft 1 failed
-//! Position 4: up to perft 0; perft 1 failed
+//! Initial position: up to perft 5; perft 6 failed (+214)
+//! Position 2 (kiwipete): up to perft 2; perft 3 failed (+7)
+//! Position 3: up to perft 1; perft 2 failed (+25)
+//! Position 4: up to perft 3; perft 4 failed (+1)
 
 use crate::board::Board;
 use crate::move_generator::{MoveList, Move};
@@ -54,14 +56,14 @@ pub fn perft(move_list: &mut MoveList, depth: u32) -> u64 {
 pub fn perft_log(move_list: &mut MoveList, depth: u32) -> u64 {
     let mut nodes = 0u64;
 
-    move_list.generate_moves();
-
-    if depth == 1 {
+    if depth == 0 {
         // println!("No. of leaves: {}", move_list.get_moves().len());
         println!("Main bitboard: {}", move_list.get_board().main_bitboard);
         // println!("Own bitboard: {}", move_list.get_board().colour_bitboards[move_list.get_board().active_player as usize]);
-        return move_list.get_moves().len() as u64;
+        return 1;
     }
+
+    move_list.generate_moves();
 
     let moves = move_list.get_moves().clone();
 
@@ -228,7 +230,7 @@ mod tests {
         move_list.generate_moves();
         println!("{:?}", move_list.get_moves());
 
-        let depth = 1;
+        let depth = 2;
 
         let nodes = perft_log(&mut move_list, depth);
         println!("perft {} returned {} nodes", depth, nodes);
@@ -245,9 +247,9 @@ mod tests {
         move_list.generate_moves();
         println!("{:?}", move_list.get_moves());
 
-        let depth = 1;
+        let depth = 4;
 
-        let nodes = perft(&mut move_list, depth);
+        let nodes = perft_log(&mut move_list, depth);
         println!("perft {} returned {} nodes", depth, nodes);
     }
 }
