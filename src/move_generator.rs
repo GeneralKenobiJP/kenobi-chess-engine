@@ -14,7 +14,7 @@ const INITIAL_STACK_CAPACITY: usize = 30; // used by MoveList constructor
 const NO_CAPTURE: u8 = 1 << 4;
 const NO_PASSANT: u8 = 64;
 
-#[derive(PartialEq, Eq, Hash, Clone)]
+#[derive(PartialEq, Eq, Hash, Clone, Debug)]
 pub struct Move {
     pub origin: u8,
     pub target: u8,
@@ -103,13 +103,15 @@ impl<'a> MoveList<'a> {
 
         self.board.main_bitboard ^= origin;
         self.board.main_bitboard |= target;
+        self.board.empty_bitboard |= origin;
+        self.board.empty_bitboard ^= target;
         self.board.colour_bitboards[active_player] ^= origin;
         self.board.colour_bitboards[active_player] |= target;
         self.board.piece_bitboards[6*active_player + piece] ^= origin;
         self.board.piece_bitboards[6*active_player + final_piece] |= target;
 
         self.board.colour_bitboards[self.board.inactive_player as usize] &= target_mask;
-        let mut capture: u8 = 0;
+        let mut capture: u8 = NO_CAPTURE;
         for index in 6*self.board.inactive_player as usize..=6*self.board.inactive_player as usize + 5 {
             let new_bitboard = self.board.piece_bitboards[index] & target_mask;
             let capture_bitboard = new_bitboard ^ self.board.piece_bitboards[index];
@@ -119,7 +121,6 @@ impl<'a> MoveList<'a> {
                 self.board.piece_bitboards[index] = new_bitboard;
             }
         }
-        if capture == 0 { capture = NO_CAPTURE; }
         self.capture_history.push(capture);
 
         self.board.en_passant_possibility = NO_PASSANT;
@@ -175,6 +176,7 @@ impl<'a> MoveList<'a> {
 
         self.board.main_bitboard &= mask;
         self.board.main_bitboard |= summed_flag;
+        self.board.empty_bitboard = !self.board.main_bitboard;
         self.board.colour_bitboards[self.board.active_player as usize] &= mask;
         self.board.colour_bitboards[self.board.active_player as usize] |= summed_flag;
         self.board.piece_bitboards[6*self.board.active_player as usize + KING as usize] &= mask;
@@ -204,6 +206,8 @@ impl<'a> MoveList<'a> {
 
         self.board.main_bitboard ^= origin;
         self.board.main_bitboard |= target;
+        self.board.empty_bitboard |= origin;
+        self.board.empty_bitboard ^= target;
         self.board.colour_bitboards[active_player] ^= origin;
         self.board.colour_bitboards[active_player] |= target;
         self.board.piece_bitboards[6*active_player + target_piece] ^= origin;
@@ -212,6 +216,7 @@ impl<'a> MoveList<'a> {
         let capture = self.capture_history.pop().unwrap_or_default();
         if capture == NO_CAPTURE { self.board.switch_active_player(); return; }
         self.board.main_bitboard |= origin;
+        self.board.empty_bitboard ^= origin;
         self.board.colour_bitboards[self.board.active_player as usize] |= origin;
         self.board.piece_bitboards[capture as usize] |= origin;
 
@@ -221,7 +226,7 @@ impl<'a> MoveList<'a> {
     /// Unmakes a castling move on the board, given a castling move.
     /// Called by unmake_move, should not be called independently.
     fn unmake_castling_move(&mut self, piece_move: &Move) {
-        self.capture_history.pop().unwrap_or_default();
+        self.capture_history.pop();
 
         let flag_pointer;
         let mask;
@@ -251,6 +256,7 @@ impl<'a> MoveList<'a> {
 
         self.board.main_bitboard &= mask;
         self.board.main_bitboard |= summed_flag;
+        self.board.empty_bitboard = !self.board.main_bitboard;
         self.board.colour_bitboards[self.board.inactive_player as usize] &= mask;
         self.board.colour_bitboards[self.board.inactive_player as usize] |= summed_flag;
         self.board.piece_bitboards[6*self.board.inactive_player as usize + KING as usize] &= mask;
