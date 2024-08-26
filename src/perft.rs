@@ -12,8 +12,7 @@
 //! /// Currently move generation seems to be working correctly until proven otherwise ///
 
 use crate::board::Board;
-use crate::move_generator::{MoveList, Move};
-use crate::piece::Colour::{BLACK, WHITE};
+use crate::move_generator::{MoveList};
 
 /// Walks the move generation tree of strictly legal moves to count all the leaf nodes of a certain depth.
 /// Used for debugging.
@@ -71,8 +70,6 @@ pub fn perft_log(move_list: &mut MoveList, depth: u32) -> u64 {
 mod tests {
     use std::time::Instant;
     use crate::board::START_POSITION;
-    use crate::piece::Piece;
-    use crate::piece::Piece::{KING, KNIGHT, PAWN, QUEEN};
     use super::*;
 
     #[test]

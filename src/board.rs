@@ -1,6 +1,7 @@
 //! Board representation and FEN utility
 //! Defines the Board struct that holds all the information about current situation on the board
 //! i.e. bitboards, active player, castling rights, en passant possibility, etc.
+//! Uses little-endianness, e.g. h1-a1, ..., h8-a8
 //! Defines some methods for board
 //! Implements FEN utility that allows to convert input FEN string into attributes of Board
 
@@ -9,8 +10,6 @@ use scanner_rust::ScannerStr;
 use crate::piece::Piece;
 use crate::piece::Colour;
 use crate::piece::Colour::{BLACK, WHITE};
-use crate::move_generator::Move;
-use crate::piece::Piece::{KING, PAWN, ROOK};
 
 pub const START_POSITION: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 pub const UPPER_RANK_LOWEST_TILE: u8 = 56;
@@ -185,7 +184,7 @@ impl Board {
         // self.print_board();
     }
 
-    /// Given a u8 square representation, outputs an human-readable format of the square name.
+    /// Given a u8 square representation, outputs a human-readable format of the square name.
     /// E.g.: 14 -> b2
     pub fn decode_square(square: u8) -> String {
         let mut algebraic = String::new();

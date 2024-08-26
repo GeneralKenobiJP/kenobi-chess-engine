@@ -1,6 +1,6 @@
 //! Move generator
-//! Generates a vector of moves based on the input board position
-//! Involves bitboards, magic bitboards, etc.
+//! Generates a vector of pseudo-legal moves based on the input board position
+//! Involves bitboards, magic bitboards.
 
 use std::collections::HashSet;
 use crate::piece::Piece;
@@ -579,7 +579,7 @@ impl<'a> MoveList<'a> {
                     origin,
                     target,
                     promotion: 0,
-                    piece: Piece::PAWN,
+                    piece: PAWN,
                 });
                 continue;
             }
@@ -590,7 +590,7 @@ impl<'a> MoveList<'a> {
                     origin,
                     target,
                     promotion: i,
-                    piece: Piece::PAWN,
+                    piece: PAWN,
                 });
             }
         }
@@ -610,7 +610,7 @@ impl<'a> MoveList<'a> {
     /// Outputs a bitboard of single push white pawn moves, based on the current board situation
     /// We do not need to consider edges because of promotions
     fn generate_white_push_bitboard(&self) -> u64 {
-        self.board.piece_bitboards[Piece::PAWN as usize] << 8
+        self.board.piece_bitboards[PAWN as usize] << 8
             & self.board.empty_bitboard
     }
 
@@ -624,7 +624,7 @@ impl<'a> MoveList<'a> {
             let en_passant_tile = 1 << self.board.en_passant_possibility;
             attack_options |= en_passant_tile;
         }
-        let index = Piece::PAWN as usize;
+        let index = PAWN as usize;
         let capture_bitboard: u64 = ((self.board.piece_bitboards[index] & NOT_FILE_A_MASK) << 9) & attack_options;
         capture_bitboard
     }
@@ -638,7 +638,7 @@ impl<'a> MoveList<'a> {
             let en_passant_tile = 1 << self.board.en_passant_possibility;
             attack_options |= en_passant_tile;
         }
-        let index = Piece::PAWN as usize;
+        let index = PAWN as usize;
         let capture_bitboard: u64 = ((self.board.piece_bitboards[index] & NOT_FILE_H_MASK) << 7) & attack_options;
         capture_bitboard
     }
@@ -682,7 +682,7 @@ impl<'a> MoveList<'a> {
                     origin,
                     target,
                     promotion: 0,
-                    piece: Piece::PAWN,
+                    piece: PAWN,
                 });
                 continue;
             }
@@ -693,7 +693,7 @@ impl<'a> MoveList<'a> {
                     origin,
                     target,
                     promotion: i,
-                    piece: Piece::PAWN,
+                    piece: PAWN,
                 });
             }
         }
@@ -713,7 +713,7 @@ impl<'a> MoveList<'a> {
     /// Outputs a bitboard of single push black pawn moves, based on the current board situation
     /// We do not need to consider edges because of promotions
     fn generate_black_push_bitboard(&self) -> u64 {
-        self.board.piece_bitboards[Piece::PAWN as usize + 6] >> 8
+        self.board.piece_bitboards[PAWN as usize + 6] >> 8
             & self.board.empty_bitboard
     }
 
@@ -727,7 +727,7 @@ impl<'a> MoveList<'a> {
             let en_passant_tile = 1 << self.board.en_passant_possibility;
             attack_options |= en_passant_tile;
         }
-        let index = Piece::PAWN as usize + 6;
+        let index = PAWN as usize + 6;
         let capture_bitboard: u64 = (self.board.piece_bitboards[index] & NOT_FILE_H_MASK) >> 9 & attack_options;
         capture_bitboard
     }
@@ -741,7 +741,7 @@ impl<'a> MoveList<'a> {
             let en_passant_tile = 1 << self.board.en_passant_possibility;
             attack_options |= en_passant_tile;
         }
-        let index = Piece::PAWN as usize + 6;
+        let index = PAWN as usize + 6;
         let capture_bitboard: u64 = (self.board.piece_bitboards[index] & NOT_FILE_A_MASK) >> 7 & attack_options;
         capture_bitboard
     }
@@ -1246,7 +1246,7 @@ mod tests {
     use std::collections::HashSet;
     use std::time::Instant;
     use crate::board::{Board, START_POSITION};
-    use crate::piece::Piece::PAWN;
+    use crate::piece::Piece::{PAWN};
     use super::*;
 
     fn compare_vecs<Move: PartialEq + Eq + std::hash::Hash + Clone>
@@ -1291,23 +1291,23 @@ mod tests {
         let expected_queen_bitboard: u64 = 0;
 
         let mut expected_push_moves = Vec::<Move>::new();
-        expected_push_moves.push(Move{ origin: 8, target: 16, promotion: 0, piece: Piece::PAWN });
-        expected_push_moves.push(Move{ origin: 9, target: 17, promotion: 0, piece: Piece::PAWN });
-        expected_push_moves.push(Move{ origin: 10, target: 18, promotion: 0, piece: Piece::PAWN });
-        expected_push_moves.push(Move{ origin: 11, target: 19, promotion: 0, piece: Piece::PAWN });
-        expected_push_moves.push(Move{ origin: 12, target: 20, promotion: 0, piece: Piece::PAWN });
-        expected_push_moves.push(Move{ origin: 13, target: 21, promotion: 0, piece: Piece::PAWN });
-        expected_push_moves.push(Move{ origin: 14, target: 22, promotion: 0, piece: Piece::PAWN });
-        expected_push_moves.push(Move{ origin: 15, target: 23, promotion: 0, piece: Piece::PAWN });
+        expected_push_moves.push(Move{ origin: 8, target: 16, promotion: 0, piece: PAWN });
+        expected_push_moves.push(Move{ origin: 9, target: 17, promotion: 0, piece: PAWN });
+        expected_push_moves.push(Move{ origin: 10, target: 18, promotion: 0, piece: PAWN });
+        expected_push_moves.push(Move{ origin: 11, target: 19, promotion: 0, piece: PAWN });
+        expected_push_moves.push(Move{ origin: 12, target: 20, promotion: 0, piece: PAWN });
+        expected_push_moves.push(Move{ origin: 13, target: 21, promotion: 0, piece: PAWN });
+        expected_push_moves.push(Move{ origin: 14, target: 22, promotion: 0, piece: PAWN });
+        expected_push_moves.push(Move{ origin: 15, target: 23, promotion: 0, piece: PAWN });
         let mut expected_double_push_moves = Vec::<Move>::new();
-        expected_double_push_moves.push(Move{ origin: 8, target: 24, promotion: 0, piece: Piece::PAWN });
-        expected_double_push_moves.push(Move{ origin: 9, target: 25, promotion: 0, piece: Piece::PAWN });
-        expected_double_push_moves.push(Move{ origin: 10, target: 26, promotion: 0, piece: Piece::PAWN });
-        expected_double_push_moves.push(Move{ origin: 11, target: 27, promotion: 0, piece: Piece::PAWN });
-        expected_double_push_moves.push(Move{ origin: 12, target: 28, promotion: 0, piece: Piece::PAWN });
-        expected_double_push_moves.push(Move{ origin: 13, target: 29, promotion: 0, piece: Piece::PAWN });
-        expected_double_push_moves.push(Move{ origin: 14, target: 30, promotion: 0, piece: Piece::PAWN });
-        expected_double_push_moves.push(Move{ origin: 15, target: 31, promotion: 0, piece: Piece::PAWN });
+        expected_double_push_moves.push(Move{ origin: 8, target: 24, promotion: 0, piece: PAWN });
+        expected_double_push_moves.push(Move{ origin: 9, target: 25, promotion: 0, piece: PAWN });
+        expected_double_push_moves.push(Move{ origin: 10, target: 26, promotion: 0, piece: PAWN });
+        expected_double_push_moves.push(Move{ origin: 11, target: 27, promotion: 0, piece: PAWN });
+        expected_double_push_moves.push(Move{ origin: 12, target: 28, promotion: 0, piece: PAWN });
+        expected_double_push_moves.push(Move{ origin: 13, target: 29, promotion: 0, piece: PAWN });
+        expected_double_push_moves.push(Move{ origin: 14, target: 30, promotion: 0, piece: PAWN });
+        expected_double_push_moves.push(Move{ origin: 15, target: 31, promotion: 0, piece: PAWN });
         let mut expected_left_pawn_captures = Vec::<Move>::new();
         let mut expected_right_pawn_captures = Vec::<Move>::new();
         let expected_pawn_moves = [expected_push_moves.clone(), expected_double_push_moves.clone(),
@@ -1460,23 +1460,23 @@ mod tests {
         let expected_queen_bitboard: u64 = 0;
 
         let mut expected_push_moves = Vec::<Move>::new();
-        expected_push_moves.push(Move{ origin: 55, target: 47, promotion: 0, piece: Piece::PAWN });
-        expected_push_moves.push(Move{ origin: 54, target: 46, promotion: 0, piece: Piece::PAWN });
-        expected_push_moves.push(Move{ origin: 53, target: 45, promotion: 0, piece: Piece::PAWN });
-        expected_push_moves.push(Move{ origin: 52, target: 44, promotion: 0, piece: Piece::PAWN });
-        expected_push_moves.push(Move{ origin: 51, target: 43, promotion: 0, piece: Piece::PAWN });
-        expected_push_moves.push(Move{ origin: 50, target: 42, promotion: 0, piece: Piece::PAWN });
-        expected_push_moves.push(Move{ origin: 49, target: 41, promotion: 0, piece: Piece::PAWN });
-        expected_push_moves.push(Move{ origin: 48, target: 40, promotion: 0, piece: Piece::PAWN });
+        expected_push_moves.push(Move{ origin: 55, target: 47, promotion: 0, piece: PAWN });
+        expected_push_moves.push(Move{ origin: 54, target: 46, promotion: 0, piece: PAWN });
+        expected_push_moves.push(Move{ origin: 53, target: 45, promotion: 0, piece: PAWN });
+        expected_push_moves.push(Move{ origin: 52, target: 44, promotion: 0, piece: PAWN });
+        expected_push_moves.push(Move{ origin: 51, target: 43, promotion: 0, piece: PAWN });
+        expected_push_moves.push(Move{ origin: 50, target: 42, promotion: 0, piece: PAWN });
+        expected_push_moves.push(Move{ origin: 49, target: 41, promotion: 0, piece: PAWN });
+        expected_push_moves.push(Move{ origin: 48, target: 40, promotion: 0, piece: PAWN });
         let mut expected_double_push_moves = Vec::<Move>::new();
-        expected_double_push_moves.push(Move{ origin: 55, target: 39, promotion: 0, piece: Piece::PAWN });
-        expected_double_push_moves.push(Move{ origin: 54, target: 38, promotion: 0, piece: Piece::PAWN });
-        expected_double_push_moves.push(Move{ origin: 53, target: 37, promotion: 0, piece: Piece::PAWN });
-        expected_double_push_moves.push(Move{ origin: 52, target: 36, promotion: 0, piece: Piece::PAWN });
-        expected_double_push_moves.push(Move{ origin: 51, target: 35, promotion: 0, piece: Piece::PAWN });
-        expected_double_push_moves.push(Move{ origin: 50, target: 34, promotion: 0, piece: Piece::PAWN });
-        expected_double_push_moves.push(Move{ origin: 49, target: 33, promotion: 0, piece: Piece::PAWN });
-        expected_double_push_moves.push(Move{ origin: 48, target: 32, promotion: 0, piece: Piece::PAWN });
+        expected_double_push_moves.push(Move{ origin: 55, target: 39, promotion: 0, piece: PAWN });
+        expected_double_push_moves.push(Move{ origin: 54, target: 38, promotion: 0, piece: PAWN });
+        expected_double_push_moves.push(Move{ origin: 53, target: 37, promotion: 0, piece: PAWN });
+        expected_double_push_moves.push(Move{ origin: 52, target: 36, promotion: 0, piece: PAWN });
+        expected_double_push_moves.push(Move{ origin: 51, target: 35, promotion: 0, piece: PAWN });
+        expected_double_push_moves.push(Move{ origin: 50, target: 34, promotion: 0, piece: PAWN });
+        expected_double_push_moves.push(Move{ origin: 49, target: 33, promotion: 0, piece: PAWN });
+        expected_double_push_moves.push(Move{ origin: 48, target: 32, promotion: 0, piece: PAWN });
         let mut expected_left_pawn_captures = Vec::<Move>::new();
         let mut expected_right_pawn_captures = Vec::<Move>::new();
         let expected_pawn_moves = [expected_push_moves.clone(), expected_double_push_moves.clone(),
@@ -1622,25 +1622,25 @@ mod tests {
         let expected_queen_bitboard: u64 =              0x000000000D030202;
 
         let mut expected_push_moves = Vec::<Move>::new();
-        expected_push_moves.push(Move{ origin: 15, target: 23, promotion: 0, piece: Piece::PAWN });
-        expected_push_moves.push(Move{ origin: 32, target: 40, promotion: 0, piece: Piece::PAWN });
-        expected_push_moves.push(Move{ origin: 35, target: 43, promotion: 0, piece: Piece::PAWN });
-        expected_push_moves.push(Move{ origin: 54, target: 62, promotion: 2, piece: Piece::PAWN });
-        expected_push_moves.push(Move{ origin: 54, target: 62, promotion: 3, piece: Piece::PAWN });
-        expected_push_moves.push(Move{ origin: 54, target: 62, promotion: 4, piece: Piece::PAWN });
-        expected_push_moves.push(Move{ origin: 54, target: 62, promotion: 5, piece: Piece::PAWN });
+        expected_push_moves.push(Move{ origin: 15, target: 23, promotion: 0, piece: PAWN });
+        expected_push_moves.push(Move{ origin: 32, target: 40, promotion: 0, piece: PAWN });
+        expected_push_moves.push(Move{ origin: 35, target: 43, promotion: 0, piece: PAWN });
+        expected_push_moves.push(Move{ origin: 54, target: 62, promotion: 2, piece: PAWN });
+        expected_push_moves.push(Move{ origin: 54, target: 62, promotion: 3, piece: PAWN });
+        expected_push_moves.push(Move{ origin: 54, target: 62, promotion: 4, piece: PAWN });
+        expected_push_moves.push(Move{ origin: 54, target: 62, promotion: 5, piece: PAWN });
         let mut expected_double_push_moves = Vec::<Move>::new();
-        expected_double_push_moves.push(Move{ origin: 15, target: 31, promotion: 0, piece: Piece::PAWN });
+        expected_double_push_moves.push(Move{ origin: 15, target: 31, promotion: 0, piece: PAWN });
         let mut expected_left_pawn_captures = Vec::<Move>::new();
-        expected_left_pawn_captures.push(Move{ origin: 32, target: 41, promotion: 0, piece: Piece::PAWN });
-        expected_left_pawn_captures.push(Move{ origin: 33, target: 42, promotion: 0, piece: Piece::PAWN });
-        expected_left_pawn_captures.push(Move{ origin: 35, target: 44, promotion: 0, piece: Piece::PAWN });
-        expected_left_pawn_captures.push(Move{ origin: 54, target: 63, promotion: 2, piece: Piece::PAWN });
-        expected_left_pawn_captures.push(Move{ origin: 54, target: 63, promotion: 3, piece: Piece::PAWN });
-        expected_left_pawn_captures.push(Move{ origin: 54, target: 63, promotion: 4, piece: Piece::PAWN });
-        expected_left_pawn_captures.push(Move{ origin: 54, target: 63, promotion: 5, piece: Piece::PAWN });
+        expected_left_pawn_captures.push(Move{ origin: 32, target: 41, promotion: 0, piece: PAWN });
+        expected_left_pawn_captures.push(Move{ origin: 33, target: 42, promotion: 0, piece: PAWN });
+        expected_left_pawn_captures.push(Move{ origin: 35, target: 44, promotion: 0, piece: PAWN });
+        expected_left_pawn_captures.push(Move{ origin: 54, target: 63, promotion: 2, piece: PAWN });
+        expected_left_pawn_captures.push(Move{ origin: 54, target: 63, promotion: 3, piece: PAWN });
+        expected_left_pawn_captures.push(Move{ origin: 54, target: 63, promotion: 4, piece: PAWN });
+        expected_left_pawn_captures.push(Move{ origin: 54, target: 63, promotion: 5, piece: PAWN });
         let mut expected_right_pawn_captures = Vec::<Move>::new();
-        expected_right_pawn_captures.push(Move{ origin: 35, target: 42, promotion: 0, piece: Piece::PAWN });
+        expected_right_pawn_captures.push(Move{ origin: 35, target: 42, promotion: 0, piece: PAWN });
         let expected_pawn_moves = [expected_push_moves.clone(), expected_double_push_moves.clone(),
             expected_left_pawn_captures.clone(), expected_right_pawn_captures.clone()].concat();
 
@@ -2014,7 +2014,7 @@ mod tests {
         board.read_fen("8/8/8/2q5/8/8/8/R3K2R w KQ - 1 1");
         let mut move_list = MoveList::new(&mut board);
 
-        let mut expected_move_list = Vec::<Move>::new();
+        let expected_move_list = Vec::<Move>::new();
 
         move_list.generate_white_castling();
 
