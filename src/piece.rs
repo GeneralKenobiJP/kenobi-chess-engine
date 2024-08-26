@@ -5,7 +5,7 @@
 
 use crate::piece::Colour::{BLACK, WHITE};
 
-#[derive(PartialEq, Eq, Clone, Hash)]
+#[derive(PartialEq, Eq, Clone, Hash, Debug)]
 pub enum Piece {
     KING = 0,
     PAWN = 1,

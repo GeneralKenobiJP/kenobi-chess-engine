@@ -1,6 +1,7 @@
 //! Board representation and FEN utility
 //! Defines the Board struct that holds all the information about current situation on the board
 //! i.e. bitboards, active player, castling rights, en passant possibility, etc.
+//! Uses little-endianness, e.g. h1-a1, ..., h8-a8
 //! Defines some methods for board
 //! Implements FEN utility that allows to convert input FEN string into attributes of Board
 
@@ -15,8 +16,20 @@ pub const UPPER_RANK_LOWEST_TILE: u8 = 56;
 pub const LOWER_RANK_HIGHEST_TILE: u8 = 7;
 pub const NOT_FILE_A_MASK: u64 = 0b0111111101111111011111110111111101111111011111110111111101111111;
 pub const NOT_FILE_H_MASK: u64 = 0b1111111011111110111111101111111011111110111111101111111011111110;
+pub const CASTLE_WHITE_KINGSIDE_MASK: u64 =  0xFFFFFFFFFFFFFFF0;
+pub const CASTLE_WHITE_QUEENSIDE_MASK: u64 = 0xFFFFFFFFFFFFFF07;
+pub const CASTLE_BLACK_KINGSIDE_MASK: u64 =  0xF0FFFFFFFFFFFFFF;
+pub const CASTLE_BLACK_QUEENSIDE_MASK: u64 = 0x07FFFFFFFFFFFFFF;
+pub const CASTLE_WHITE_KINGSIDE_FLAGS: [u64; 2] = [0x0000000000000002, 0x0000000000000004];
+pub const CASTLE_WHITE_QUEENSIDE_FLAGS: [u64; 2] = [0x0000000000000020, 0x0000000000000010];
+pub const CASTLE_BLACK_KINGSIDE_FLAGS: [u64; 2] = [0x0200000000000000, 0x0400000000000000];
+pub const CASTLE_BLACK_QUEENSIDE_FLAGS: [u64; 2] = [0x2000000000000000, 0x1000000000000000];
+pub const UNCASTLE_WHITE_KINGSIDE_FLAGS: [u64; 2] = [0x0000000000000008, 0x0000000000000001];
+pub const UNCASTLE_WHITE_QUEENSIDE_FLAGS: [u64; 2] = [0x000000000000008, 0x0000000000000080];
+pub const UNCASTLE_BLACK_KINGSIDE_FLAGS: [u64; 2] = [0x0800000000000000, 0x0100000000000000];
+pub const UNCASTLE_BLACK_QUEENSIDE_FLAGS: [u64; 2] =[0x0800000000000000, 0x8000000000000000];
 
-// #[derive(Copy)]
+#[derive(Clone, Copy)]
 pub struct Board {
     pub main_bitboard: u64,
     pub empty_bitboard: u64,
@@ -25,7 +38,7 @@ pub struct Board {
     pub active_player: Colour,
     pub inactive_player: Colour,
     pub castling_rights: [bool; 4], // White: KQ, Black: kq
-    pub en_passant_possibility: u32, // Tile, where en passant can be made. 64 if no such tile exists
+    pub en_passant_possibility: u8, // Tile, where en passant can be made. 64 if no such tile exists
     pub half_moves: u32, // The halfmove clock specifies a decimal number of half moves with respect to the 50 move draw rule.
     // It is reset to zero after a capture or a pawn move and incremented otherwise.
     pub full_moves: u32,
@@ -71,6 +84,13 @@ impl Board {
         println!("{}", self.en_passant_possibility);
         println!("{}", self.half_moves);
         println!("{}", self.full_moves);
+    }
+
+    /// Switches active player to inactive and inactive one to active
+    pub fn switch_active_player(&mut self) {
+        let temp = self.active_player;
+        self.active_player = self.inactive_player;
+        self.inactive_player = temp;
     }
 
     /// Calculates distance between two given squares
@@ -152,7 +172,7 @@ impl Board {
             let file = 'h' as u32 - chars.next().unwrap_or_default() as u32;
             let rank = chars.next().unwrap_or_default().to_digit(10).unwrap_or_default() - 1;
             let tile = file + rank * 8;
-            self.en_passant_possibility = tile;
+            self.en_passant_possibility = tile as u8;
         }
 
         let half_moves = scanner.next().unwrap_or_default().unwrap_or_default().parse().unwrap_or_default();
@@ -162,6 +182,17 @@ impl Board {
         self.full_moves = full_moves;
 
         // self.print_board();
+    }
+
+    /// Given a u8 square representation, outputs a human-readable format of the square name.
+    /// E.g.: 14 -> b2
+    pub fn decode_square(square: u8) -> String {
+        let mut algebraic = String::new();
+
+        algebraic.push(char::from_u32('h' as u32 - square as u32 % 8).unwrap_or_default());
+        algebraic.push(char::from_digit(square as u32 / 8 + 1, 10).unwrap_or_default());
+
+        algebraic
     }
 }
 
@@ -282,5 +313,10 @@ mod tests {
         assert_eq!(board.en_passant_possibility, 64);
         assert_eq!(board.half_moves, 1);
         assert_eq!(board.full_moves, 2);
+    }
+
+    #[test]
+    fn decode_square() {
+        assert_eq!("b2", Board::decode_square(14));
     }
 }
