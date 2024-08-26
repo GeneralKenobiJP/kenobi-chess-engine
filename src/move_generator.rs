@@ -135,13 +135,22 @@ impl<'a> MoveList<'a> {
             self.board.castling_rights[2*active_player] = false;
             self.board.castling_rights[2*active_player + 1] = false;
         }
-        else if piece_move.piece == ROOK {
-            self.board.en_passant_possibility = NO_PASSANT;
-
-            if piece_move.origin % 8 == 0 { self.board.castling_rights[2*active_player] = false; }
-            if piece_move.origin % 8 == 7 { self.board.castling_rights[2*active_player + 1] = false; }
-        }
         else { self.board.en_passant_possibility = NO_PASSANT; }
+
+        match piece_move.origin {
+            0 => self.board.castling_rights[WHITE as usize] = false,
+            7 => self.board.castling_rights[WHITE as usize + 1] = false,
+            56 => self.board.castling_rights[BLACK as usize] = false,
+            63 => self.board.castling_rights[BLACK as usize + 1] = false,
+            _ => ()
+        }
+        match piece_move.target {
+            0 => self.board.castling_rights[WHITE as usize] = false,
+            7 => self.board.castling_rights[WHITE as usize + 1] = false,
+            56 => self.board.castling_rights[BLACK as usize] = false,
+            63 => self.board.castling_rights[BLACK as usize + 1] = false,
+            _ => ()
+        }
 
         self.board.colour_bitboards[self.board.inactive_player as usize] &= target_mask;
         let mut capture: u8 = NO_CAPTURE;
