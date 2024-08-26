@@ -4,7 +4,7 @@
 //! Initial position: up to perft 6
 //! Position 2 (kiwipete): up to perft 3; perft 4 failed (-481)
 //! Position 3: up to perft 6
-//! Position 4: up to perft 5
+//! Position 4: up to perft 4; perft 5 failed; perft 5 used to work
 
 use crate::board::Board;
 use crate::move_generator::{MoveList, Move};
@@ -17,21 +17,6 @@ pub fn perft(move_list: &mut MoveList, depth: u32) -> u64 {
     let mut nodes = 0u64;
 
     if depth == 0 {
-        // println!("{:?}", move_list.get_moves());
-        // println!("No. of leaves: {}", move_list.get_moves().len());
-        // println!("Main bitboard: {}", move_list.get_board().main_bitboard);
-        // println!("Own bitboard: {}", move_list.get_board().colour_bitboards[move_list.get_board().active_player as usize]);
-        // if move_list.is_in_check() {
-        //     move_list.generate_moves();
-        //     let moves = move_list.get_moves().clone();
-        //     for piece_move in moves {
-        //         move_list.make_move(&piece_move);
-        //         if !move_list.is_opponent_in_check() { return 1; }
-        //         move_list.unmake_move(&piece_move);
-        //     }
-        //
-        //     return 0;
-        // }
         return 1;
     }
 
@@ -57,9 +42,7 @@ pub fn perft_log(move_list: &mut MoveList, depth: u32) -> u64 {
     let mut nodes = 0u64;
 
     if depth == 0 {
-        // println!("No. of leaves: {}", move_list.get_moves().len());
         println!("Main bitboard: {}", move_list.get_board().main_bitboard);
-        // println!("Own bitboard: {}", move_list.get_board().colour_bitboards[move_list.get_board().active_player as usize]);
         return 1;
     }
 
@@ -71,7 +54,6 @@ pub fn perft_log(move_list: &mut MoveList, depth: u32) -> u64 {
     {
         move_list.make_move(&piece_move);
         let descendants = if !move_list.is_opponent_in_check() {perft(move_list, depth - 1)} else { 0 };
-        // if descendants == 20 {println!("{:?}",move_list.get_moves())}
         println!("{}: {}", piece_move.to_algebraic_notation(), descendants);
         nodes += descendants;
         move_list.unmake_move(&piece_move);
@@ -79,56 +61,6 @@ pub fn perft_log(move_list: &mut MoveList, depth: u32) -> u64 {
 
     nodes
 }
-
-// struct TreeStats {
-//     nodes: u64,
-//     captures: u64,
-//     en_passants: u64,
-//     castles: u64,
-//     promotions: u64,
-//     checks: u64,
-//     checkmates: u64
-// }
-//
-// pub fn perft_stats(move_list: &mut MoveList, depth: u32, tree_stats: &mut TreeStats) {
-//     let mut nodes = 0u64;
-//
-//     move_list.generate_moves();
-//
-//     if depth == 1 {
-//         // println!("No. of leaves: {}", move_list.get_moves().len());
-//         // println!("Main bitboard: {}", move_list.get_board().main_bitboard);
-//         // println!("Own bitboard: {}", move_list.get_board().colour_bitboards[move_list.get_board().active_player as usize]);
-//
-//     }
-//
-//     let mut moves = move_list.get_moves().clone();
-//
-//     for piece_move in moves
-//     {
-//         move_list.make_move(&piece_move);
-//         nodes += perft(move_list, depth - 1);
-//         move_list.unmake_move(&piece_move);
-//     }
-//
-//     nodes
-// }
-//
-// impl TreeStats {
-//     pub fn new() -> Self {
-//         TreeStats {
-//             nodes: 0,
-//             captures: 0,
-//             en_passants: 0,
-//             castles: 0,
-//             promotions: 0,
-//             checks: 0,
-//             checkmates: 0
-//         }
-//     }
-// }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -154,18 +86,6 @@ mod tests {
     }
 
     #[test]
-    fn perft_log_test() {
-        let mut board = Board::new();
-        board.read_fen(START_POSITION);
-        let mut move_list = MoveList::new(&mut board);
-
-        let depth = 4;
-
-        let nodes = perft_log(&mut move_list, depth);
-        println!("perft {} returned {} nodes", depth, nodes);
-    }
-
-    #[test]
     fn perft_test() {
         let mut board = Board::new();
         board.read_fen("rnbqkbnr/ppppppp1/7p/8/8/P7/1PPPPPPP/RNBQKBNR w KQkq - 0 2");
@@ -175,18 +95,6 @@ mod tests {
 
         let nodes = perft(&mut move_list, depth);
         assert_eq!(19, nodes);
-    }
-
-    #[test]
-    fn perft_check() {
-        let mut board = Board::new();
-        board.read_fen("rnbqkbnr/pppppppp/8/8/8/P7/1PPPPPPP/RNBQKBNR b KQkq - 0 1");
-        let mut move_list = MoveList::new(&mut board);
-
-        let depth = 2;
-
-        let nodes = perft_log(&mut move_list, depth);
-        println!("perft {} returned {} nodes", depth, nodes);
     }
 
     #[test]
@@ -203,14 +111,25 @@ mod tests {
     }
 
     #[test]
+    fn perft_position_1() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+        let mut move_list = MoveList::new(&mut board);
+
+        let expected_nodes = vec![20, 400, 8902, 197281, 4865609];
+
+        for depth in 1..6 {
+            let nodes = perft_log(&mut move_list, depth);
+            println!("perft {} returned {} nodes", depth, nodes);
+            assert_eq!(expected_nodes[depth as usize - 1], nodes);
+        }
+    }
+
+    #[test]
     fn perft_position_2() {
         let mut board = Board::new();
         board.read_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
         let mut move_list = MoveList::new(&mut board);
-
-        // move_list.make_move(&Move{origin: 35, target: 41, promotion: 0, piece: KNIGHT});
-        // move_list.make_move(&Move{origin: 30, target: 22, promotion: 0, piece: PAWN});
-        // move_list.make_move(&Move{origin: 41, target: 56, promotion: 0, piece: KNIGHT});
 
         move_list.generate_moves();
         println!("{:?}", move_list.get_moves());
@@ -227,15 +146,13 @@ mod tests {
         board.read_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
         let mut move_list = MoveList::new(&mut board);
 
-        // move_list.make_move(&Move{origin: 18, target: 42, promotion: 0, piece: Piece::QUEEN});
+        let expected_nodes = vec![14, 191, 2812, 43238, 674624, 11030083];
 
-        move_list.generate_moves();
-        println!("{:?}", move_list.get_moves());
-
-        let depth = 5;
-
-        let nodes = perft_log(&mut move_list, depth);
-        println!("perft {} returned {} nodes", depth, nodes);
+        for depth in 1..7 {
+            let nodes = perft_log(&mut move_list, depth);
+            println!("perft {} returned {} nodes", depth, nodes);
+            assert_eq!(expected_nodes[depth as usize - 1], nodes);
+        }
     }
 
     #[test]
