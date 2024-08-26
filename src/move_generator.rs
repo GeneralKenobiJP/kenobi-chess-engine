@@ -475,8 +475,8 @@ impl<'a> MoveList<'a> {
         // In such case, the square is attacked by the enemy's piece of type X.
 
         // Check if a pawn attacks the square
-        if (tile & NOT_FILE_H_MASK) >> 7 & self.board.piece_bitboards[1] != 0 { return true; }
-        if (tile & NOT_FILE_A_MASK) >> 9 & self.board.piece_bitboards[1] != 0 { return true; }
+        if (tile & NOT_FILE_H_MASK) >> 9 & self.board.piece_bitboards[1] != 0 { return true; }
+        if (tile & NOT_FILE_A_MASK) >> 7 & self.board.piece_bitboards[1] != 0 { return true; }
 
         let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
         if tile & self.king_lookup_table[square as usize] != 0 { return true; }
@@ -498,8 +498,8 @@ impl<'a> MoveList<'a> {
         // In such case, the square is attacked by the enemy's piece of type X.
 
         // Check if a pawn attacks the square
-        if (tile & NOT_FILE_A_MASK) << 7 & self.board.piece_bitboards[7] != 0 { return true; }
-        if (tile & NOT_FILE_H_MASK) << 9 & self.board.piece_bitboards[7] != 0 { return true; }
+        if (tile & NOT_FILE_A_MASK) << 9 & self.board.piece_bitboards[7] != 0 { return true; }
+        if (tile & NOT_FILE_H_MASK) << 7 & self.board.piece_bitboards[7] != 0 { return true; }
 
         let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
         if tile & self.king_lookup_table[u64::checked_ilog2(self.board.piece_bitboards[6]).unwrap_or_default() as usize] != 0 { return true; }

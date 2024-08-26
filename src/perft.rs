@@ -2,8 +2,8 @@
 //!
 //! Current perft correctness:
 //! Initial position: up to perft 6
-//! Position 2 (kiwipete): up to perft 2; perft 3 failed (+1)
-//! Position 3: up to perft 1; perft 2 failed (+23)
+//! Position 2 (kiwipete): up to perft 3; perft 4 failed (+56)
+//! Position 3: up to perft 6
 //! Position 4: up to perft 5
 
 use crate::board::Board;
@@ -208,12 +208,13 @@ mod tests {
         board.read_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
         let mut move_list = MoveList::new(&mut board);
 
-        // move_list.make_move(&Move{origin: 18, target: 42, promotion: 0, piece: Piece::QUEEN});
+        // move_list.make_move(&Move{origin: 3, target: 1, promotion: 1, piece: KING});
+        // move_list.make_move(&Move{origin: 16, target: 9, promotion: 0, piece: Piece::PAWN});
 
         move_list.generate_moves();
         println!("{:?}", move_list.get_moves());
 
-        let depth = 3;
+        let depth = 4;
 
         let nodes = perft_log(&mut move_list, depth);
         println!("perft {} returned {} nodes", depth, nodes);
@@ -230,7 +231,7 @@ mod tests {
         move_list.generate_moves();
         println!("{:?}", move_list.get_moves());
 
-        let depth = 2;
+        let depth = 5;
 
         let nodes = perft_log(&mut move_list, depth);
         println!("perft {} returned {} nodes", depth, nodes);
