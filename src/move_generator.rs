@@ -140,15 +140,15 @@ impl<'a> MoveList<'a> {
         match piece_move.origin {
             0 => self.board.castling_rights[WHITE as usize] = false,
             7 => self.board.castling_rights[WHITE as usize + 1] = false,
-            56 => self.board.castling_rights[BLACK as usize] = false,
-            63 => self.board.castling_rights[BLACK as usize + 1] = false,
+            56 => self.board.castling_rights[2 * BLACK as usize] = false,
+            63 => self.board.castling_rights[2* BLACK as usize + 1] = false,
             _ => ()
         }
         match piece_move.target {
             0 => self.board.castling_rights[WHITE as usize] = false,
             7 => self.board.castling_rights[WHITE as usize + 1] = false,
-            56 => self.board.castling_rights[BLACK as usize] = false,
-            63 => self.board.castling_rights[BLACK as usize + 1] = false,
+            56 => self.board.castling_rights[2 * BLACK as usize] = false,
+            63 => self.board.castling_rights[2 * BLACK as usize + 1] = false,
             _ => ()
         }
 

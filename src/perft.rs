@@ -1,10 +1,12 @@
 //! Perft = performance test, move path enumeration
 //!
 //! Current perft correctness:
+//! (If there is no indication of a failed perft, it means that
+//! all attempted perfts have been successful and deeper perfts have not been tried
 //! Initial position: up to perft 6
-//! Position 2 (kiwipete): up to perft 3; perft 4 failed (-481)
+//! Position 2 (kiwipete): up to perft 4
 //! Position 3: up to perft 6
-//! Position 4: up to perft 4; perft 5 failed; perft 5 used to work
+//! Position 4: up to perft 5
 
 use crate::board::Board;
 use crate::move_generator::{MoveList, Move};
@@ -131,13 +133,13 @@ mod tests {
         board.read_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
         let mut move_list = MoveList::new(&mut board);
 
-        move_list.generate_moves();
-        println!("{:?}", move_list.get_moves());
+        let expected_nodes = vec![48, 2039, 97862, 4085603];
 
-        let depth = 4;
-
-        let nodes = perft_log(&mut move_list, depth);
-        println!("perft {} returned {} nodes", depth, nodes);
+        for depth in 1..5 {
+            let nodes = perft_log(&mut move_list, depth);
+            println!("perft {} returned {} nodes", depth, nodes);
+            assert_eq!(expected_nodes[depth as usize - 1], nodes);
+        }
     }
 
     #[test]
@@ -161,16 +163,12 @@ mod tests {
         board.read_fen("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1");
         let mut move_list = MoveList::new(&mut board);
 
-        // move_list.make_move(&Move{origin: 2, target: 10, promotion: 0, piece: Piece::ROOK});
-        // move_list.make_move(&Move{origin: 14, target: 7, promotion: 2, piece: Piece::PAWN});
-        // move_list.make_move(&Move{origin: 4, target: 7, promotion: 2, piece: QUEEN});
+        let expected_nodes = vec![6, 264, 9467, 422333, 15833292];
 
-        move_list.generate_moves();
-        println!("{:?}", move_list.get_moves());
-
-        let depth = 5;
-
-        let nodes = perft_log(&mut move_list, depth);
-        println!("perft {} returned {} nodes", depth, nodes);
+        for depth in 1..6 {
+            let nodes = perft_log(&mut move_list, depth);
+            println!("perft {} returned {} nodes", depth, nodes);
+            assert_eq!(expected_nodes[depth as usize - 1], nodes);
+        }
     }
 }
