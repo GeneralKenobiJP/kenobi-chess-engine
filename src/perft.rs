@@ -1,10 +1,10 @@
 //! Perft = performance test, move path enumeration
 //!
 //! Current perft correctness:
-//! Initial position: up to perft 5; perft 6 failed (+214)
-//! Position 2 (kiwipete): up to perft 2; perft 3 failed (+7)
-//! Position 3: up to perft 1; perft 2 failed (+25)
-//! Position 4: up to perft 3; perft 4 failed (+1)
+//! Initial position: up to perft 6
+//! Position 2 (kiwipete): up to perft 2; perft 3 failed (+1)
+//! Position 3: up to perft 1; perft 2 failed (+23)
+//! Position 4: up to perft 5
 
 use crate::board::Board;
 use crate::move_generator::{MoveList, Move};
@@ -242,12 +242,14 @@ mod tests {
         board.read_fen("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1");
         let mut move_list = MoveList::new(&mut board);
 
-        // move_list.make_move(&Move{origin: 18, target: 42, promotion: 0, piece: Piece::QUEEN});
+        // move_list.make_move(&Move{origin: 2, target: 10, promotion: 0, piece: Piece::ROOK});
+        // move_list.make_move(&Move{origin: 53, target: 37, promotion: 0, piece: Piece::PAWN});
+        // move_list.make_move(&Move{origin: 38, target: 45, promotion: 0, piece: Piece::PAWN});
 
         move_list.generate_moves();
         println!("{:?}", move_list.get_moves());
 
-        let depth = 4;
+        let depth = 5;
 
         let nodes = perft_log(&mut move_list, depth);
         println!("perft {} returned {} nodes", depth, nodes);

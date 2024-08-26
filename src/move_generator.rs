@@ -13,6 +13,7 @@ const KNIGHT_SHIFTS: [i8; 8] = [17, 10, -6, -15, -17, -10, 6, 15]; // Beginning 
 const INITIAL_STACK_CAPACITY: usize = 30; // used by MoveList constructor
 const NO_CAPTURE: u8 = 1 << 4;
 const NO_PASSANT: u8 = 64;
+const EN_PASSANT_MASK: u64 = 0x000000FFFF000000;
 
 #[derive(PartialEq, Eq, Hash, Clone, Debug)]
 pub struct Move {
@@ -109,6 +110,39 @@ impl<'a> MoveList<'a> {
         self.board.piece_bitboards[6*active_player + piece] ^= origin;
         self.board.piece_bitboards[6*active_player + final_piece] |= target;
 
+        if piece_move.piece == PAWN {
+            if piece_move.target == self.board.en_passant_possibility {
+                let en_passant_target = ((target << 8) | (target >> 8)) & EN_PASSANT_MASK;
+                self.board.main_bitboard ^= en_passant_target;
+                self.board.empty_bitboard |= en_passant_target;
+                self.board.colour_bitboards[self.board.inactive_player as usize] ^= en_passant_target;
+                self.board.piece_bitboards[6 * self.board.inactive_player as usize + PAWN as usize] ^= en_passant_target;
+
+                self.capture_history.push(NO_CAPTURE);
+                self.board.en_passant_possibility = NO_PASSANT;
+
+                self.board.switch_active_player();
+                return;
+            }
+            if piece_move.target.abs_diff(piece_move.origin) == 16 {
+                self.board.en_passant_possibility = (piece_move.target + piece_move.origin)/2;
+            }
+            else { self.board.en_passant_possibility = NO_PASSANT; }
+        }
+        else if piece_move.piece == KING {
+            self.board.en_passant_possibility = NO_PASSANT;
+
+            self.board.castling_rights[2*active_player] = false;
+            self.board.castling_rights[2*active_player + 1] = false;
+        }
+        else if piece_move.piece == ROOK {
+            self.board.en_passant_possibility = NO_PASSANT;
+
+            if piece_move.origin % 8 == 0 { self.board.castling_rights[2*active_player] = false; }
+            if piece_move.origin % 8 == 7 { self.board.castling_rights[2*active_player + 1] = false; }
+        }
+        else { self.board.en_passant_possibility = NO_PASSANT; }
+
         self.board.colour_bitboards[self.board.inactive_player as usize] &= target_mask;
         let mut capture: u8 = NO_CAPTURE;
         for index in 6*self.board.inactive_player as usize..=6*self.board.inactive_player as usize + 5 {
@@ -121,22 +155,6 @@ impl<'a> MoveList<'a> {
             }
         }
         self.capture_history.push(capture);
-
-        self.board.en_passant_possibility = NO_PASSANT;
-
-        if piece_move.piece == KING {
-            self.board.castling_rights[2*active_player] = false;
-            self.board.castling_rights[2*active_player + 1] = false;
-        }
-        else if piece_move.piece == ROOK {
-            if piece_move.origin % 8 == 0 { self.board.castling_rights[2*active_player] = false; }
-            if piece_move.origin % 8 == 7 { self.board.castling_rights[2*active_player + 1] = false; }
-        }
-        else if piece_move.piece == PAWN {
-            if piece_move.target.abs_diff(piece_move.origin) == 16 {
-                self.board.en_passant_possibility = (piece_move.target + piece_move.origin)/2;
-            }
-        }
 
         self.board.switch_active_player();
     }
@@ -184,6 +202,7 @@ impl<'a> MoveList<'a> {
         self.board.piece_bitboards[6*self.board.active_player as usize + ROOK as usize] |= flag_pointer[1];
 
         self.capture_history.push(NO_CAPTURE);
+        self.board.en_passant_possibility = NO_PASSANT;
     }
 
     /// Unmakes a move on the board, given a move.
@@ -210,6 +229,19 @@ impl<'a> MoveList<'a> {
         self.board.colour_bitboards[active_player] |= target;
         self.board.piece_bitboards[6*active_player + target_piece] ^= origin;
         self.board.piece_bitboards[6*active_player + piece] |= target;
+
+        if piece_move.piece == PAWN && piece_move.target == self.board.en_passant_possibility {
+            let en_passant_target = ((origin << 8) | (origin >> 8)) & EN_PASSANT_MASK;
+            self.board.main_bitboard |= en_passant_target;
+            self.board.empty_bitboard ^= en_passant_target;
+            self.board.colour_bitboards[self.board.active_player as usize] |= en_passant_target;
+            self.board.piece_bitboards[6 * self.board.active_player as usize + PAWN as usize] |= en_passant_target;
+
+            self.capture_history.pop();
+
+            self.board.switch_active_player();
+            return;
+        }
 
         let capture = self.capture_history.pop().unwrap_or_default();
         if capture == NO_CAPTURE { self.board.switch_active_player(); return; }
