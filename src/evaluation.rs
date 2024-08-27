@@ -10,6 +10,8 @@ const PIECE_WORTH: [i32; 5] = [1, 9, 5, 3, 3];
 /// Evaluates the current board situation and outputs the evaluation.
 /// Uses the negamax convention.
 /// Considers material advantage.
+/// Checkmate (i.e. lack of king) is evaluated as i32::MAX / i32::MIN
+/// (roughly equivalent to +- inf)
 pub fn evaluate(board: &Board) -> f32 {
     let mut value = 0.0;
 
@@ -20,11 +22,16 @@ pub fn evaluate(board: &Board) -> f32 {
 
 /// Counts the naive material difference on the board
 /// Outputs the difference between our material and opponent's material as i32
+/// Checkmate (i.e. lack of king) is evaluated as i32::MAX / i32::MIN
+/// (roughly equivalent to +- inf)
 fn count_material(board: &Board) -> i32 {
     let mut material = 0;
 
     let active_player_piece_index = 6 * board.active_player as usize;
     let inactive_player_piece_index = 6 * board.inactive_player as usize;
+
+    if board.piece_bitboards[active_player_piece_index] == 0 { return i32::MIN; }
+    if board.piece_bitboards[inactive_player_piece_index] == 0 { return i32::MAX; }
 
     for piece in 1..6 {
         material += count_pieces(board.piece_bitboards[active_player_piece_index + piece],
@@ -84,6 +91,42 @@ mod tests {
     }
 
     #[test]
+    fn count_material_checkmate_white_loss() {
+        let mut board = Board::new();
+        let fen = "rnbqkbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQ1BNR w KQkq - 0 1";
+        board.read_fen(fen);
+
+        assert_eq!(i32::MIN, count_material(&board));
+    }
+
+    #[test]
+    fn count_material_checkmate_black_victory() {
+        let mut board = Board::new();
+        let fen = "rnbqkbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQ1BNR b KQkq - 0 1";
+        board.read_fen(fen);
+
+        assert_eq!(i32::MAX, count_material(&board));
+    }
+
+    #[test]
+    fn count_material_checkmate_black_loss() {
+        let mut board = Board::new();
+        let fen = "rnbq1bnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR b KQkq - 0 1";
+        board.read_fen(fen);
+
+        assert_eq!(i32::MIN, count_material(&board));
+    }
+
+    #[test]
+    fn count_material_checkmate_white_victory() {
+        let mut board = Board::new();
+        let fen = "rnbq1bnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 0 1";
+        board.read_fen(fen);
+
+        assert_eq!(i32::MAX, count_material(&board));
+    }
+
+    #[test]
     fn test_evaluation_start_position() {
         let mut board = Board::new();
         let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -99,5 +142,10 @@ mod tests {
         board.read_fen(fen);
 
         assert_eq!(6.0, evaluate(&board));
+    }
+
+    #[test]
+    fn test_evaluation_checkmate() {
+
     }
 }
