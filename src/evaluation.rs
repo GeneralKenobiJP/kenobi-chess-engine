@@ -28,9 +28,9 @@ fn count_material(board: &Board) -> i32 {
 
     for piece in 1..6 {
         material += count_pieces(board.piece_bitboards[active_player_piece_index + piece],
-            PIECE_WORTH[piece]);
+            PIECE_WORTH[piece - 1]);
         material -= count_pieces(board.piece_bitboards[inactive_player_piece_index + piece],
-            PIECE_WORTH[piece]);
+            PIECE_WORTH[piece - 1]);
     }
 
     material
@@ -50,4 +50,54 @@ fn count_pieces(piece_bitboard: u64, piece_value: i32) -> i32 {
     }
 
     material
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Instant;
+    use crate::board::START_POSITION;
+    use super::*;
+
+    #[test]
+    fn test_count_pieces() {
+        assert_eq!(8, count_pieces(0x000000000000FF00, 1));
+        assert_eq!(9, count_pieces(0x1003000000000000, 3));
+        assert_eq!(9, count_pieces(0x0000000001000000, 9));
+    }
+
+    #[test]
+    fn count_material_start_position() {
+        let mut board = Board::new();
+        let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        board.read_fen(fen);
+
+        assert_eq!(0, count_material(&board));
+    }
+
+    #[test]
+    fn count_material_position_4() {
+        let mut board = Board::new();
+        let fen = "r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/2R2N2/P7/RK6 w q d6 1 25";
+        board.read_fen(fen);
+
+        assert_eq!(6, count_material(&board));
+    }
+
+    #[test]
+    fn test_evaluation_start_position() {
+        let mut board = Board::new();
+        let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        board.read_fen(fen);
+
+        assert_eq!(0.0, evaluate(&board));
+    }
+
+    #[test]
+    fn test_evaluation_position_4() {
+        let mut board = Board::new();
+        let fen = "r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/2R2N2/P7/RK6 w q d6 1 25";
+        board.read_fen(fen);
+
+        assert_eq!(6.0, evaluate(&board));
+    }
 }
