@@ -146,6 +146,10 @@ mod tests {
 
     #[test]
     fn test_evaluation_checkmate() {
+        let mut board = Board::new();
+        let fen = "rnbqkbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQ1BNR w KQkq - 0 1";
+        board.read_fen(fen);
 
+        assert_eq!(i32::MIN as f32, evaluate(&board));
     }
 }
