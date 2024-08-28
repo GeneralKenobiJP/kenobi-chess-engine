@@ -329,7 +329,12 @@ impl<'a> MoveList<'a> {
     }
 
     pub fn generate_captures(&mut self) {
-        // self.
+        if self.board.active_player == WHITE {
+            self.generate_white_pawn_captures();
+        }
+        else { self.generate_black_pawn_captures() };
+
+        self.generate_king_captures();
     }
 
     /// KING MOVE GENERATION
@@ -575,6 +580,17 @@ impl<'a> MoveList<'a> {
         self.convert_white_pawn_moves(right_capture_bitboard, 7);
     }
 
+    /// Generates white pawn captures based on the current board situation and updates self
+    /// Should NOT be used for regular move generation
+    /// Used for heuristics
+    fn generate_white_pawn_captures(&mut self) {
+        let left_capture_bitboard = self.generate_white_pawn_left_capture_bitboard();
+
+        let right_capture_bitboard: u64 = self.generate_white_pawn_right_capture_bitboard();
+        self.convert_white_pawn_moves(left_capture_bitboard, 9);
+        self.convert_white_pawn_moves(right_capture_bitboard, 7);
+    }
+
     /// Converts a bitboard of white pawn moves and a move shift into a list of moves and updates self
     /// Should be used separately for single pushes, double pushes, left captures, right captures
     /// parameters:
@@ -674,6 +690,17 @@ impl<'a> MoveList<'a> {
 
         self.convert_black_pawn_moves(push_bitboard, 8);
         self.convert_black_pawn_moves(double_push_bitboard, 16);
+        self.convert_black_pawn_moves(left_capture_bitboard, 9);
+        self.convert_black_pawn_moves(right_capture_bitboard, 7);
+    }
+
+    /// Generates black pawn captures based on the current board situation and updates self
+    /// Should NOT be used for regular move generation
+    /// Used for heuristics
+    fn generate_black_pawn_captures(&mut self) {
+        let left_capture_bitboard = self.generate_black_pawn_left_capture_bitboard();
+        let right_capture_bitboard: u64 = self.generate_black_pawn_right_capture_bitboard();
+
         self.convert_black_pawn_moves(left_capture_bitboard, 9);
         self.convert_black_pawn_moves(right_capture_bitboard, 7);
     }
@@ -1256,7 +1283,11 @@ impl<'a> MoveList<'a> {
 
 }
 
-/// /// /// TESTS
+///                       ///
+///                       ///
+/// /// /// TESTS /// /// ///
+///                       ///
+///                       ///
 
 #[cfg(test)]
 mod tests {
@@ -2890,7 +2921,7 @@ mod tests {
     #[test]
     fn check_generate_king_captures() {
         let mut board = Board::new();
-        board.read_fen("8/8/8/8/8/8/4p3/3bK2R w - - 0 1");
+        board.read_fen("8/8/8/8/8/8/4p3/3bK2R w K - 0 1");
 
         let mut expected_move_list = Vec::<Move>::new();
         expected_move_list.push(Move {origin: 3, target: 4, promotion: 0, piece: KING});
@@ -2899,6 +2930,39 @@ mod tests {
         let mut move_list = MoveList::new(&mut board);
 
         move_list.generate_king_captures();
+
+        assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
+    }
+
+    #[test]
+    fn check_generate_white_pawn_captures() {
+        let mut board = Board::new();
+        board.read_fen("8/8/8/8/8/8/3p4/4P3 w - - 0 1");
+
+        let mut expected_move_list = Vec::<Move>::new();
+        expected_move_list.push(Move {origin: 3, target: 12, promotion: 0, piece: PAWN});
+
+        let mut move_list = MoveList::new(&mut board);
+
+        move_list.generate_white_pawn_captures();
+
+        assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
+    }
+
+    #[test]
+    fn check_generate_black_pawn_captures() {
+        let mut board = Board::new();
+        board.read_fen("8/8/8/8/8/8/3p4/4P3 b - - 0 1");
+
+        let mut expected_move_list = Vec::<Move>::new();
+        expected_move_list.push(Move {origin: 12, target: 3, promotion: 2, piece: PAWN});
+        expected_move_list.push(Move {origin: 12, target: 3, promotion: 3, piece: PAWN});
+        expected_move_list.push(Move {origin: 12, target: 3, promotion: 4, piece: PAWN});
+        expected_move_list.push(Move {origin: 12, target: 3, promotion: 5, piece: PAWN});
+
+        let mut move_list = MoveList::new(&mut board);
+
+        move_list.generate_black_pawn_captures();
 
         assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
     }
