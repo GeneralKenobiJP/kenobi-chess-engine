@@ -338,6 +338,7 @@ impl<'a> MoveList<'a> {
         self.generate_knight_captures();
         self.generate_bishop_captures();
         self.generate_rook_captures();
+        self.generate_queen_captures();
     }
 
     /// KING MOVE GENERATION
@@ -1307,6 +1308,23 @@ impl<'a> MoveList<'a> {
 
             let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
             let bitboard = self.generate_queen_moves_bitboard(square);
+            self.convert_queen_moves(bitboard, square);
+        }
+    }
+
+    /// Generates queen captures based on the current board situation and updates self
+    /// Should NOT be used for regular move generation
+    /// Used for heuristics
+    fn generate_queen_captures(&mut self) {
+        let mut queen_bitboard = self.board.piece_bitboards[2 + 6 * self.board.active_player as usize];
+
+        while queen_bitboard != 0 {
+            let tile = queen_bitboard & queen_bitboard.wrapping_neg();
+            queen_bitboard -= tile;
+
+            let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+            let bitboard = self.generate_queen_moves_bitboard(square)
+                & self.board.colour_bitboards[self.board.inactive_player as usize];
             self.convert_queen_moves(bitboard, square);
         }
     }
@@ -3064,6 +3082,24 @@ mod tests {
         let mut move_list = MoveList::new(&mut board);
 
         move_list.generate_bishop_captures();
+
+        assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
+    }
+
+    #[test]
+    fn check_generate_queen_captures() {
+        let mut board = Board::new();
+        board.read_fen("8/4p3/7p/2p5/8/2p1Q3/8/8 w - - 0 1");
+
+        let mut expected_move_list = Vec::<Move>::new();
+        expected_move_list.push(Move {origin: 19, target: 40, promotion: 0, piece: QUEEN});
+        expected_move_list.push(Move {origin: 19, target: 37, promotion: 0, piece: QUEEN});
+        expected_move_list.push(Move {origin: 19, target: 21, promotion: 0, piece: QUEEN});
+        expected_move_list.push(Move {origin: 19, target: 51, promotion: 0, piece: QUEEN});
+
+        let mut move_list = MoveList::new(&mut board);
+
+        move_list.generate_queen_captures();
 
         assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
     }
