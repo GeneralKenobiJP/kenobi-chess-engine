@@ -321,15 +321,20 @@ impl<'a> MoveList<'a> {
         self.generate_queen_moves();
     }
 
+    /// Generates noisy moves and updates move list based on the situation on the board
+    /// Noisy moves include captures, checks and promotions
+    /// Should NOT be used for move generation
+    /// Used for heuristics
+    /// This method is somewhat slow due to generate_checks() being somewhat slow
     pub fn generate_noisy_moves(&mut self) {
         self.moves = Vec::new();
 
         self.generate_captures();
-        self.generate_checks();
         if self.board.active_player == WHITE {
             self.generate_white_promotions();
         }
         else { self.generate_black_promotions(); }
+        self.generate_checks();
     }
 
     /// Generates captures and updates move list based on the situation on the board
@@ -357,10 +362,7 @@ impl<'a> MoveList<'a> {
     pub fn generate_checks(&mut self) {
         let mut move_list = MoveList::new(&mut self.board);
 
-        let start = Instant::now();
         move_list.generate_moves();
-        let duration = start.elapsed();
-        println!("generate_moves lasted for {:?}", duration);
 
         let moves = move_list.get_moves().clone();
 
@@ -368,7 +370,7 @@ impl<'a> MoveList<'a> {
             move_list.make_move(&piece_move);
             let is_check = move_list.is_in_check();
             move_list.unmake_move(&piece_move);
-            if is_check { self.moves.push(piece_move); }
+            if is_check && !self.moves.contains(&piece_move) { self.moves.push(piece_move); }
         }
     }
 
@@ -3232,6 +3234,33 @@ mod tests {
 
         let start = Instant::now();
         move_list.generate_checks();
+        let duration = start.elapsed();
+        println!("generate_checks lasted for {:?}", duration);
+
+        assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
+    }
+
+    #[test]
+    fn check_generate_noisy_moves() {
+        let mut board = Board::new();
+        board.read_fen("4k3/6P1/8/8/3B4/2Qp4/p2Rp3/8 w - - 0 1");
+
+        let mut expected_move_list = Vec::<Move>::new();
+        expected_move_list.push(Move {origin: 49, target: 57, promotion: 2, piece: PAWN});
+        expected_move_list.push(Move {origin: 49, target: 57, promotion: 3, piece: PAWN});
+        expected_move_list.push(Move {origin: 49, target: 57, promotion: 4, piece: PAWN});
+        expected_move_list.push(Move {origin: 49, target: 57, promotion: 5, piece: PAWN});
+        expected_move_list.push(Move {origin: 21, target: 61, promotion: 0, piece: QUEEN});
+        expected_move_list.push(Move {origin: 21, target: 45, promotion: 0, piece: QUEEN});
+        expected_move_list.push(Move {origin: 21, target: 20, promotion: 0, piece: QUEEN});
+        expected_move_list.push(Move {origin: 12, target: 11, promotion: 0, piece: ROOK});
+        expected_move_list.push(Move {origin: 12, target: 15, promotion: 0, piece: ROOK});
+        expected_move_list.push(Move {origin: 12, target: 20, promotion: 0, piece: ROOK});
+
+        let mut move_list = MoveList::new(&mut board);
+
+        let start = Instant::now();
+        move_list.generate_noisy_moves();
         let duration = start.elapsed();
         println!("generate_checks lasted for {:?}", duration);
 
