@@ -3,6 +3,7 @@
 //! Involves bitboards, magic bitboards.
 
 use std::collections::HashSet;
+use std::time::Instant;
 use crate::piece::Piece;
 use crate::board::{Board, CASTLE_BLACK_KINGSIDE_FLAGS, CASTLE_BLACK_KINGSIDE_MASK, CASTLE_BLACK_QUEENSIDE_FLAGS, CASTLE_BLACK_QUEENSIDE_MASK, CASTLE_WHITE_KINGSIDE_FLAGS, CASTLE_WHITE_KINGSIDE_MASK, CASTLE_WHITE_QUEENSIDE_FLAGS, CASTLE_WHITE_QUEENSIDE_MASK, FILE_1_MASK, FILE_8_MASK, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_MASK, UNCASTLE_BLACK_KINGSIDE_FLAGS, UNCASTLE_BLACK_QUEENSIDE_FLAGS, UNCASTLE_WHITE_KINGSIDE_FLAGS, UNCASTLE_WHITE_QUEENSIDE_FLAGS, UPPER_RANK_LOWEST_TILE};
 use crate::piece::Colour::{BLACK, WHITE};
@@ -324,7 +325,7 @@ impl<'a> MoveList<'a> {
         self.moves = Vec::new();
 
         self.generate_captures();
-        // self.generate_checks();
+        self.generate_checks();
         if self.board.active_player == WHITE {
             self.generate_white_promotions();
         }
@@ -346,6 +347,29 @@ impl<'a> MoveList<'a> {
         self.generate_bishop_captures();
         self.generate_rook_captures();
         self.generate_queen_captures();
+    }
+
+    /// Generates checks and updates move list based on the situation on the board
+    /// Should NOT be used for move generation
+    /// Used for heuristics
+    /// Does NOT construct a new vector for moves
+    /// Note: this method is somewhat slow
+    pub fn generate_checks(&mut self) {
+        let mut move_list = MoveList::new(&mut self.board);
+
+        let start = Instant::now();
+        move_list.generate_moves();
+        let duration = start.elapsed();
+        println!("generate_moves lasted for {:?}", duration);
+
+        let moves = move_list.get_moves().clone();
+
+        for piece_move in moves {
+            move_list.make_move(&piece_move);
+            let is_check = move_list.is_in_check();
+            move_list.unmake_move(&piece_move);
+            if is_check { self.moves.push(piece_move); }
+        }
     }
 
     /// KING MOVE GENERATION
@@ -3189,6 +3213,27 @@ mod tests {
         let mut move_list = MoveList::new(&mut board);
 
         move_list.generate_black_promotions();
+
+        assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
+    }
+    #[test]
+    fn check_generate_checks() {
+        let mut board = Board::new();
+        board.read_fen("4k3/8/1R3P2/8/8/3B4/8/8 w - - 0 1");
+
+        let mut expected_move_list = Vec::<Move>::new();
+        expected_move_list.push(Move {origin: 46, target: 62, promotion: 0, piece: ROOK});
+        expected_move_list.push(Move {origin: 46, target: 43, promotion: 0, piece: ROOK});
+        expected_move_list.push(Move {origin: 42, target: 50, promotion: 0, piece: PAWN});
+        expected_move_list.push(Move {origin: 20, target: 41, promotion: 0, piece: BISHOP});
+        expected_move_list.push(Move {origin: 20, target: 38, promotion: 0, piece: BISHOP});
+
+        let mut move_list = MoveList::new(&mut board);
+
+        let start = Instant::now();
+        move_list.generate_checks();
+        let duration = start.elapsed();
+        println!("generate_checks lasted for {:?}", duration);
 
         assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
     }
