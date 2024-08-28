@@ -335,6 +335,7 @@ impl<'a> MoveList<'a> {
         else { self.generate_black_pawn_captures() };
 
         self.generate_king_captures();
+        self.generate_knight_captures();
     }
 
     /// KING MOVE GENERATION
@@ -824,6 +825,23 @@ impl<'a> MoveList<'a> {
 
             let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
             let bitboard = self.generate_knight_moves_bitboard(square);
+            self.convert_knight_moves(bitboard, square);
+        }
+    }
+
+    /// Generates knight captures based on the current board situation and updates self
+    /// Should NOT be used for regular move generation
+    /// Used for heuristics
+    fn generate_knight_captures(&mut self) {
+        let mut knight_bitboard = self.board.piece_bitboards[5 + 6 * self.board.active_player as usize];
+
+        while knight_bitboard != 0 {
+            let tile = knight_bitboard & knight_bitboard.wrapping_neg();
+            knight_bitboard -= tile;
+
+            let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+            let bitboard = self.generate_knight_moves_bitboard(square)
+                & self.board.colour_bitboards[self.board.inactive_player as usize];
             self.convert_knight_moves(bitboard, square);
         }
     }
@@ -2963,6 +2981,21 @@ mod tests {
         let mut move_list = MoveList::new(&mut board);
 
         move_list.generate_black_pawn_captures();
+
+        assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
+    }
+
+    #[test]
+    fn check_generate_knight_captures() {
+        let mut board = Board::new();
+        board.read_fen("8/8/8/8/8/3p4/8/4N3 w - - 0 1");
+
+        let mut expected_move_list = Vec::<Move>::new();
+        expected_move_list.push(Move {origin: 3, target: 20, promotion: 0, piece: KNIGHT});
+
+        let mut move_list = MoveList::new(&mut board);
+
+        move_list.generate_knight_captures();
 
         assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
     }
