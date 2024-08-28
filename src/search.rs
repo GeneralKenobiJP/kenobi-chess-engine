@@ -122,4 +122,14 @@ mod tests {
         assert_eq!(-6.0, search(&mut move_list, 0));
         assert_eq!(3.0, search(&mut move_list, 1));
     }
+
+    #[test]
+    fn bench_search() {
+        let mut board = Board::new();
+        let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        board.read_fen(fen);
+        let mut move_list = MoveList::new(&mut board);
+
+        println!("{}", search(&mut move_list, 8));
+    }
 }

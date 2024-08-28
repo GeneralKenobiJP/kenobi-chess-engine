@@ -79,10 +79,6 @@ impl<'a> MoveList<'a> {
     pub fn get_board(&self) -> &Board {
         &self.board
     }
-
-    // pub fn log_moves(&self) {
-    //
-    // }
     
     /// Makes a move on the board, given a move.
     pub fn make_move(&mut self, piece_move: &Move) {
@@ -324,6 +320,18 @@ impl<'a> MoveList<'a> {
         self.generate_queen_moves();
     }
 
+    pub fn generate_noisy_moves(&mut self) {
+        self.moves = Vec::new();
+
+        self.generate_captures();
+        // self.generate_checks();
+        // self.generate_promotions();
+    }
+
+    pub fn generate_captures(&mut self) {
+        // self.
+    }
+
     /// KING MOVE GENERATION
 
     /// Outputs a lookup table for bitboards of possible king moves at given square, assuming no blocks
@@ -359,6 +367,15 @@ impl<'a> MoveList<'a> {
         self.convert_king_moves(bitboard);
 
         if self.board.active_player == WHITE { self.generate_white_castling() } else { self.generate_black_castling() }
+    }
+
+    /// Generates king captures based on the current board situation and updates self
+    /// Should NOT be used for regular move generation
+    /// Used for heuristics
+    fn generate_king_captures(&mut self) {
+        let bitboard = self.generate_king_moves_bitboard() & self.board.colour_bitboards[self.board.inactive_player as usize];
+
+        self.convert_king_moves(bitboard);
     }
 
     /// Outputs a bitboard of king moves, based on the current board situation
@@ -2868,5 +2885,21 @@ mod tests {
         move_list.is_in_check();
         let duration = start.elapsed();
         println!("is_in_check lasted for {:?}", duration);
+    }
+
+    #[test]
+    fn check_generate_king_captures() {
+        let mut board = Board::new();
+        board.read_fen("8/8/8/8/8/8/4p3/3bK2R w - - 0 1");
+
+        let mut expected_move_list = Vec::<Move>::new();
+        expected_move_list.push(Move {origin: 3, target: 4, promotion: 0, piece: KING});
+        expected_move_list.push(Move {origin: 3, target: 11, promotion: 0, piece: KING});
+
+        let mut move_list = MoveList::new(&mut board);
+
+        move_list.generate_king_captures();
+
+        assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
     }
 }
