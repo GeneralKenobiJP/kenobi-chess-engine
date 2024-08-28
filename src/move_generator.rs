@@ -4,7 +4,7 @@
 
 use std::collections::HashSet;
 use crate::piece::Piece;
-use crate::board::{Board, CASTLE_BLACK_KINGSIDE_FLAGS, CASTLE_BLACK_KINGSIDE_MASK, CASTLE_BLACK_QUEENSIDE_FLAGS, CASTLE_BLACK_QUEENSIDE_MASK, CASTLE_WHITE_KINGSIDE_FLAGS, CASTLE_WHITE_KINGSIDE_MASK, CASTLE_WHITE_QUEENSIDE_FLAGS, CASTLE_WHITE_QUEENSIDE_MASK, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_MASK, UNCASTLE_BLACK_KINGSIDE_FLAGS, UNCASTLE_BLACK_QUEENSIDE_FLAGS, UNCASTLE_WHITE_KINGSIDE_FLAGS, UNCASTLE_WHITE_QUEENSIDE_FLAGS, UPPER_RANK_LOWEST_TILE};
+use crate::board::{Board, CASTLE_BLACK_KINGSIDE_FLAGS, CASTLE_BLACK_KINGSIDE_MASK, CASTLE_BLACK_QUEENSIDE_FLAGS, CASTLE_BLACK_QUEENSIDE_MASK, CASTLE_WHITE_KINGSIDE_FLAGS, CASTLE_WHITE_KINGSIDE_MASK, CASTLE_WHITE_QUEENSIDE_FLAGS, CASTLE_WHITE_QUEENSIDE_MASK, FILE_1_MASK, FILE_8_MASK, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_MASK, UNCASTLE_BLACK_KINGSIDE_FLAGS, UNCASTLE_BLACK_QUEENSIDE_FLAGS, UNCASTLE_WHITE_KINGSIDE_FLAGS, UNCASTLE_WHITE_QUEENSIDE_FLAGS, UPPER_RANK_LOWEST_TILE};
 use crate::piece::Colour::{BLACK, WHITE};
 use crate::piece::Piece::{BISHOP, KING, KNIGHT, PAWN, QUEEN, ROOK};
 use crate::magic_hasher::{magic_hash_bishop, magic_hash_rook, MAGIC_MASK_BISHOP, MAGIC_MASK_ROOK};
@@ -325,7 +325,10 @@ impl<'a> MoveList<'a> {
 
         self.generate_captures();
         // self.generate_checks();
-        // self.generate_promotions();
+        if self.board.active_player == WHITE {
+            self.generate_white_promotions();
+        }
+        else { self.generate_black_promotions(); }
     }
 
     /// Generates captures and updates move list based on the situation on the board
@@ -599,6 +602,17 @@ impl<'a> MoveList<'a> {
         self.convert_white_pawn_moves(right_capture_bitboard, 7);
     }
 
+    /// Generates white pawn promotions based on the current board situation and updates self
+    /// Should NOT be used for regular move generation
+    /// Used for heuristics
+    /// Does not count in promotions after captures
+    fn generate_white_promotions(&mut self) {
+        let push_bitboard = self.generate_white_push_bitboard()
+            & FILE_8_MASK;
+
+        self.convert_white_pawn_moves(push_bitboard, 8);
+    }
+
     /// Converts a bitboard of white pawn moves and a move shift into a list of moves and updates self
     /// Should be used separately for single pushes, double pushes, left captures, right captures
     /// parameters:
@@ -711,6 +725,17 @@ impl<'a> MoveList<'a> {
 
         self.convert_black_pawn_moves(left_capture_bitboard, 9);
         self.convert_black_pawn_moves(right_capture_bitboard, 7);
+    }
+
+    /// Generates black pawn promotions based on the current board situation and updates self
+    /// Should NOT be used for regular move generation
+    /// Used for heuristics
+    /// Does not count in promotions after captures
+    fn generate_black_promotions(&mut self) {
+        let push_bitboard = self.generate_black_push_bitboard()
+            & FILE_1_MASK;
+
+        self.convert_black_pawn_moves(push_bitboard, 8);
     }
 
     /// Converts a bitboard of black pawn moves and a move shift into a list of moves and updates self
@@ -3128,6 +3153,42 @@ mod tests {
         let mut move_list = MoveList::new(&mut board);
 
         move_list.generate_captures();
+
+        assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
+    }
+
+    #[test]
+    fn check_generate_white_promotions() {
+        let mut board = Board::new();
+        board.read_fen("8/P7/7P/8/8/8/4P3/8 w - - 0 1");
+
+        let mut expected_move_list = Vec::<Move>::new();
+        expected_move_list.push(Move {origin: 55, target: 63, promotion: 2, piece: PAWN});
+        expected_move_list.push(Move {origin: 55, target: 63, promotion: 3, piece: PAWN});
+        expected_move_list.push(Move {origin: 55, target: 63, promotion: 4, piece: PAWN});
+        expected_move_list.push(Move {origin: 55, target: 63, promotion: 5, piece: PAWN});
+
+        let mut move_list = MoveList::new(&mut board);
+
+        move_list.generate_white_promotions();
+
+        assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
+    }
+
+    #[test]
+    fn check_generate_black_promotions() {
+        let mut board = Board::new();
+        board.read_fen("8/4p3/8/8/8/1p6/7p/8 w - - 0 11");
+
+        let mut expected_move_list = Vec::<Move>::new();
+        expected_move_list.push(Move {origin: 8, target: 0, promotion: 2, piece: PAWN});
+        expected_move_list.push(Move {origin: 8, target: 0, promotion: 3, piece: PAWN});
+        expected_move_list.push(Move {origin: 8, target: 0, promotion: 4, piece: PAWN});
+        expected_move_list.push(Move {origin: 8, target: 0, promotion: 5, piece: PAWN});
+
+        let mut move_list = MoveList::new(&mut board);
+
+        move_list.generate_black_promotions();
 
         assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
     }
