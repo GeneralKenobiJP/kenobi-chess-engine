@@ -328,6 +328,10 @@ impl<'a> MoveList<'a> {
         // self.generate_promotions();
     }
 
+    /// Generates captures and updates move list based on the situation on the board
+    /// Should NOT be used for move generation
+    /// Used for heuristics
+    /// Does NOT construct a new vector for moves
     pub fn generate_captures(&mut self) {
         if self.board.active_player == WHITE {
             self.generate_white_pawn_captures();
@@ -3100,6 +3104,30 @@ mod tests {
         let mut move_list = MoveList::new(&mut board);
 
         move_list.generate_queen_captures();
+
+        assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
+    }
+
+    #[test]
+    fn check_generate_captures() {
+        let mut board = Board::new();
+        board.read_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R1p1K2R w KQkq - ");
+
+        let mut expected_move_list = Vec::<Move>::new();
+        expected_move_list.push(Move {origin: 7, target: 5, promotion: 0, piece: ROOK});
+        expected_move_list.push(Move {origin: 9, target: 16, promotion: 0, piece: PAWN});
+        expected_move_list.push(Move {origin: 18, target: 16, promotion: 0, piece: QUEEN});
+        expected_move_list.push(Move {origin: 18, target: 42, promotion: 0, piece: QUEEN});
+        expected_move_list.push(Move {origin: 11, target: 47, promotion: 0, piece: BISHOP});
+        expected_move_list.push(Move {origin: 12, target: 5, promotion: 0, piece: BISHOP});
+        expected_move_list.push(Move {origin: 36, target: 43, promotion: 0, piece: PAWN});
+        expected_move_list.push(Move {origin: 35, target: 41, promotion: 0, piece: KNIGHT});
+        expected_move_list.push(Move {origin: 35, target: 50, promotion: 0, piece: KNIGHT});
+        expected_move_list.push(Move {origin: 35, target: 52, promotion: 0, piece: KNIGHT});
+
+        let mut move_list = MoveList::new(&mut board);
+
+        move_list.generate_captures();
 
         assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
     }
