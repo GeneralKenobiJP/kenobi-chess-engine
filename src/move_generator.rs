@@ -336,6 +336,7 @@ impl<'a> MoveList<'a> {
 
         self.generate_king_captures();
         self.generate_knight_captures();
+        self.generate_bishop_captures();
         self.generate_rook_captures();
     }
 
@@ -1240,6 +1241,23 @@ impl<'a> MoveList<'a> {
 
             let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
             let bitboard = self.generate_bishop_moves_bitboard(square);
+            self.convert_bishop_moves(bitboard, square);
+        }
+    }
+
+    /// Generates bishop captures based on the current board situation and updates self
+    /// Should NOT be used for regular move generation
+    /// Used for heuristics
+    fn generate_bishop_captures(&mut self) {
+        let mut bishop_bitboard = self.board.piece_bitboards[4 + 6 * self.board.active_player as usize];
+
+        while bishop_bitboard != 0 {
+            let tile = bishop_bitboard & bishop_bitboard.wrapping_neg();
+            bishop_bitboard -= tile;
+
+            let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+            let bitboard = self.generate_bishop_moves_bitboard(square)
+                & self.board.colour_bitboards[self.board.inactive_player as usize];
             self.convert_bishop_moves(bitboard, square);
         }
     }
@@ -3030,6 +3048,22 @@ mod tests {
         let mut move_list = MoveList::new(&mut board);
 
         move_list.generate_rook_captures();
+
+        assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
+    }
+
+    #[test]
+    fn check_generate_bishop_captures() {
+        let mut board = Board::new();
+        board.read_fen("8/8/7p/2p5/8/4B3/8/8 w - - 0 1");
+
+        let mut expected_move_list = Vec::<Move>::new();
+        expected_move_list.push(Move {origin: 19, target: 40, promotion: 0, piece: BISHOP});
+        expected_move_list.push(Move {origin: 19, target: 37, promotion: 0, piece: BISHOP});
+
+        let mut move_list = MoveList::new(&mut board);
+
+        move_list.generate_bishop_captures();
 
         assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
     }
