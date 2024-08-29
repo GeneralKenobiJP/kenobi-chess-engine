@@ -305,8 +305,6 @@ impl<'a> MoveList<'a> {
     pub fn generate_moves(&mut self) {
         self.moves = Vec::new();
 
-        self.generate_king_moves();
-
         if self.board.active_player == WHITE
         {
             self.generate_white_pawn_moves();
@@ -314,6 +312,8 @@ impl<'a> MoveList<'a> {
         else {
             self.generate_black_pawn_moves();
         }
+
+        self.generate_king_moves();
 
         self.generate_knight_moves();
         self.generate_rook_moves();
