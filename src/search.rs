@@ -1,3 +1,4 @@
+use std::time::Instant;
 use crate::board::Board;
 use crate::evaluation::evaluate;
 use crate::move_generator::{Move, MoveList};
@@ -10,11 +11,16 @@ pub fn search(move_list: &mut MoveList, depth: u32) -> f32 {
     search_alpha_beta_prunning(move_list, depth, NEGATIVE_INFINITY, POSITIVE_INFINITY)
 }
 
+pub fn search_no_quiescence(move_list: &mut MoveList, depth: u32) -> f32 {
+    search_alpha_beta_prunning_naive(move_list, depth, NEGATIVE_INFINITY, POSITIVE_INFINITY)
+}
+
+
 fn search_alpha_beta_prunning(move_list: &mut MoveList, depth: u32, mut alpha: f32, beta: f32) -> f32 {
     let mut value: f32 = evaluate(move_list.get_board());
 
     if depth == 0 {
-        return value;
+        return -quiescence_search(move_list, -beta, -alpha);
     }
 
     move_list.generate_moves();
@@ -38,7 +44,36 @@ fn search_alpha_beta_prunning(move_list: &mut MoveList, depth: u32, mut alpha: f
     value
 }
 
+fn search_alpha_beta_prunning_naive(move_list: &mut MoveList, depth: u32, mut alpha: f32, beta: f32) -> f32 {
+    let mut value: f32 = evaluate(move_list.get_board());
+
+    if depth == 0 {
+        return value;
+    }
+
+    move_list.generate_moves();
+
+    let moves = move_list.get_moves().clone();
+
+    for piece_move in moves
+    {
+        move_list.make_move(&piece_move);
+        if !move_list.is_opponent_in_check() {
+            value = value.max(
+                -search_alpha_beta_prunning_naive(move_list, depth - 1, -beta, -alpha)
+            );
+        }
+        move_list.unmake_move(&piece_move);
+
+        alpha = alpha.max(value);
+        if alpha >= beta { break; }
+    }
+
+    value
+}
+
 fn quiescence_search(move_list: &mut MoveList, mut alpha: f32, beta: f32) -> f32 {
+    // let start = Instant::now();
     let mut value: f32 = evaluate(move_list.get_board());
 
     move_list.generate_noisy_moves();
@@ -52,6 +87,8 @@ fn quiescence_search(move_list: &mut MoveList, mut alpha: f32, beta: f32) -> f32
     for piece_move in moves
     {
         move_list.make_move(&piece_move);
+        // let duration = start.elapsed();
+        // println!("quiescence_search time from call to make_move included: {:?}", duration);
         if !move_list.is_opponent_in_check() {
             value = value.max(
                 -quiescence_search(move_list, -beta, -alpha)
@@ -82,7 +119,7 @@ fn search_naive(move_list: &mut MoveList, depth: u32) -> f32 {
     {
         move_list.make_move(&piece_move);
         if !move_list.is_opponent_in_check() {
-            value = value.max(-search(move_list, depth - 1))
+            value = value.max(-search_naive(move_list, depth - 1))
         }
         move_list.unmake_move(&piece_move);
     }
@@ -140,8 +177,8 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::new(&mut board);
 
-        assert_eq!(-6.0, search(&mut move_list, 0));
-        assert_eq!(3.0, search(&mut move_list, 1));
+        assert_eq!(-6.0, search_no_quiescence(&mut move_list, 0));
+        assert_eq!(3.0, search_no_quiescence(&mut move_list, 1));
     }
 
     #[test]
@@ -151,8 +188,8 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::new(&mut board);
 
-        assert_eq!(-6.0, search(&mut move_list, 0));
-        assert_eq!(3.0, search(&mut move_list, 1));
+        assert_eq!(-6.0, search_no_quiescence(&mut move_list, 0));
+        assert_eq!(3.0, search_no_quiescence(&mut move_list, 1));
     }
 
     #[test]
@@ -189,6 +226,6 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::new(&mut board);
 
-        println!("{}", search(&mut move_list, 8));
+        println!("{}", search(&mut move_list, 7));
     }
 }

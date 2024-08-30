@@ -325,7 +325,7 @@ impl<'a> MoveList<'a> {
     /// Noisy moves include captures, checks and promotions
     /// Should NOT be used for move generation
     /// Used for heuristics
-    /// This method is somewhat slow due to generate_checks() being somewhat slow
+    /// NOTE: currently does not consider checks, because of the need to optimize it
     pub fn generate_noisy_moves(&mut self) {
         self.moves = Vec::new();
 
@@ -334,7 +334,7 @@ impl<'a> MoveList<'a> {
             self.generate_white_promotions();
         }
         else { self.generate_black_promotions(); }
-        self.generate_checks();
+        // self.generate_checks();
     }
 
     /// Generates captures and updates move list based on the situation on the board
