@@ -61,8 +61,6 @@ fn count_pieces(piece_bitboard: u64, piece_value: i32) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Instant;
-    use crate::board::START_POSITION;
     use super::*;
 
     #[test]

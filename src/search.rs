@@ -1,8 +1,6 @@
-use std::time::Instant;
 use crate::board::Board;
 use crate::evaluation::evaluate;
-use crate::move_generator::{Move, MoveList};
-use crate::piece::Piece::PAWN;
+use crate::move_generator::MoveList;
 
 const NEGATIVE_INFINITY: f32 = i32::MIN as f32;
 const POSITIVE_INFINITY: f32 = i32::MAX as f32;
@@ -103,7 +101,6 @@ fn quiescence_search(move_list: &mut MoveList, mut alpha: f32, beta: f32) -> f32
     value
 }
 
-#[deprecated]
 fn search_naive(move_list: &mut MoveList, depth: u32) -> f32 {
     let mut value: f32 = evaluate(move_list.get_board());
 
@@ -130,10 +127,6 @@ fn search_naive(move_list: &mut MoveList, depth: u32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Instant;
-    use crate::board::START_POSITION;
-    use crate::move_generator::Move;
-    use crate::piece::Piece::PAWN;
     use super::*;
 
     #[test]
