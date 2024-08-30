@@ -1,3 +1,7 @@
+//! Best move search algorithm
+//! Builds a search tree to find the best possible move according to the evaluation algorithm
+//! Uses negamax convention, alpha-beta prunning, quiescence search.
+
 use crate::board::Board;
 use crate::evaluation::evaluate;
 use crate::move_generator::MoveList;
@@ -5,15 +9,30 @@ use crate::move_generator::MoveList;
 const NEGATIVE_INFINITY: f32 = i32::MIN as f32;
 const POSITIVE_INFINITY: f32 = i32::MAX as f32;
 
+/// Calls search algorithm to find the best possible moves in the current situation.
+/// Searches up to the given depth.
+/// Uses the given move list to generate moves in-place and analyze the board situation.
+/// Calls the algorithm using alpha-beta prunning and quiescence search
 pub fn search(move_list: &mut MoveList, depth: u32) -> f32 {
     search_alpha_beta_prunning(move_list, depth, NEGATIVE_INFINITY, POSITIVE_INFINITY)
 }
 
+/// Calls search algorithm to find the best possible moves in the current situation.
+/// Searches up to the given depth.
+/// Uses the given move list to generate moves in-place and analyze the board situation.
+/// Calls the algorithm using alpha-beta prunning.
+/// NOTE: Does NOT use quiescence search and therefore is inferior to the search() function
+///     Should be used mainly for testing.
 pub fn search_no_quiescence(move_list: &mut MoveList, depth: u32) -> f32 {
     search_alpha_beta_prunning_naive(move_list, depth, NEGATIVE_INFINITY, POSITIVE_INFINITY)
 }
 
-
+/// Uses alpha-beta prunning to find the best possible move in the search tree.
+/// Searches up to the given depth.
+/// Uses the given move list to generate moves in-place and analyze the board situation.
+/// Calls quiescence search if depth is zero
+/// Alpha - minimum score the current player is assured of (we found a move of at least this value earlier at this depth)
+/// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
 fn search_alpha_beta_prunning(move_list: &mut MoveList, depth: u32, mut alpha: f32, beta: f32) -> f32 {
     let mut value: f32 = evaluate(move_list.get_board());
 
@@ -42,6 +61,13 @@ fn search_alpha_beta_prunning(move_list: &mut MoveList, depth: u32, mut alpha: f
     value
 }
 
+/// Uses alpha-beta prunning to find the best possible move in the search tree.
+/// Searches up to the given depth.
+/// Uses the given move list to generate moves in-place and analyze the board situation.
+/// Alpha - minimum score the current player is assured of (we found a move of at least this value earlier at this depth)
+/// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
+/// NOTE: Does NOT use quiescence search and therefore is inferior to the search_alpha_beta_prunning() function
+///     Should be used mainly for testing.
 fn search_alpha_beta_prunning_naive(move_list: &mut MoveList, depth: u32, mut alpha: f32, beta: f32) -> f32 {
     let mut value: f32 = evaluate(move_list.get_board());
 
@@ -70,6 +96,12 @@ fn search_alpha_beta_prunning_naive(move_list: &mut MoveList, depth: u32, mut al
     value
 }
 
+/// Uses alpha-beta prunning to find the best possible move in the search tree.
+/// Searches until it finds a 'quiet' position, where no captures, promotions or checks can be made.
+/// It avoids the horizon effect by not ignoring threats at depth zero.
+/// Uses the given move list to generate moves in-place and analyze the board situation.
+/// Alpha - minimum score the current player is assured of (we found a move of at least this value earlier at this depth)
+/// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
 fn quiescence_search(move_list: &mut MoveList, mut alpha: f32, beta: f32) -> f32 {
     // let start = Instant::now();
     let mut value: f32 = evaluate(move_list.get_board());
@@ -101,6 +133,11 @@ fn quiescence_search(move_list: &mut MoveList, mut alpha: f32, beta: f32) -> f32
     value
 }
 
+/// Finds the best possible move in the search tree.
+/// Searches up to the given depth.
+/// Uses the given move list to generate moves in-place and analyze the board situation.
+/// NOTE: Uses NEITHER quiescence search NOR alpha-beta prunning
+///     Should be used only for testing.
 fn search_naive(move_list: &mut MoveList, depth: u32) -> f32 {
     let mut value: f32 = evaluate(move_list.get_board());
 
