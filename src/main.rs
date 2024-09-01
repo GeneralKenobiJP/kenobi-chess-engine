@@ -5,6 +5,7 @@ mod magic_hasher;
 mod perft;
 mod evaluation;
 mod search;
+mod zobrist;
 
 use std::io;
 use scanner_rust::ScannerStr;
