@@ -5,15 +5,13 @@
 use crate::board::Board;
 use crate::evaluation::evaluate;
 use crate::move_generator::MoveList;
-
-const NEGATIVE_INFINITY: f32 = i32::MIN as f32;
-const POSITIVE_INFINITY: f32 = i32::MAX as f32;
+use crate::evaluation::{POSITIVE_INFINITY, NEGATIVE_INFINITY};
 
 /// Calls search algorithm to find the best possible moves in the current situation.
 /// Searches up to the given depth.
 /// Uses the given move list to generate moves in-place and analyze the board situation.
 /// Calls the algorithm using alpha-beta prunning and quiescence search
-pub fn search(move_list: &mut MoveList, depth: u32) -> f32 {
+pub fn search(move_list: &mut MoveList, depth: u32) -> i32 {
     search_alpha_beta_prunning(move_list, depth, NEGATIVE_INFINITY, POSITIVE_INFINITY)
 }
 
@@ -23,7 +21,7 @@ pub fn search(move_list: &mut MoveList, depth: u32) -> f32 {
 /// Calls the algorithm using alpha-beta prunning.
 /// NOTE: Does NOT use quiescence search and therefore is inferior to the search() function
 ///     Should be used mainly for testing.
-pub fn search_no_quiescence(move_list: &mut MoveList, depth: u32) -> f32 {
+pub fn search_no_quiescence(move_list: &mut MoveList, depth: u32) -> i32 {
     search_alpha_beta_prunning_naive(move_list, depth, NEGATIVE_INFINITY, POSITIVE_INFINITY)
 }
 
@@ -33,8 +31,8 @@ pub fn search_no_quiescence(move_list: &mut MoveList, depth: u32) -> f32 {
 /// Calls quiescence search if depth is zero
 /// Alpha - minimum score the current player is assured of (we found a move of at least this value earlier at this depth)
 /// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
-fn search_alpha_beta_prunning(move_list: &mut MoveList, depth: u32, mut alpha: f32, beta: f32) -> f32 {
-    let mut value: f32 = evaluate(move_list.get_board());
+fn search_alpha_beta_prunning(move_list: &mut MoveList, depth: u32, mut alpha: i32, beta: i32) -> i32 {
+    let mut value: i32 = evaluate(move_list.get_board());
 
     if depth == 0 {
         return -quiescence_search(move_list, -beta, -alpha);
@@ -68,8 +66,8 @@ fn search_alpha_beta_prunning(move_list: &mut MoveList, depth: u32, mut alpha: f
 /// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
 /// NOTE: Does NOT use quiescence search and therefore is inferior to the search_alpha_beta_prunning() function
 ///     Should be used mainly for testing.
-fn search_alpha_beta_prunning_naive(move_list: &mut MoveList, depth: u32, mut alpha: f32, beta: f32) -> f32 {
-    let mut value: f32 = evaluate(move_list.get_board());
+fn search_alpha_beta_prunning_naive(move_list: &mut MoveList, depth: u32, mut alpha: i32, beta: i32) -> i32 {
+    let mut value: i32 = evaluate(move_list.get_board());
 
     if depth == 0 {
         return value;
@@ -102,9 +100,9 @@ fn search_alpha_beta_prunning_naive(move_list: &mut MoveList, depth: u32, mut al
 /// Uses the given move list to generate moves in-place and analyze the board situation.
 /// Alpha - minimum score the current player is assured of (we found a move of at least this value earlier at this depth)
 /// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
-fn quiescence_search(move_list: &mut MoveList, mut alpha: f32, beta: f32) -> f32 {
+fn quiescence_search(move_list: &mut MoveList, mut alpha: i32, beta: i32) -> i32 {
     // let start = Instant::now();
-    let mut value: f32 = evaluate(move_list.get_board());
+    let mut value: i32 = evaluate(move_list.get_board());
 
     move_list.generate_noisy_moves();
 
@@ -138,8 +136,8 @@ fn quiescence_search(move_list: &mut MoveList, mut alpha: f32, beta: f32) -> f32
 /// Uses the given move list to generate moves in-place and analyze the board situation.
 /// NOTE: Uses NEITHER quiescence search NOR alpha-beta prunning
 ///     Should be used only for testing.
-fn search_naive(move_list: &mut MoveList, depth: u32) -> f32 {
-    let mut value: f32 = evaluate(move_list.get_board());
+fn search_naive(move_list: &mut MoveList, depth: u32) -> i32 {
+    let mut value: i32 = evaluate(move_list.get_board());
 
     if depth == 0 {
         return value;
@@ -173,15 +171,15 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::new(&mut board);
 
-        assert_eq!(0.0, search_naive(&mut move_list, 0));
-        assert_eq!(0.0, search_naive(&mut move_list, 1));
-        assert_eq!(0.0, search_naive(&mut move_list, 2));
-        assert_eq!(0.0, search_naive(&mut move_list, 3));
+        assert_eq!(0, search_naive(&mut move_list, 0));
+        assert_eq!(0, search_naive(&mut move_list, 1));
+        assert_eq!(0, search_naive(&mut move_list, 2));
+        assert_eq!(0, search_naive(&mut move_list, 3));
 
-        assert_eq!(0.0, search(&mut move_list, 0));
-        assert_eq!(0.0, search(&mut move_list, 1));
-        assert_eq!(0.0, search(&mut move_list, 2));
-        assert_eq!(0.0, search(&mut move_list, 3));
+        assert_eq!(0, search(&mut move_list, 0));
+        assert_eq!(0, search(&mut move_list, 1));
+        assert_eq!(0, search(&mut move_list, 2));
+        assert_eq!(0, search(&mut move_list, 3));
     }
 
     #[test]
@@ -191,13 +189,13 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::new(&mut board);
 
-        assert_eq!(0.0, search_naive(&mut move_list, 0));
-        assert_eq!(5.0, search_naive(&mut move_list, 1));
-        assert_eq!(0.0, search_naive(&mut move_list, 2));
+        assert_eq!(0, search_naive(&mut move_list, 0));
+        assert_eq!(500, search_naive(&mut move_list, 1));
+        assert_eq!(0, search_naive(&mut move_list, 2));
 
-        assert_eq!(0.0, search(&mut move_list, 0));
-        assert_eq!(5.0, search(&mut move_list, 1));
-        assert_eq!(0.0, search(&mut move_list, 2));
+        assert_eq!(0, search(&mut move_list, 0));
+        assert_eq!(500, search(&mut move_list, 1));
+        assert_eq!(0, search(&mut move_list, 2));
     }
 
     #[test]
@@ -207,8 +205,8 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::new(&mut board);
 
-        assert_eq!(-6.0, search_no_quiescence(&mut move_list, 0));
-        assert_eq!(3.0, search_no_quiescence(&mut move_list, 1));
+        assert_eq!(-600, search_no_quiescence(&mut move_list, 0));
+        assert_eq!(300, search_no_quiescence(&mut move_list, 1));
     }
 
     #[test]
@@ -218,8 +216,8 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::new(&mut board);
 
-        assert_eq!(-6.0, search_no_quiescence(&mut move_list, 0));
-        assert_eq!(3.0, search_no_quiescence(&mut move_list, 1));
+        assert_eq!(-600, search_no_quiescence(&mut move_list, 0));
+        assert_eq!(300, search_no_quiescence(&mut move_list, 1));
     }
 
     #[test]
@@ -229,8 +227,8 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::new(&mut board);
 
-        assert_eq!(0.0, search_naive(&mut move_list, 1));
-        assert_eq!(-1.0, quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert_eq!(0, search_naive(&mut move_list, 1));
+        assert_eq!(-100, quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
     }
 
     // Should work, but it does not, and I don't know why
@@ -241,12 +239,12 @@ mod tests {
     //     board.read_fen(fen);
     //     let mut move_list = MoveList::new(&mut board);
     //
-    //     assert_eq!(1.0, search_naive(&mut move_list, 1));
+    //     assert_eq!(100, search_naive(&mut move_list, 1));
     //
     //     move_list.make_move(&Move{origin: 40, target: 48, promotion: 0, piece: PAWN});
     //
-    //     assert_eq!(1.0, search_naive(&mut move_list, 1));
-    //     assert_eq!(7.0, quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+    //     assert_eq!(100, search_naive(&mut move_list, 1));
+    //     assert_eq!(700, quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
     // }
 
     #[test]

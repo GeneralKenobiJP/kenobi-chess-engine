@@ -1,21 +1,24 @@
 //! Evaluation heuristics
 //! Call the evaluate function to evaluate the board situation
 //! Currently considers material advantage.
+//! Value is measured in centipanws, i.e. 1 pawn = 100 centipawns
 
 use crate::board::Board;
 
 // We omit the king
-const PIECE_WORTH: [i32; 5] = [1, 9, 5, 3, 3];
+const PIECE_WORTH: [i32; 5] = [100, 900, 500, 300, 300];
+pub const NEGATIVE_INFINITY: i32 = i32::MIN + 1;
+pub const POSITIVE_INFINITY: i32 = i32::MAX;
 
 /// Evaluates the current board situation and outputs the evaluation.
 /// Uses the negamax convention.
 /// Considers material advantage.
 /// Checkmate (i.e. lack of king) is evaluated as i32::MAX / i32::MIN
 /// (roughly equivalent to +- inf)
-pub fn evaluate(board: &Board) -> f32 {
-    let mut value = 0.0;
+pub fn evaluate(board: &Board) -> i32 {
+    let mut value = 0;
 
-    value += count_material(board) as f32;
+    value += count_material(board);
 
     value
 }
@@ -65,9 +68,9 @@ mod tests {
 
     #[test]
     fn test_count_pieces() {
-        assert_eq!(8, count_pieces(0x000000000000FF00, 1));
-        assert_eq!(9, count_pieces(0x1003000000000000, 3));
-        assert_eq!(9, count_pieces(0x0000000001000000, 9));
+        assert_eq!(800, count_pieces(0x000000000000FF00, 100));
+        assert_eq!(900, count_pieces(0x1003000000000000, 300));
+        assert_eq!(900, count_pieces(0x0000000001000000, 900));
     }
 
     #[test]
@@ -85,7 +88,7 @@ mod tests {
         let fen = "r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/2R2N2/P7/RK6 w q d6 1 25";
         board.read_fen(fen);
 
-        assert_eq!(6, count_material(&board));
+        assert_eq!(600, count_material(&board));
     }
 
     #[test]
@@ -130,7 +133,7 @@ mod tests {
         let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
         board.read_fen(fen);
 
-        assert_eq!(0.0, evaluate(&board));
+        assert_eq!(0, evaluate(&board));
     }
 
     #[test]
@@ -139,7 +142,7 @@ mod tests {
         let fen = "r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/2R2N2/P7/RK6 w q d6 1 25";
         board.read_fen(fen);
 
-        assert_eq!(6.0, evaluate(&board));
+        assert_eq!(600, evaluate(&board));
     }
 
     #[test]
@@ -148,6 +151,6 @@ mod tests {
         let fen = "rnbqkbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQ1BNR w KQkq - 0 1";
         board.read_fen(fen);
 
-        assert_eq!(i32::MIN as f32, evaluate(&board));
+        assert_eq!(i32::MIN, evaluate(&board));
     }
 }
