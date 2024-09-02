@@ -46,6 +46,7 @@ const fn xorshift(mut seed: u64) -> u64 {
     seed
 }
 
+/// Hashes a given board position, using Zobrist hashing
 pub fn zobrist_hash(board: &Board) -> u64 {
     let mut hash = 0u64;
 
@@ -60,6 +61,7 @@ pub fn zobrist_hash(board: &Board) -> u64 {
     hash
 }
 
+/// Hashes a given piece type using Zobrist hashing, given a piece bitboard and its type index, as specified by Piece enum
 fn zobrist_piece(piece_bitboard: u64, piece_index: usize) -> u64 {
     let mut hash = 0u64;
     let mut bitboard = piece_bitboard;
@@ -76,6 +78,8 @@ fn zobrist_piece(piece_bitboard: u64, piece_index: usize) -> u64 {
     hash
 }
 
+/// Hashes a given en passant possibility using Zobrist hashing, given a current en passant square or
+/// NO_PASSANT for no en passant possibility.
 fn zobrist_en_passant(en_passant_square: u8) -> u64 {
     let mut hash = 0u64;
 
@@ -87,6 +91,8 @@ fn zobrist_en_passant(en_passant_square: u8) -> u64 {
     hash
 }
 
+/// Hashes given castling rights using Zobrist hashing.
+/// Translates castling rights into 4-bit number to do so.
 fn zobrist_castling_rights(castling_rights: &[bool; 4]) -> u64 {
     let mut hash = 0u64;
 
@@ -100,6 +106,8 @@ fn zobrist_castling_rights(castling_rights: &[bool; 4]) -> u64 {
     hash
 }
 
+/// Hashes a given active player colour using Zobrist hashing:
+/// 0 for WHITE, ZOBRIST_TABLE.active_player for BLACK
 fn zobrist_active_player(active_player: &Colour) -> u64 {
     if *active_player == BLACK { return ZOBRIST_TABLE.active_player; }
 
