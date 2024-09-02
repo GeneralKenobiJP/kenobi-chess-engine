@@ -13,7 +13,7 @@ use crate::magic_hasher::{magic_hash_bishop, magic_hash_rook, MAGIC_MASK_BISHOP,
 const KNIGHT_SHIFTS: [i8; 8] = [17, 10, -6, -15, -17, -10, 6, 15]; // Beginning on NW, counter-clockwise
 const INITIAL_STACK_CAPACITY: usize = 30; // used by MoveList constructor
 const NO_CAPTURE: u8 = 1 << 4;
-const NO_PASSANT: u8 = 64;
+pub const NO_PASSANT: u8 = 64;
 const EN_PASSANT_MASK: u64 = 0x000000FFFF000000;
 
 #[derive(PartialEq, Eq, Hash, Clone, Debug)]

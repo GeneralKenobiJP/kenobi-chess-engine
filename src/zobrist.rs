@@ -3,6 +3,8 @@
 //! Used by e.g. transposition table
 
 use crate::board::Board;
+use crate::move_generator;
+use crate::move_generator::NO_PASSANT;
 
 const PIECES_POSITIONS: usize = 64*12;
 const ZOBRIST_CONSTANTS: usize = 64*12 + 8 + 16 + 1;
@@ -73,6 +75,11 @@ fn zobrist_piece(piece_bitboard: u64, piece_index: usize) -> u64 {
 
 fn zobrist_en_passant(en_passant_square: u8) -> u64 {
     let mut hash = 0u64;
+
+    if en_passant_square == NO_PASSANT { return hash; }
+
+    let file = en_passant_square % 8;
+    hash ^= ZOBRIST_TABLE.en_passant[file];
 
     hash
 }
