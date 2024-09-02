@@ -3,8 +3,9 @@
 //! Used by e.g. transposition table
 
 use crate::board::Board;
-use crate::move_generator;
 use crate::move_generator::NO_PASSANT;
+use crate::piece::Colour;
+use crate::piece::Colour::BLACK;
 
 const PIECES_POSITIONS: usize = 64*12;
 const ZOBRIST_CONSTANTS: usize = 64*12 + 8 + 16 + 1;
@@ -82,6 +83,25 @@ fn zobrist_en_passant(en_passant_square: u8) -> u64 {
     hash ^= ZOBRIST_TABLE.en_passant[file];
 
     hash
+}
+
+fn zobrist_castling_rights(castling_rights: &[bool; 4]) -> u64 {
+    let mut hash = 0u64;
+
+    let mut bitboard = 0u8;
+    for i in castling_rights.len() {
+        if castling_rights[i] { bitboard |= 1 << i; continue; }
+    }
+
+    hash ^= ZOBRIST_TABLE.castling_rights[bitboard];
+
+    hash
+}
+
+fn zobrist_active_player(active_player: &Colour) -> u64 {
+    if *active_player == BLACK { return ZOBRIST_TABLE.active_player; }
+    
+    0u64
 }
 
 #[cfg(test)]
