@@ -42,6 +42,14 @@ impl TranspositionTable {
     pub fn save_position(&mut self, board: &Board, depth: u8, best_move: &Move, second_move: &Move, third_move: &Move) {
         self.table[zobrist_hash(board) % INITIAL_CAPACITY] = Transposition::new(depth, best_move, second_move, third_move);
     }
+
+    pub fn save_transposition(&mut self, board: &Board, transposition: &Transposition) {
+        self.table[zobrist_hash(board) % INITIAL_CAPACITY] = transposition.clone();
+    }
+
+    pub fn get(&self, board: &Board) -> &Transposition {
+        &self.table[zobrist_hash(board) % INITIAL_CAPACITY]
+    }
 }
 
 #[cfg(test)]
