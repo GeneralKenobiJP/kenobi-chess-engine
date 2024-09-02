@@ -25,6 +25,15 @@ pub struct Move {
 }
 
 impl Move {
+    pub fn new(origin: u8, target: u8, promotion: u8, piece: Piece) -> Self {
+        Move {
+            origin,
+            target,
+            promotion,
+            piece
+        }
+    }
+
     /// Converts Move object to an algebraic notation used by UCI
     /// E.g.: Move{54, 63, 2, PAWN} -> b7a8q
     pub fn to_algebraic_notation(&self) -> String {

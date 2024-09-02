@@ -47,7 +47,7 @@ const fn xorshift(mut seed: u64) -> u64 {
 }
 
 /// Hashes a given board position, using Zobrist hashing
-pub fn zobrist_hash(board: &Board) -> u64 {
+pub fn zobrist_hash(board: &Board) -> usize {
     let mut hash = 0u64;
 
     for i in 0..board.piece_bitboards.len() {
@@ -58,7 +58,7 @@ pub fn zobrist_hash(board: &Board) -> u64 {
     hash ^= zobrist_castling_rights(&board.castling_rights);
     hash ^= zobrist_active_player(&board.active_player);
 
-    hash
+    hash as usize
 }
 
 /// Hashes a given piece type using Zobrist hashing, given a piece bitboard and its type index, as specified by Piece enum
@@ -179,6 +179,6 @@ mod tests {
         ^ ZOBRIST_TABLE.pieces[ROOK as usize + 6 * BLACK as usize][63] ^ ZOBRIST_TABLE.pieces[KNIGHT as usize + 6 * BLACK as usize][62]
         ^ ZOBRIST_TABLE.en_passant[7] ^ ZOBRIST_TABLE.castling_rights[8] ^ ZOBRIST_TABLE.active_player;
 
-        assert_eq!(expected, zobrist_hash(&board));
+        assert_eq!(expected as usize, zobrist_hash(&board));
     }
 }
