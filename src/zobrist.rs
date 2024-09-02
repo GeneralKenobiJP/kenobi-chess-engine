@@ -46,6 +46,34 @@ const fn xorshift(mut seed: u64) -> u64 {
 pub fn zobrist_hash(board: &Board) -> u64 {
     let mut hash = 0u64;
 
+    for i in 0..board.piece_bitboards.len() {
+        hash ^= zobrist_piece(board.piece_bitboards[i], i);
+    }
+
+
+
+    hash
+}
+
+fn zobrist_piece(piece_bitboard: u64, piece_index: usize) -> u64 {
+    let mut hash = 0u64;
+    let mut bitboard = piece_bitboard;
+
+    while bitboard > 0 {
+        let tile = bitboard & bitboard.wrapping_neg();
+        bitboard -= tile;
+
+        let square = tile.checked_ilog2().unwrap_or_default();
+
+        hash ^= ZOBRIST_TABLE.pieces[piece_index][square];
+    }
+
+    hash
+}
+
+fn zobrist_en_passant(en_passant_square: u8) -> u64 {
+    let mut hash = 0u64;
+
     hash
 }
 
