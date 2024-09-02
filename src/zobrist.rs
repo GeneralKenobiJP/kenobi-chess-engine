@@ -2,6 +2,8 @@
 //! It quickens up the access and compresses the position
 //! Used by e.g. transposition table
 
+use crate::board::Board;
+
 const PIECES_POSITIONS: usize = 64*12;
 const ZOBRIST_CONSTANTS: usize = 64*12 + 8 + 16 + 1;
 const ZOBRIST_SEED: u64 = 0xFFAA_B58C_5833_FE89u64;
@@ -39,6 +41,12 @@ const fn xorshift(mut seed: u64) -> u64 {
     seed ^= seed << 17;
 
     seed
+}
+
+pub fn zobrist_hash(board: &Board) -> u64 {
+    let mut hash = 0u64;
+
+    hash
 }
 
 #[cfg(test)]
