@@ -53,7 +53,9 @@ pub fn zobrist_hash(board: &Board) -> u64 {
         hash ^= zobrist_piece(board.piece_bitboards[i], i);
     }
 
-
+    hash ^= zobrist_en_passant(board.en_passant_possibility);
+    hash ^= zobrist_castling_rights(&board.castling_rights);
+    hash ^= zobrist_active_player(&board.active_player);
 
     hash
 }
@@ -66,7 +68,7 @@ fn zobrist_piece(piece_bitboard: u64, piece_index: usize) -> u64 {
         let tile = bitboard & bitboard.wrapping_neg();
         bitboard -= tile;
 
-        let square = tile.checked_ilog2().unwrap_or_default();
+        let square = tile.checked_ilog2().unwrap_or_default() as usize;
 
         hash ^= ZOBRIST_TABLE.pieces[piece_index][square];
     }
@@ -79,7 +81,7 @@ fn zobrist_en_passant(en_passant_square: u8) -> u64 {
 
     if en_passant_square == NO_PASSANT { return hash; }
 
-    let file = en_passant_square % 8;
+    let file = (en_passant_square % 8) as usize;
     hash ^= ZOBRIST_TABLE.en_passant[file];
 
     hash
@@ -88,8 +90,8 @@ fn zobrist_en_passant(en_passant_square: u8) -> u64 {
 fn zobrist_castling_rights(castling_rights: &[bool; 4]) -> u64 {
     let mut hash = 0u64;
 
-    let mut bitboard = 0u8;
-    for i in castling_rights.len() {
+    let mut bitboard = 0usize;
+    for i in 0..castling_rights.len() {
         if castling_rights[i] { bitboard |= 1 << i; continue; }
     }
 
@@ -100,12 +102,14 @@ fn zobrist_castling_rights(castling_rights: &[bool; 4]) -> u64 {
 
 fn zobrist_active_player(active_player: &Colour) -> u64 {
     if *active_player == BLACK { return ZOBRIST_TABLE.active_player; }
-    
+
     0u64
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::piece::Colour::WHITE;
+    use crate::piece::Piece::{BISHOP, KING, KNIGHT, PAWN, QUEEN, ROOK};
     use super::*;
 
     #[test]
@@ -124,5 +128,49 @@ mod tests {
 
         assert_eq!(64, ZOBRIST_TABLE.pieces[0].len());
         assert_eq!(12, ZOBRIST_TABLE.pieces.len());
+    }
+
+    #[test]
+    fn check_zobrist_piece() {
+        assert_eq!(ZOBRIST_TABLE.pieces[1][0], zobrist_piece(0x0000_0000_0000_0001, 1));
+        assert_eq!(ZOBRIST_TABLE.pieces[1][0] ^ ZOBRIST_TABLE.pieces[1][47], zobrist_piece(0x0000_8000_0000_0001, 1));
+        assert_eq!(ZOBRIST_TABLE.pieces[10][63], zobrist_piece(0x8000_0000_0000_0000, 10));
+    }
+
+    #[test]
+    fn check_zobrist_en_passant() {
+        assert_eq!(ZOBRIST_TABLE.en_passant[3], zobrist_en_passant(16+3));
+        assert_eq!(ZOBRIST_TABLE.en_passant[5], zobrist_en_passant(40+5));
+        assert_eq!(0, zobrist_en_passant(64));
+    }
+
+    #[test]
+    fn check_zobrist_castling_rights() {
+        assert_eq!(ZOBRIST_TABLE.castling_rights[15], zobrist_castling_rights(&[true, true, true, true]));
+        assert_eq!(ZOBRIST_TABLE.castling_rights[7], zobrist_castling_rights(&[true, true, true, false]));
+        assert_eq!(ZOBRIST_TABLE.castling_rights[5], zobrist_castling_rights(&[true, false, true, false]));
+        assert_eq!(ZOBRIST_TABLE.castling_rights[0], zobrist_castling_rights(&[false, false, false, false]));
+        assert_eq!(ZOBRIST_TABLE.castling_rights[8], zobrist_castling_rights(&[false, false, false, true]));
+    }
+
+    #[test]
+    fn check_zobrist_active_player() {
+        assert_eq!(ZOBRIST_TABLE.active_player, zobrist_active_player(&BLACK));
+        assert_eq!(0, zobrist_active_player(&WHITE));
+    }
+
+    #[test]
+    fn check_zobrist_hash() {
+        let mut board = Board::new();
+        board.read_fen("rn2k3/8/8/8/P7/6PP/8/2BQK2R b q a3 0 1");
+
+        let expected = ZOBRIST_TABLE.pieces[KING as usize][3] ^ ZOBRIST_TABLE.pieces[QUEEN as usize][4]
+        ^ ZOBRIST_TABLE.pieces[BISHOP as usize][5] ^ ZOBRIST_TABLE.pieces[ROOK as usize][0]
+        ^ ZOBRIST_TABLE.pieces[PAWN as usize][16] ^ ZOBRIST_TABLE.pieces[PAWN as usize][17]
+        ^ ZOBRIST_TABLE.pieces[PAWN as usize][31] ^ ZOBRIST_TABLE.pieces[KING as usize + 6 * BLACK as usize][59]
+        ^ ZOBRIST_TABLE.pieces[ROOK as usize + 6 * BLACK as usize][63] ^ ZOBRIST_TABLE.pieces[KNIGHT as usize + 6 * BLACK as usize][62]
+        ^ ZOBRIST_TABLE.en_passant[7] ^ ZOBRIST_TABLE.castling_rights[8] ^ ZOBRIST_TABLE.active_player;
+
+        assert_eq!(expected, zobrist_hash(&board));
     }
 }
