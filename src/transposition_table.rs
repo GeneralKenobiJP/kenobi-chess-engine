@@ -49,6 +49,8 @@ impl TranspositionTable {
         }
     }
 
+    /// Hashes the key by implementing linear probing
+    /// Should be called for a zobrist-hashed key
     fn hash(&self, key: u64) -> usize {
         let mut hash = key as usize % INITIAL_CAPACITY;
 
@@ -69,21 +71,25 @@ impl TranspositionTable {
         hash
     }
 
+    /// Put a position in a transposition table, given a board situation, depth and three best moves for the given board and depth
     pub fn put_position(&mut self, board: &Board, depth: u8, best_move: &Move, second_move: &Move, third_move: &Move) {
         let zobrist = zobrist_hash(board);
         let hash = self.hash(zobrist);
         self.table[hash] = Option::from(Transposition::from_zobrist(zobrist, depth, best_move, second_move, third_move));
     }
 
+    /// Put a transposition in a transposition table, given a transposition object
     pub fn put_transposition(&mut self, transposition: &Transposition) {
         let hash = self.hash(transposition.zobrist);
         self.table[hash] = Option::from(transposition.clone());
     }
 
+    /// Fetches a position from a transposition table, given a board situation
     pub fn get_from_position(&self, board: &Board) -> &Option<Transposition> {
         &self.table[self.hash(zobrist_hash(board))]
     }
 
+    /// Fetches a position from a transposition table, given a zobrist hash of a board position
     pub fn get_from_zobrist(&self, zobrist: u64) -> &Option<Transposition> {
         &self.table[self.hash(zobrist)]
     }
