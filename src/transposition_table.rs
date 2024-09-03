@@ -12,7 +12,7 @@ const HASH_SET_SEARCH_LIMIT: usize = 1024;
 
 // 21 Bytes
 // Option of Transposition: 24 Bytes
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Transposition {
     zobrist: u64,
     depth: u8,
@@ -44,11 +44,9 @@ pub struct TranspositionTable {
 impl TranspositionTable {
 
     pub fn new() -> Self {
-        let mut transposition_table = TranspositionTable {
-            table: Vec::with_capacity(INITIAL_CAPACITY)
-        };
-        unsafe { transposition_table.table.set_len(INITIAL_CAPACITY) };
-        transposition_table
+        TranspositionTable {
+            table: vec![None; INITIAL_CAPACITY]
+        }
     }
 
     fn hash(&self, key: u64) -> usize {
@@ -73,11 +71,13 @@ impl TranspositionTable {
 
     pub fn put_position(&mut self, board: &Board, depth: u8, best_move: &Move, second_move: &Move, third_move: &Move) {
         let zobrist = zobrist_hash(board);
-        self.table[self.hash(zobrist)] = Option::from(Transposition::from_zobrist(zobrist, depth, best_move, second_move, third_move));
+        let hash = self.hash(zobrist);
+        self.table[hash] = Option::from(Transposition::from_zobrist(zobrist, depth, best_move, second_move, third_move));
     }
 
     pub fn put_transposition(&mut self, transposition: &Transposition) {
-        self.table[self.hash(transposition.zobrist)] = Option::from(transposition.clone());
+        let hash = self.hash(transposition.zobrist);
+        self.table[hash] = Option::from(transposition.clone());
     }
 
     pub fn get_from_position(&self, board: &Board) -> &Option<Transposition> {
@@ -91,18 +91,47 @@ impl TranspositionTable {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
     use crate::board::START_POSITION;
     use crate::piece::Piece::PAWN;
 
     use super::*;
 
     #[test]
-    fn test() {
+    fn test_transposition_table_initialization() {
+        let transposition_table = TranspositionTable::new();
+        assert_eq!(INITIAL_CAPACITY, transposition_table.table.len());
+        assert_eq!(None, transposition_table.table[0]);
+    }
+
+    #[test]
+    fn test_linear_probing() {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
 
         let mut transposition_table = TranspositionTable::new();
-        println!("{:?}",transposition_table.table[5]);
+        let zobrist = zobrist_hash(&board);
+        let start = Instant::now();
+        let hash = transposition_table.hash(zobrist);
+        assert_eq!(zobrist as usize % INITIAL_CAPACITY, hash);
+        let duration = start.elapsed();
+        println!("hash lasted for: {:?}", duration);
+        transposition_table.table[hash] = Option::from(Transposition::from_zobrist(0, 0, &Move::new(0, 0, 0, PAWN),
+                                                                                   &Move::new(0,0,0,PAWN), &Move::new(0,0,0,PAWN)));
+
+        let start = Instant::now();
+        let hash = transposition_table.hash(zobrist);
+        assert_eq!((zobrist as usize + 1) % INITIAL_CAPACITY, hash);
+        let duration = start.elapsed();
+        println!("hash lasted for: {:?}", duration);
+        transposition_table.table[hash] = Option::from(Transposition::from_zobrist(zobrist, 0, &Move::new(0, 0, 0, PAWN),
+                                                                                   &Move::new(0,0,0,PAWN), &Move::new(0,0,0,PAWN)));
+
+        let start = Instant::now();
+        let hash = transposition_table.hash(zobrist);
+        assert_eq!((zobrist as usize + 1) % INITIAL_CAPACITY, hash);
+        let duration = start.elapsed();
+        println!("hash lasted for: {:?}", duration);
     }
 
     // #[test]
