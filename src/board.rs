@@ -10,6 +10,7 @@ use scanner_rust::ScannerStr;
 use crate::piece::Piece;
 use crate::piece::Colour;
 use crate::piece::Colour::{BLACK, WHITE};
+use crate::zobrist::{zobrist_hash, ZOBRIST_TABLE};
 
 pub const START_POSITION: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 pub const UPPER_RANK_LOWEST_TILE: u8 = 56;
@@ -44,6 +45,7 @@ pub struct Board {
     pub half_moves: u32, // The halfmove clock specifies a decimal number of half moves with respect to the 50 move draw rule.
     // It is reset to zero after a capture or a pawn move and incremented otherwise.
     pub full_moves: u32,
+    pub zobrist: u64
 }
 
 impl Board {
@@ -59,6 +61,7 @@ impl Board {
             en_passant_possibility: 64,
             half_moves: 0,
             full_moves: 1,
+            zobrist: 0
         }
     }
 
@@ -74,6 +77,7 @@ impl Board {
         self.colour_bitboards[colour as usize] |= bit;
         let index = piece as usize + 6 * colour as usize;
         self.piece_bitboards[index] |= bit;
+        self.zobrist ^= ZOBRIST_TABLE.pieces[index][tile as usize];
     }
 
     /// Prints debug information about the board
@@ -183,6 +187,8 @@ impl Board {
         let full_moves = scanner.next().unwrap_or_default().unwrap_or_default().parse().unwrap_or_default();
         self.full_moves = full_moves;
 
+        self.zobrist = zobrist_hash(&self);
+
         // self.print_board();
     }
 
@@ -230,6 +236,7 @@ mod tests {
         assert_eq!(board.en_passant_possibility, 64);
         assert_eq!(board.half_moves, 0);
         assert_eq!(board.full_moves, 1);
+        assert_eq!(board.zobrist, zobrist_hash(&board));
     }
 
     #[test]
@@ -286,6 +293,7 @@ mod tests {
         assert_eq!(board.en_passant_possibility, 19);
         assert_eq!(board.half_moves, 0);
         assert_eq!(board.full_moves, 1);
+        assert_eq!(board.zobrist, zobrist_hash(&board));
     }
 
     #[test]
@@ -315,6 +323,7 @@ mod tests {
         assert_eq!(board.en_passant_possibility, 64);
         assert_eq!(board.half_moves, 1);
         assert_eq!(board.full_moves, 2);
+        assert_eq!(board.zobrist, zobrist_hash(&board));
     }
 
     #[test]

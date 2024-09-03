@@ -4,18 +4,19 @@
 
 use crate::board::Board;
 use crate::evaluation::evaluate;
-use crate::move_generator::MoveList;
+use crate::move_generator::{Move, MoveList};
 use crate::evaluation::{POSITIVE_INFINITY, NEGATIVE_INFINITY};
+use crate::transposition_table::TranspositionTable;
 
 struct Engine {
-    
+    transposition_table: TranspositionTable
 }
 
 impl Engine {
     
     pub fn new() -> Self {
         Engine {
-            
+            transposition_table: TranspositionTable::new()
         }
     }
     
@@ -53,14 +54,13 @@ impl Engine {
         move_list.generate_moves();
 
         let moves = move_list.get_moves().clone();
-
         for piece_move in moves
         {
             move_list.make_move(&piece_move);
             if !move_list.is_opponent_in_check() {
-                value = value.max(
-                    -self.search_alpha_beta_prunning(move_list, depth - 1, -beta, -alpha)
-                );
+                let move_evaluation = -self.search_alpha_beta_prunning(move_list, depth - 1, -beta, -alpha);
+
+                value = value.max(move_evaluation);
             }
             move_list.unmake_move(&piece_move);
 
@@ -70,6 +70,9 @@ impl Engine {
 
         value
     }
+
+    // let mut best_moves_values = [NEGATIVE_INFINITY; 3];
+    //     let mut best_moves_array: [*Move; 3] = [; 3];
 
     /// Uses alpha-beta prunning to find the best possible move in the search tree.
     /// Searches up to the given depth.

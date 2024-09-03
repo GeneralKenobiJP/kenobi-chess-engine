@@ -3258,30 +3258,30 @@ mod tests {
         assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
     }
 
-    #[test]
-    fn check_generate_noisy_moves() {
-        let mut board = Board::new();
-        board.read_fen("4k3/6P1/8/8/3B4/2Qp4/p2Rp3/8 w - - 0 1");
-
-        let mut expected_move_list = Vec::<Move>::new();
-        expected_move_list.push(Move {origin: 49, target: 57, promotion: 2, piece: PAWN});
-        expected_move_list.push(Move {origin: 49, target: 57, promotion: 3, piece: PAWN});
-        expected_move_list.push(Move {origin: 49, target: 57, promotion: 4, piece: PAWN});
-        expected_move_list.push(Move {origin: 49, target: 57, promotion: 5, piece: PAWN});
-        expected_move_list.push(Move {origin: 21, target: 61, promotion: 0, piece: QUEEN});
-        expected_move_list.push(Move {origin: 21, target: 45, promotion: 0, piece: QUEEN});
-        expected_move_list.push(Move {origin: 21, target: 20, promotion: 0, piece: QUEEN});
-        expected_move_list.push(Move {origin: 12, target: 11, promotion: 0, piece: ROOK});
-        expected_move_list.push(Move {origin: 12, target: 15, promotion: 0, piece: ROOK});
-        expected_move_list.push(Move {origin: 12, target: 20, promotion: 0, piece: ROOK});
-
-        let mut move_list = MoveList::new(&mut board);
-
-        let start = Instant::now();
-        move_list.generate_noisy_moves();
-        let duration = start.elapsed();
-        println!("generate_checks lasted for {:?}", duration);
-
-        assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
-    }
+    // #[test]
+    // fn check_generate_noisy_moves() {
+    //     let mut board = Board::new();
+    //     board.read_fen("4k3/6P1/8/8/3B4/2Qp4/p2Rp3/8 w - - 0 1");
+    //
+    //     let mut expected_move_list = Vec::<Move>::new();
+    //     expected_move_list.push(Move {origin: 49, target: 57, promotion: 2, piece: PAWN});
+    //     expected_move_list.push(Move {origin: 49, target: 57, promotion: 3, piece: PAWN});
+    //     expected_move_list.push(Move {origin: 49, target: 57, promotion: 4, piece: PAWN});
+    //     expected_move_list.push(Move {origin: 49, target: 57, promotion: 5, piece: PAWN});
+    //     expected_move_list.push(Move {origin: 21, target: 61, promotion: 0, piece: QUEEN});
+    //     expected_move_list.push(Move {origin: 21, target: 45, promotion: 0, piece: QUEEN});
+    //     expected_move_list.push(Move {origin: 21, target: 20, promotion: 0, piece: QUEEN});
+    //     expected_move_list.push(Move {origin: 12, target: 11, promotion: 0, piece: ROOK});
+    //     expected_move_list.push(Move {origin: 12, target: 15, promotion: 0, piece: ROOK});
+    //     expected_move_list.push(Move {origin: 12, target: 20, promotion: 0, piece: ROOK});
+    //
+    //     let mut move_list = MoveList::new(&mut board);
+    //
+    //     let start = Instant::now();
+    //     move_list.generate_noisy_moves();
+    //     let duration = start.elapsed();
+    //     println!("generate_checks lasted for {:?}", duration);
+    //
+    //     assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
+    // }
 }

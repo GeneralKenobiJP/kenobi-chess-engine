@@ -118,7 +118,6 @@ fn zobrist_active_player(active_player: &Colour) -> u64 {
 mod tests {
     use crate::piece::Colour::WHITE;
     use crate::piece::Piece::{BISHOP, KING, KNIGHT, PAWN, QUEEN, ROOK};
-    use crate::transposition_table::Transposition;
     use super::*;
 
     #[test]
@@ -181,7 +180,5 @@ mod tests {
         ^ ZOBRIST_TABLE.en_passant[7] ^ ZOBRIST_TABLE.castling_rights[8] ^ ZOBRIST_TABLE.active_player;
 
         assert_eq!(expected, zobrist_hash(&board));
-
-        println!("{}", std::mem::size_of::<Option<Transposition>>());
     }
 }
