@@ -156,4 +156,30 @@ mod tests {
         assert_eq!(expected3, transposition_table.table[zobrist_hash(&board) as usize % INITIAL_CAPACITY]);
         assert_ne!(expected, expected3);
     }
+
+    #[test]
+    fn check_put_transposition() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+
+        let mut transposition_table = TranspositionTable::new();
+
+        let transposition = Transposition::new(&board, 4, &Move::empty(), &Move::empty(), &Move::empty());
+        transposition_table.put_transposition(&transposition);
+        let expected = Option::from(transposition);
+        assert_eq!(expected, transposition_table.table[zobrist_hash(&board) as usize % INITIAL_CAPACITY]);
+
+        let transposition2 = Transposition::new(&board, 6, &Move::empty(), &Move::empty(), &Move::empty());
+        transposition_table.put_transposition(&transposition2);
+        let expected2 = Option::from(Transposition::new(&board, 6, &Move::empty(), &Move::empty(), &Move::empty()));
+        assert_eq!(expected2, transposition_table.table[zobrist_hash(&board) as usize % INITIAL_CAPACITY]);
+
+        board = Board::new();
+        board.read_fen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
+        let transposition = Transposition::new(&board, 4, &Move::empty(), &Move::empty(), &Move::empty());
+        transposition_table.put_transposition(&transposition);
+        let expected3 = Option::from(transposition);
+        assert_eq!(expected3, transposition_table.table[zobrist_hash(&board) as usize % INITIAL_CAPACITY]);
+        assert_ne!(expected, expected3);
+    }
 }
