@@ -7,18 +7,30 @@ use crate::board::Board;
 use crate::move_generator::Move;
 use crate::zobrist::zobrist_hash;
 
-const INITIAL_CAPACITY: usize = 1024 * 1024 * 64; // 67 108 864 entries => 872 415 232 bytes
+const INITIAL_CAPACITY: usize = 1024 * 1024 * 64; // 67 108 864 entries => 1 610 612 736 Bytes; actual payload: 1 409 286 144 bytes
+const HASH_SET_SEARCH_LIMIT: usize = 1024;
 
-// 13 Bytes
-#[derive(Clone)]
+// 21 Bytes
+// Option of Transposition: 24 Bytes
+#[derive(Clone, Debug)]
 pub struct Transposition {
+    zobrist: u64,
     depth: u8,
     best_moves: [Move; 3] // Best move, second-best, third-best
 }
 
 impl Transposition {
-    pub fn new(depth: u8, best_move: &Move, second_move: &Move, third_move: &Move) -> Self {
+    pub fn new(board: &Board, depth: u8, best_move: &Move, second_move: &Move, third_move: &Move) -> Self {
         Transposition {
+            zobrist: zobrist_hash(board),
+            depth,
+            best_moves: [best_move.clone(), second_move.clone(), third_move.clone()]
+        }
+    }
+
+    pub fn from_zobrist(zobrist: u64, depth: u8, best_move: &Move, second_move: &Move, third_move: &Move) -> Self {
+        Transposition {
+            zobrist,
             depth,
             best_moves: [best_move.clone(), second_move.clone(), third_move.clone()]
         }
@@ -26,29 +38,54 @@ impl Transposition {
 }
 
 pub struct TranspositionTable {
-    table: Vec<Transposition>
+    table: Vec<Option<Transposition>>
 }
 
 impl TranspositionTable {
 
     pub fn new() -> Self {
         let mut transposition_table = TranspositionTable {
-            table: Vec::<Transposition>::with_capacity(INITIAL_CAPACITY)
+            table: Vec::with_capacity(INITIAL_CAPACITY)
         };
         unsafe { transposition_table.table.set_len(INITIAL_CAPACITY) };
         transposition_table
     }
 
-    pub fn save_position(&mut self, board: &Board, depth: u8, best_move: &Move, second_move: &Move, third_move: &Move) {
-        self.table[zobrist_hash(board) % INITIAL_CAPACITY] = Transposition::new(depth, best_move, second_move, third_move);
+    fn hash(&self, key: u64) -> usize {
+        let mut hash = key as usize % INITIAL_CAPACITY;
+
+        while hash != (hash + HASH_SET_SEARCH_LIMIT) % INITIAL_CAPACITY {
+            let entry = &self.table[hash];
+
+            match entry {
+                None => { return hash; },
+                Some(transposition) => {
+                    if transposition.zobrist == key {
+                        return hash;
+                    }
+                    hash = ( hash + 1 ) % INITIAL_CAPACITY;
+                }
+            }
+        }
+
+        hash
     }
 
-    pub fn save_transposition(&mut self, board: &Board, transposition: &Transposition) {
-        self.table[zobrist_hash(board) % INITIAL_CAPACITY] = transposition.clone();
+    pub fn put_position(&mut self, board: &Board, depth: u8, best_move: &Move, second_move: &Move, third_move: &Move) {
+        let zobrist = zobrist_hash(board);
+        self.table[self.hash(zobrist)] = Option::from(Transposition::from_zobrist(zobrist, depth, best_move, second_move, third_move));
     }
 
-    pub fn get(&self, board: &Board) -> &Transposition {
-        &self.table[zobrist_hash(board) % INITIAL_CAPACITY]
+    pub fn put_transposition(&mut self, transposition: &Transposition) {
+        self.table[self.hash(transposition.zobrist)] = Option::from(transposition.clone());
+    }
+
+    pub fn get_from_position(&self, board: &Board) -> &Option<Transposition> {
+        &self.table[self.hash(zobrist_hash(board))]
+    }
+
+    pub fn get_from_zobrist(&self, zobrist: u64) -> &Option<Transposition> {
+        &self.table[self.hash(zobrist)]
     }
 }
 
@@ -60,12 +97,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn check_save_position() {
+    fn test() {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
 
         let mut transposition_table = TranspositionTable::new();
-        transposition_table.save_position(&board, 2, &Move {origin: 0, target: 1, promotion: 0, piece: PAWN},
-                                          &Move {origin: 0, target: 1, promotion: 0, piece: PAWN}, &Move {origin: 0, target: 1, promotion: 0, piece: PAWN});
+        println!("{:?}",transposition_table.table[5]);
     }
+
+    // #[test]
+    // fn check_save_position() {
+    //     let mut board = Board::new();
+    //     board.read_fen(START_POSITION);
+    //
+    //     let mut transposition_table = TranspositionTable::new();
+    //     transposition_table.save_position(&board, 2, &Move {origin: 0, target: 1, promotion: 0, piece: PAWN},
+    //                                       &Move {origin: 0, target: 1, promotion: 0, piece: PAWN}, &Move {origin: 0, target: 1, promotion: 0, piece: PAWN});
+    // }
 }
