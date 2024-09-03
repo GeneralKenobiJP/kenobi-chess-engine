@@ -134,13 +134,26 @@ mod tests {
         println!("hash lasted for: {:?}", duration);
     }
 
-    // #[test]
-    // fn check_save_position() {
-    //     let mut board = Board::new();
-    //     board.read_fen(START_POSITION);
-    //
-    //     let mut transposition_table = TranspositionTable::new();
-    //     transposition_table.save_position(&board, 2, &Move {origin: 0, target: 1, promotion: 0, piece: PAWN},
-    //                                       &Move {origin: 0, target: 1, promotion: 0, piece: PAWN}, &Move {origin: 0, target: 1, promotion: 0, piece: PAWN});
-    // }
+    #[test]
+    fn check_put_position() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+
+        let mut transposition_table = TranspositionTable::new();
+
+        transposition_table.put_position(&board, 4, &Move::empty(), &Move::empty(), &Move::empty());
+        let expected = Option::from(Transposition::new(&board, 4, &Move::empty(), &Move::empty(), &Move::empty()));
+        assert_eq!(expected, transposition_table.table[zobrist_hash(&board) as usize % INITIAL_CAPACITY]);
+
+        transposition_table.put_position(&board, 6, &Move::empty(), &Move::empty(), &Move::empty());
+        let expected2 = Option::from(Transposition::new(&board, 6, &Move::empty(), &Move::empty(), &Move::empty()));
+        assert_eq!(expected2, transposition_table.table[zobrist_hash(&board) as usize % INITIAL_CAPACITY]);
+
+        board = Board::new();
+        board.read_fen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
+        transposition_table.put_position(&board, 4, &Move::empty(), &Move::empty(), &Move::empty());
+        let expected3 = Option::from(Transposition::new(&board, 4, &Move::empty(), &Move::empty(), &Move::empty()));
+        assert_eq!(expected3, transposition_table.table[zobrist_hash(&board) as usize % INITIAL_CAPACITY]);
+        assert_ne!(expected, expected3);
+    }
 }

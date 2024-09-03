@@ -34,6 +34,15 @@ impl Move {
         }
     }
 
+    pub fn empty() -> Self {
+        Move {
+            origin: 0,
+            target: 0,
+            promotion: 0,
+            piece: KING
+        }
+    }
+
     /// Converts Move object to an algebraic notation used by UCI
     /// E.g.: Move{54, 63, 2, PAWN} -> b7a8q
     pub fn to_algebraic_notation(&self) -> String {

@@ -69,11 +69,11 @@ impl Board {
     ///     - tile - tile number (u32)
     pub fn put_piece(&mut self, piece: Piece, colour: Colour, tile: u32) {
         let bit = 1 << tile;
-        self.main_bitboard += bit;
-        self.empty_bitboard -= bit;
-        self.colour_bitboards[colour as usize] += bit;
+        self.main_bitboard |= bit;
+        self.empty_bitboard ^= bit;
+        self.colour_bitboards[colour as usize] |= bit;
         let index = piece as usize + 6 * colour as usize;
-        self.piece_bitboards[index] += bit;
+        self.piece_bitboards[index] |= bit;
     }
 
     /// Prints debug information about the board
