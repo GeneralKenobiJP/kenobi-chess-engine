@@ -7,7 +7,7 @@ use crate::move_generator::NO_PASSANT;
 use crate::piece::Colour;
 use crate::piece::Colour::BLACK;
 
-const PIECES_POSITIONS: usize = 64*12;
+// const PIECES_POSITIONS: usize = 64*12;
 const ZOBRIST_CONSTANTS: usize = 64*12 + 8 + 16 + 1;
 const ZOBRIST_SEED: u64 = 0xFFAA_B58C_5833_FE89u64;
 

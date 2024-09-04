@@ -6,7 +6,7 @@ use crate::board::Board;
 use crate::evaluation::evaluate;
 use crate::move_generator::{Move, MoveList};
 use crate::evaluation::{POSITIVE_INFINITY, NEGATIVE_INFINITY};
-use crate::transposition_table::TranspositionTable;
+use crate::transposition_table::{Transposition, TranspositionTable};
 
 struct Engine {
     transposition_table: TranspositionTable
@@ -45,6 +45,14 @@ impl Engine {
     /// Alpha - minimum score the current player is assured of (we found a move of at least this value earlier at this depth)
     /// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
     fn search_alpha_beta_prunning(&mut self, move_list: &mut MoveList, depth: u32, mut alpha: i32, beta: i32) -> i32 {
+        // let transposition_entry = self.transposition_table.get_from_zobrist(move_list.get_board().zobrist);
+        // match transposition_entry {
+        //     Some(transposition) => {
+        //         transposition
+        //     },
+        //     None => ()
+        // }
+
         let mut value: i32 = evaluate(move_list.get_board());
 
         if depth == 0 {
@@ -67,6 +75,8 @@ impl Engine {
             alpha = alpha.max(value);
             if alpha >= beta { break; }
         }
+
+        // self.transposition_table.put_transposition(Transposition::from_zobrist());
 
         value
     }
