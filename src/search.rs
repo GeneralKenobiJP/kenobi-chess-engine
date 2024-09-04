@@ -2,11 +2,13 @@
 //! Builds a search tree to find the best possible move according to the evaluation algorithm
 //! Uses negamax convention, alpha-beta prunning, quiescence search.
 
+use std::ops::Deref;
 use crate::board::Board;
 use crate::evaluation::evaluate;
 use crate::move_generator::{Move, MoveList};
 use crate::evaluation::{POSITIVE_INFINITY, NEGATIVE_INFINITY};
 use crate::transposition_table::{Transposition, TranspositionTable};
+use crate::transposition_table::NodeType::{ALPHA, BETA, EXACT};
 
 struct Engine {
     transposition_table: TranspositionTable
@@ -45,12 +47,15 @@ impl Engine {
     /// Alpha - minimum score the current player is assured of (we found a move of at least this value earlier at this depth)
     /// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
     fn search_alpha_beta_prunning(&mut self, move_list: &mut MoveList, depth: u32, mut alpha: i32, beta: i32) -> i32 {
-        // let transposition_entry = self.transposition_table.get_from_zobrist(move_list.get_board().zobrist);
-        // match transposition_entry {
-        //     Some(transposition) => {
-        //         transposition
-        //     },
-        //     None => ()
+        let transposition_entry = self.transposition_table.get_from_zobrist(move_list.get_board().zobrist);
+
+        // // Check if we have a proper entry in the transposition table
+        // if let Some(transposition) = transposition_entry {
+        //     if transposition.depth >= depth {
+        //         if transposition.node_type == EXACT { return transposition.value; }
+        //         if transposition.node_type == ALPHA && transposition.value <= alpha { return transposition.value; } // Our alpha cut-off is even bigger than it was for the put operation
+        //         if /*transposition.node_type == BETA*/ transposition.value >= beta { return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
+        //     }
         // }
 
         let mut value: i32 = evaluate(move_list.get_board());
@@ -61,13 +66,14 @@ impl Engine {
 
         move_list.generate_moves();
 
+        // let best_moves =
+
         let moves = move_list.get_moves().clone();
         for piece_move in moves
         {
             move_list.make_move(&piece_move);
             if !move_list.is_opponent_in_check() {
                 let move_evaluation = -self.search_alpha_beta_prunning(move_list, depth - 1, -beta, -alpha);
-
                 value = value.max(move_evaluation);
             }
             move_list.unmake_move(&piece_move);
@@ -76,7 +82,9 @@ impl Engine {
             if alpha >= beta { break; }
         }
 
-        // self.transposition_table.put_transposition(Transposition::from_zobrist());
+        // update the transposition table
+        // let node_type = if value < alpha { ALPHA } else if value >= beta { BETA } else { EXACT };
+        // self.transposition_table.put_transposition(&Transposition::from_zobrist(move_list.get_board().zobrist, depth, value, , node_type));
 
         value
     }
