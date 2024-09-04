@@ -119,12 +119,12 @@ mod tests {
     use super::*;
 
     // Use for type size checking, not as an actual test
-    #[test]
-    fn check_type_size() {
-        println!("{}", size_of::<NodeType>());
-        println!("{}", size_of::<Transposition>());
-        println!("{}", size_of::<Option<Transposition>>());
-    }
+    // #[test]
+    // fn check_type_size() {
+    //     println!("{}", size_of::<NodeType>());
+    //     println!("{}", size_of::<Transposition>());
+    //     println!("{}", size_of::<Option<Transposition>>());
+    // }
 
     #[test]
     fn test_transposition_table_initialization() {

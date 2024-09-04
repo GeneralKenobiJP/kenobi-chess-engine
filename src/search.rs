@@ -49,14 +49,14 @@ impl Engine {
     fn search_alpha_beta_prunning(&mut self, move_list: &mut MoveList, depth: u32, mut alpha: i32, beta: i32) -> i32 {
         let transposition_entry = self.transposition_table.get_from_zobrist(move_list.get_board().zobrist);
 
-        // // Check if we have a proper entry in the transposition table
-        // if let Some(transposition) = transposition_entry {
-        //     if transposition.depth >= depth {
-        //         if transposition.node_type == EXACT { return transposition.value; }
-        //         if transposition.node_type == ALPHA && transposition.value <= alpha { return transposition.value; } // Our alpha cut-off is even bigger than it was for the put operation
-        //         if /*transposition.node_type == BETA*/ transposition.value >= beta { return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
-        //     }
-        // }
+        // Check if we have a proper entry in the transposition table
+        if let Some(transposition) = transposition_entry {
+            if transposition.depth >= depth {
+                if transposition.node_type == EXACT { return transposition.value; }
+                if transposition.node_type == ALPHA && transposition.value <= alpha { return transposition.value; } // Our alpha cut-off is even bigger than it was for the put operation
+                if /*transposition.node_type == BETA*/ transposition.value >= beta { return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
+            }
+        }
 
         let mut value: i32 = evaluate(move_list.get_board());
 
@@ -66,7 +66,8 @@ impl Engine {
 
         move_list.generate_moves();
 
-        // let best_moves =
+        let mut best_moves: [Option<Move>; 3] = [None; 3];
+        let mut best_moves_evaluation: [i32; 2] = [NEGATIVE_INFINITY; 2]; // we omit the first move evaluation, as this is simply the value variable
 
         let moves = move_list.get_moves().clone();
         for piece_move in moves
@@ -74,7 +75,25 @@ impl Engine {
             move_list.make_move(&piece_move);
             if !move_list.is_opponent_in_check() {
                 let move_evaluation = -self.search_alpha_beta_prunning(move_list, depth - 1, -beta, -alpha);
-                value = value.max(move_evaluation);
+
+                if move_evaluation > value {
+                    best_moves_evaluation[1] = best_moves_evaluation[0];
+                    best_moves_evaluation[0] = value;
+                    value = move_evaluation;
+                    best_moves[2] = best_moves[1];
+                    best_moves[1] = best_moves[0];
+                    best_moves[0] = Option::from(piece_move);
+                }
+                else if move_evaluation > best_moves_evaluation[0] {
+                    best_moves_evaluation[1] = best_moves_evaluation[0];
+                    best_moves_evaluation[0] = move_evaluation;
+                    best_moves[2] = best_moves[1];
+                    best_moves[1] = Option::from(piece_move);
+                }
+                else if move_evaluation > best_moves_evaluation[1] {
+                    best_moves_evaluation[1] = move_evaluation;
+                    best_moves[2] = Option::from(piece_move);
+                }
             }
             move_list.unmake_move(&piece_move);
 
@@ -83,8 +102,8 @@ impl Engine {
         }
 
         // update the transposition table
-        // let node_type = if value < alpha { ALPHA } else if value >= beta { BETA } else { EXACT };
-        // self.transposition_table.put_transposition(&Transposition::from_zobrist(move_list.get_board().zobrist, depth, value, , node_type));
+        let node_type = if value < alpha { ALPHA } else if value >= beta { BETA } else { EXACT };
+        self.transposition_table.put_transposition(&Transposition::from_zobrist(move_list.get_board().zobrist, depth, value, &best_moves, node_type));
 
         value
     }
@@ -193,6 +212,7 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
     use super::*;
 
     #[test]
@@ -291,7 +311,7 @@ mod tests {
     // }
 
     #[test]
-    fn bench_search() {
+    fn bench_search_start_position() {
         let mut board = Board::new();
         let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
         board.read_fen(fen);
@@ -299,6 +319,24 @@ mod tests {
 
         let mut engine = Engine::new();
 
-        println!("{}", engine.search(&mut move_list, 7));
+        let now = Instant::now();
+        println!("{}", engine.search(&mut move_list, 14));
+        let duration = now.elapsed();
+        println!("search lasted for: {:?}", duration);
     }
+
+    // #[test]
+    // fn bench_search_kiwipete_position() {
+    //     let mut board = Board::new();
+    //     let fen = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
+    //     board.read_fen(fen);
+    //     let mut move_list = MoveList::new(&mut board);
+    //
+    //     let mut engine = Engine::new();
+    //
+    //     let now = Instant::now();
+    //     println!("{}", engine.search(&mut move_list, 3));
+    //     let duration = now.elapsed();
+    //     println!("search lasted for: {:?}", duration);
+    // }
 }

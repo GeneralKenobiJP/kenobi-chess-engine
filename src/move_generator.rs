@@ -16,7 +16,7 @@ const NO_CAPTURE: u8 = 1 << 4;
 pub const NO_PASSANT: u8 = 64;
 const EN_PASSANT_MASK: u64 = 0x000000FFFF000000;
 
-#[derive(PartialEq, Eq, Hash, Clone, Debug)]
+#[derive(PartialEq, Eq, Hash, Clone, Debug, Copy)]
 pub struct Move {
     pub origin: u8,
     pub target: u8,
