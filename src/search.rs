@@ -77,24 +77,7 @@ impl Engine {
                 let move_evaluation = -self.search_alpha_beta_prunning(move_list, depth - 1, -beta, -alpha);
 
                 // Update the best moves record
-                if move_evaluation > value {
-                    best_moves_evaluation[1] = best_moves_evaluation[0];
-                    best_moves_evaluation[0] = value;
-                    value = move_evaluation;
-                    best_moves[2] = best_moves[1];
-                    best_moves[1] = best_moves[0];
-                    best_moves[0] = Option::from(piece_move);
-                }
-                else if move_evaluation > best_moves_evaluation[0] {
-                    best_moves_evaluation[1] = best_moves_evaluation[0];
-                    best_moves_evaluation[0] = move_evaluation;
-                    best_moves[2] = best_moves[1];
-                    best_moves[1] = Option::from(piece_move);
-                }
-                else if move_evaluation > best_moves_evaluation[1] {
-                    best_moves_evaluation[1] = move_evaluation;
-                    best_moves[2] = Option::from(piece_move);
-                }
+                Self::insert_into_best_moves(&mut best_moves, &mut value, &mut best_moves_evaluation, piece_move, move_evaluation);
             }
             move_list.unmake_move(&piece_move);
 
@@ -109,8 +92,24 @@ impl Engine {
         value
     }
 
-    // let mut best_moves_values = [NEGATIVE_INFINITY; 3];
-    //     let mut best_moves_array: [*Move; 3] = [; 3];
+    fn insert_into_best_moves(best_moves: &mut [Option<Move>; 3], value: &mut i32, best_moves_evaluation: &mut [i32; 2], piece_move: Move, move_evaluation: i32) {
+        if move_evaluation > *value {
+            best_moves_evaluation[1] = best_moves_evaluation[0];
+            best_moves_evaluation[0] = *value;
+            *value = move_evaluation;
+            best_moves[2] = best_moves[1];
+            best_moves[1] = best_moves[0];
+            best_moves[0] = Option::from(piece_move);
+        } else if move_evaluation > best_moves_evaluation[0] {
+            best_moves_evaluation[1] = best_moves_evaluation[0];
+            best_moves_evaluation[0] = move_evaluation;
+            best_moves[2] = best_moves[1];
+            best_moves[1] = Option::from(piece_move);
+        } else if move_evaluation > best_moves_evaluation[1] {
+            best_moves_evaluation[1] = move_evaluation;
+            best_moves[2] = Option::from(piece_move);
+        }
+    }
 
     /// Uses alpha-beta prunning to find the best possible move in the search tree.
     /// Searches up to the given depth.
@@ -182,25 +181,7 @@ impl Engine {
             if !move_list.is_opponent_in_check() {
                 let move_evaluation = -self.quiescence_search(move_list, -beta, -alpha);
 
-                // Update the best moves record
-                if move_evaluation > value {
-                    best_moves_evaluation[1] = best_moves_evaluation[0];
-                    best_moves_evaluation[0] = value;
-                    value = move_evaluation;
-                    best_moves[2] = best_moves[1];
-                    best_moves[1] = best_moves[0];
-                    best_moves[0] = Option::from(piece_move);
-                }
-                else if move_evaluation > best_moves_evaluation[0] {
-                    best_moves_evaluation[1] = best_moves_evaluation[0];
-                    best_moves_evaluation[0] = move_evaluation;
-                    best_moves[2] = best_moves[1];
-                    best_moves[1] = Option::from(piece_move);
-                }
-                else if move_evaluation > best_moves_evaluation[1] {
-                    best_moves_evaluation[1] = move_evaluation;
-                    best_moves[2] = Option::from(piece_move);
-                }
+                Self::insert_into_best_moves(&mut best_moves, &mut value, &mut best_moves_evaluation, piece_move, move_evaluation);
             }
             move_list.unmake_move(&piece_move);
 
@@ -248,6 +229,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use std::time::Instant;
+    use crate::piece::Piece::{KING, PAWN, QUEEN};
     use super::*;
 
     #[test]
@@ -327,6 +309,70 @@ mod tests {
         assert_eq!(-100, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
     }
 
+    #[test]
+    fn check_insert_into_best_moves_best_move() {
+        let mut best_moves = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
+        let mut value = 0;
+        let mut best_moves_evaluation= [-100, -300];
+
+        let piece_move = Move::new(0, 1, 0, QUEEN);
+        let evaluation = 200;
+
+        Engine::insert_into_best_moves(&mut best_moves, &mut value, &mut best_moves_evaluation, piece_move, evaluation);
+
+        assert_eq!([Option::from(piece_move), Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN))], best_moves);
+        assert_eq!(200, value);
+        assert_eq!([0, -100], best_moves_evaluation);
+    }
+
+    #[test]
+    fn check_insert_into_best_moves_second_move() {
+        let mut best_moves = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
+        let mut value = 500;
+        let mut best_moves_evaluation= [0, -300];
+
+        let piece_move = Move::new(0, 1, 0, QUEEN);
+        let evaluation = 100;
+
+        Engine::insert_into_best_moves(&mut best_moves, &mut value, &mut best_moves_evaluation, piece_move, evaluation);
+
+        assert_eq!([Option::from(Move::new(63,62,0,KING)), Option::from(piece_move), Option::from(Move::new(0,8,0, PAWN))], best_moves);
+        assert_eq!(500, value);
+        assert_eq!([100, 0], best_moves_evaluation);
+    }
+
+    #[test]
+    fn check_insert_into_best_moves_third_move() {
+        let mut best_moves = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
+        let mut value = 500;
+        let mut best_moves_evaluation= [0, -300];
+
+        let piece_move = Move::new(0, 1, 0, QUEEN);
+        let evaluation = -100;
+
+        Engine::insert_into_best_moves(&mut best_moves, &mut value, &mut best_moves_evaluation, piece_move, evaluation);
+
+        assert_eq!([Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(piece_move)], best_moves);
+        assert_eq!(500, value);
+        assert_eq!([0, -100], best_moves_evaluation);
+    }
+
+    #[test]
+    fn check_insert_into_best_moves_weak_move() {
+        let mut best_moves = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
+        let mut value = 500;
+        let mut best_moves_evaluation= [0, -300];
+
+        let piece_move = Move::new(0, 1, 0, QUEEN);
+        let evaluation = -600;
+
+        Engine::insert_into_best_moves(&mut best_moves, &mut value, &mut best_moves_evaluation, piece_move, evaluation);
+
+        assert_eq!([Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())], best_moves);
+        assert_eq!(500, value);
+        assert_eq!([0, -300], best_moves_evaluation);
+    }
+
     // Should work, but it does not, and I don't know why
     // #[test]
     // fn test_quiescence_search_2() {
@@ -355,7 +401,7 @@ mod tests {
         let mut engine = Engine::new();
 
         let now = Instant::now();
-        println!("{}", engine.search(&mut move_list, 30));
+        println!("{}", engine.search(&mut move_list, 10));
         let duration = now.elapsed();
         println!("search lasted for: {:?}", duration);
         println!("Best moves: {:?}", engine.transposition_table.get_from_position(&board).clone().unwrap().best_moves);
@@ -371,7 +417,7 @@ mod tests {
         let mut engine = Engine::new();
 
         let now = Instant::now();
-        println!("{}", engine.search(&mut move_list, 25));
+        println!("{}", engine.search(&mut move_list, 5));
         let duration = now.elapsed();
         println!("search lasted for: {:?}", duration);
         println!("Best moves: {:?}", engine.transposition_table.get_from_position(&board).clone().unwrap().best_moves);
