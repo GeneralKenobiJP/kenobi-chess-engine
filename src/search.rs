@@ -4,7 +4,7 @@
 
 use std::ops::Deref;
 use crate::board::Board;
-use crate::evaluation::evaluate;
+use crate::evaluation::{DRAW, evaluate};
 use crate::move_generator::{Move, MoveList};
 use crate::evaluation::{POSITIVE_INFINITY, NEGATIVE_INFINITY};
 use crate::transposition_table::{Transposition, TranspositionTable};
@@ -73,10 +73,11 @@ impl Engine {
 
         // println!("Alpha-beta stage depth {} moves: {:?}", depth, move_list.get_moves());
 
+        let moves = move_list.get_moves().clone();
+
         let mut best_moves: [Option<Move>; 3] = [None; 3];
         let mut best_moves_evaluation: [i32; 2] = [NEGATIVE_INFINITY; 2]; // we omit the first move evaluation, as this is simply the value variable
 
-        let moves = move_list.get_moves().clone();
         for piece_move in moves
         {
             move_list.make_move(&piece_move);
@@ -92,6 +93,11 @@ impl Engine {
             // println!("alpha: {}", alpha);
             // println!("beta: {}", beta);
             if alpha >= beta { break; }
+        }
+
+        if best_moves[0] == None {
+            if move_list.is_in_check() { return NEGATIVE_INFINITY; }
+            else { return DRAW; }
         }
 
         // update the transposition table
@@ -202,6 +208,11 @@ impl Engine {
 
             alpha = alpha.max(value);
             if alpha >= beta { break; }
+        }
+
+        if best_moves[0] == None {
+            if move_list.is_in_check() { return NEGATIVE_INFINITY; }
+            else { return DRAW; }
         }
 
         // update the transposition table
@@ -317,6 +328,40 @@ mod tests {
     }
 
     #[test]
+    fn test_stalemate() {
+        let mut board = Board::new();
+        let fen = "8/8/8/R7/6k1/4Q3/8/4K2R b K - 0 1";
+        board.read_fen(fen);
+        let mut move_list = MoveList::new(&mut board);
+
+        let mut engine = Engine::new();
+
+        assert_eq!(DRAW, engine.search_alpha_beta_prunning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        // assert_eq!(DRAW, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY)); // might want to solve this or might not bother at all
+    }
+
+    #[test]
+    fn test_checkmate() {
+        let mut board = Board::new();
+        let fen = "7k/6QQ/8/8/8/8/8/4K3 b - - 0 1";
+        board.read_fen(fen);
+        let mut move_list = MoveList::new(&mut board);
+
+        let mut engine = Engine::new();
+
+        assert_eq!(NEGATIVE_INFINITY, engine.search_alpha_beta_prunning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+
+        let mut board = Board::new();
+        let fen = "7k/6QQ/8/8/8/8/8/4K3 w - - 0 1";
+        board.read_fen(fen);
+        let mut move_list = MoveList::new(&mut board);
+
+        let mut engine = Engine::new();
+
+        assert_eq!(POSITIVE_INFINITY, engine.search_alpha_beta_prunning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+    }
+
+    #[test]
     fn test_quiescence_search_1() {
         let mut board = Board::new();
         let fen = "8/3pk3/3p4/2P5/8/8/8/4K3 w - - 0 1";
@@ -423,21 +468,21 @@ mod tests {
         assert_eq!([0, -300], best_moves_evaluation);
     }
 
-    // #[test]
-    // fn bench_search_start_position() {
-    //     let mut board = Board::new();
-    //     let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    //     board.read_fen(fen);
-    //     let mut move_list = MoveList::new(&mut board);
-    //
-    //     let mut engine = Engine::new();
-    //
-    //     let now = Instant::now();
-    //     println!("{}", engine.search(&mut move_list, 30));
-    //     let duration = now.elapsed();
-    //     println!("search lasted for: {:?}", duration);
-    //     println!("Best moves: {:?}", engine.transposition_table.get_from_position(&board).clone().unwrap().best_moves);
-    // }
+    #[test]
+    fn bench_search_start_position() {
+        let mut board = Board::new();
+        let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        board.read_fen(fen);
+        let mut move_list = MoveList::new(&mut board);
+
+        let mut engine = Engine::new();
+
+        let now = Instant::now();
+        println!("{}", engine.search(&mut move_list, 5));
+        let duration = now.elapsed();
+        println!("search lasted for: {:?}", duration);
+        println!("Best moves: {:?}", engine.transposition_table.get_from_position(&board).clone().unwrap().best_moves);
+    }
     //
     // #[test]
     // fn bench_search_kiwipete_position() {
