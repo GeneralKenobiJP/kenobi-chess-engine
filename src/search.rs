@@ -26,6 +26,7 @@ impl Engine {
     /// Searches up to the given depth.
     /// Uses the given move list to generate moves in-place and analyze the board situation.
     /// Calls the algorithm using alpha-beta prunning and quiescence search
+    // #[inline(never)]
     pub fn search(&mut self, move_list: &mut MoveList, depth: u32) -> i32 {
         self.search_alpha_beta_prunning(move_list, depth, NEGATIVE_INFINITY, POSITIVE_INFINITY)
     }
@@ -46,25 +47,31 @@ impl Engine {
     /// Calls quiescence search if depth is zero
     /// Alpha - minimum score the current player is assured of (we found a move of at least this value earlier at this depth)
     /// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
+    // #[inline(never)]
     fn search_alpha_beta_prunning(&mut self, move_list: &mut MoveList, depth: u32, mut alpha: i32, beta: i32) -> i32 {
+        let original_alpha=  alpha;
+
         let transposition_entry = self.transposition_table.get_from_zobrist(move_list.get_board().zobrist);
 
         // Check if we have a proper entry in the transposition table
         if let Some(transposition) = transposition_entry {
             if transposition.depth >= depth {
+                // println!("Transposition reached: {:?}", transposition);
                 if transposition.node_type == EXACT { return transposition.value; }
                 if transposition.node_type == ALPHA && transposition.value <= alpha { return transposition.value; } // Our alpha cut-off is even bigger than it was for the put operation
                 if /*transposition.node_type == BETA*/ transposition.value >= beta { return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
             }
         }
 
-        let mut value: i32 = evaluate(move_list.get_board());
+        let mut value: i32 = NEGATIVE_INFINITY;
 
         if depth == 0 {
-            return -self.quiescence_search(move_list, -beta, -alpha);
+            return self.quiescence_search(move_list, -beta, -alpha);
         }
 
         move_list.generate_moves();
+
+        // println!("Alpha-beta stage depth {} moves: {:?}", depth, move_list.get_moves());
 
         let mut best_moves: [Option<Move>; 3] = [None; 3];
         let mut best_moves_evaluation: [i32; 2] = [NEGATIVE_INFINITY; 2]; // we omit the first move evaluation, as this is simply the value variable
@@ -82,16 +89,19 @@ impl Engine {
             move_list.unmake_move(&piece_move);
 
             alpha = alpha.max(value);
+            // println!("alpha: {}", alpha);
+            // println!("beta: {}", beta);
             if alpha >= beta { break; }
         }
 
         // update the transposition table
-        let node_type = if value < alpha { ALPHA } else if value >= beta { BETA } else { EXACT };
+        let node_type = if value <= original_alpha { ALPHA } else if value >= beta { BETA } else { EXACT };
         self.transposition_table.put_transposition(&Transposition::from_zobrist(move_list.get_board().zobrist, depth, value, &best_moves, node_type));
 
         value
     }
 
+    // #[inline(never)]
     fn insert_into_best_moves(best_moves: &mut [Option<Move>; 3], value: &mut i32, best_moves_evaluation: &mut [i32; 2], piece_move: Move, move_evaluation: i32) {
         if move_evaluation > *value {
             best_moves_evaluation[1] = best_moves_evaluation[0];
@@ -152,22 +162,27 @@ impl Engine {
     /// Uses the given move list to generate moves in-place and analyze the board situation.
     /// Alpha - minimum score the current player is assured of (we found a move of at least this value earlier at this depth)
     /// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
+    // #[inline(never)]
     fn quiescence_search(&mut self, move_list: &mut MoveList, mut alpha: i32, beta: i32) -> i32 {
+        let original_alpha = alpha;
+
         let transposition_entry = self.transposition_table.get_from_zobrist(move_list.get_board().zobrist);
 
         // Check if we have a proper entry in the transposition table
         if let Some(transposition) = transposition_entry {
+            // println!("Quiescence transposition reached: {:?}", transposition);
             if transposition.node_type == EXACT { return transposition.value; }
             if transposition.node_type == ALPHA && transposition.value <= alpha { return transposition.value; } // Our alpha cut-off is even bigger than it was for the put operation
             if /*transposition.node_type == BETA*/ transposition.value >= beta { return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
         }
 
-        let mut value: i32 = evaluate(move_list.get_board());
+        let mut value: i32 = NEGATIVE_INFINITY;
 
         move_list.generate_noisy_moves();
+        // println!("Quiescence moves: {:?}", move_list.get_moves());
 
         if move_list.get_moves().len() == 0 {
-            return value;
+            return evaluate(move_list.get_board());
         }
 
         let mut best_moves: [Option<Move>; 3] = [None; 3];
@@ -190,7 +205,7 @@ impl Engine {
         }
 
         // update the transposition table
-        let node_type = if value < alpha { ALPHA } else if value >= beta { BETA } else { EXACT };
+        let node_type = if value <= original_alpha { ALPHA } else if value >= beta { BETA } else { EXACT };
         self.transposition_table.put_transposition(&Transposition::from_zobrist(move_list.get_board().zobrist, 0, value, &best_moves, node_type));
 
         value
@@ -265,8 +280,13 @@ mod tests {
         assert_eq!(500, engine.search_naive(&mut move_list, 1));
         assert_eq!(0, engine.search_naive(&mut move_list, 2));
 
+        engine = Engine::new();
+
+        println!("depth 0");
         assert_eq!(0, engine.search(&mut move_list, 0));
+        println!("depth 1");
         assert_eq!(0, engine.search(&mut move_list, 1));
+        println!("depth 2");
         assert_eq!(0, engine.search(&mut move_list, 2));
     }
 
@@ -307,6 +327,36 @@ mod tests {
 
         assert_eq!(0, engine.search_naive(&mut move_list, 1));
         assert_eq!(-100, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+    }
+
+    #[test]
+    fn test_quiescence_search_2() {
+        let mut board = Board::new();
+        let fen = "4k3/8/4pp2/4p3/3P4/3P4/8/4K3 w - - 0 1";
+        board.read_fen(fen);
+        let mut move_list = MoveList::new(&mut board);
+
+        let mut engine = Engine::new();
+
+        assert_eq!(0, engine.search_naive(&mut move_list, 1));
+        assert_eq!(-100, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+    }
+
+    #[test]
+    fn test_quiescence_search_3() {
+        let mut board = Board::new();
+        let fen = "8/3pk3/3p3P/2P5/8/8/8/4K3 w - - 0 1";
+        board.read_fen(fen);
+        let mut move_list = MoveList::new(&mut board);
+
+        let mut engine = Engine::new();
+
+        assert_eq!(100, engine.search_naive(&mut move_list, 1));
+
+        move_list.make_move(&Move{origin: 40, target: 48, promotion: 0, piece: PAWN});
+
+        assert_eq!(100, engine.search_naive(&mut move_list, 1));
+        assert_eq!(-700, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
     }
 
     #[test]
@@ -373,53 +423,59 @@ mod tests {
         assert_eq!([0, -300], best_moves_evaluation);
     }
 
-    // Should work, but it does not, and I don't know why
     // #[test]
-    // fn test_quiescence_search_2() {
+    // fn bench_search_start_position() {
     //     let mut board = Board::new();
-    //     let fen = "8/3pk3/3p3P/2P5/8/8/8/4K3 w - - 0 1";
+    //     let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     //     board.read_fen(fen);
     //     let mut move_list = MoveList::new(&mut board);
     //
     //     let mut engine = Engine::new();
     //
-    //     assert_eq!(100, engine.search_naive(&mut move_list, 1));
-    //
-    //     move_list.make_move(&Move{origin: 40, target: 48, promotion: 0, piece: PAWN});
-    //
-    //     assert_eq!(100, engine.search_naive(&mut move_list, 1));
-    //     assert_eq!(700, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+    //     let now = Instant::now();
+    //     println!("{}", engine.search(&mut move_list, 30));
+    //     let duration = now.elapsed();
+    //     println!("search lasted for: {:?}", duration);
+    //     println!("Best moves: {:?}", engine.transposition_table.get_from_position(&board).clone().unwrap().best_moves);
     // }
-
-    #[test]
-    fn bench_search_start_position() {
-        let mut board = Board::new();
-        let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-        board.read_fen(fen);
-        let mut move_list = MoveList::new(&mut board);
-
-        let mut engine = Engine::new();
-
-        let now = Instant::now();
-        println!("{}", engine.search(&mut move_list, 10));
-        let duration = now.elapsed();
-        println!("search lasted for: {:?}", duration);
-        println!("Best moves: {:?}", engine.transposition_table.get_from_position(&board).clone().unwrap().best_moves);
-    }
-
-    #[test]
-    fn bench_search_kiwipete_position() {
-        let mut board = Board::new();
-        let fen = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
-        board.read_fen(fen);
-        let mut move_list = MoveList::new(&mut board);
-
-        let mut engine = Engine::new();
-
-        let now = Instant::now();
-        println!("{}", engine.search(&mut move_list, 5));
-        let duration = now.elapsed();
-        println!("search lasted for: {:?}", duration);
-        println!("Best moves: {:?}", engine.transposition_table.get_from_position(&board).clone().unwrap().best_moves);
-    }
+    //
+    // #[test]
+    // fn bench_search_kiwipete_position() {
+    //     let mut board = Board::new();
+    //     let fen = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
+    //     board.read_fen(fen);
+    //     let mut move_list = MoveList::new(&mut board);
+    //
+    //     let mut engine = Engine::new();
+    //
+    //     let now = Instant::now();
+    //     println!("{}", engine.search(&mut move_list, 1));
+    //     let duration = now.elapsed();
+    //     println!("search lasted for: {:?}", duration);
+    //     println!("Best moves: {:?}", engine.transposition_table.get_from_position(&board).clone().unwrap().best_moves);
+    // }
+    //
+    // #[test]
+    // fn trace_moves() {
+    //     let mut board = Board::new();
+    //     let fen = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
+    //     board.read_fen(fen);
+    //     let mut move_list = MoveList::new(&mut board);
+    //
+    //     let mut engine = Engine::new();
+    //
+    //     loop {
+    //         let evaluation = engine.search(&mut move_list, 0);
+    //         println!("Position evaluated as: {}", evaluation);
+    //         let transposition = engine.transposition_table.get_from_position(move_list.get_board());
+    //         if transposition.is_none() { println!("No transposition found"); break; }
+    //         let best_move = transposition.clone().unwrap().best_moves[0];
+    //         if best_move == None { println!("No move found"); break; }
+    //         let best_move = best_move.unwrap();
+    //         println!("Best move: {:?}", best_move);
+    //         move_list.make_move(&best_move);
+    //     }
+    //
+    //     // r3k2r/p1ppq1b1/bn4p1/3n4/8/3P1QPp/P1PBBP1P/R3K2R w - - 0 1
+    // }
 }

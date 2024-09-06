@@ -33,8 +33,8 @@ fn count_material(board: &Board) -> i32 {
     let active_player_piece_index = 6 * board.active_player as usize;
     let inactive_player_piece_index = 6 * board.inactive_player as usize;
 
-    if board.piece_bitboards[active_player_piece_index] == 0 { return i32::MIN; }
-    if board.piece_bitboards[inactive_player_piece_index] == 0 { return i32::MAX; }
+    if board.piece_bitboards[active_player_piece_index] == 0 { return NEGATIVE_INFINITY; }
+    if board.piece_bitboards[inactive_player_piece_index] == 0 { return POSITIVE_INFINITY; }
 
     for piece in 1..6 {
         material += count_pieces(board.piece_bitboards[active_player_piece_index + piece],
@@ -97,7 +97,7 @@ mod tests {
         let fen = "rnbqkbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQ1BNR w KQkq - 0 1";
         board.read_fen(fen);
 
-        assert_eq!(i32::MIN, count_material(&board));
+        assert_eq!(NEGATIVE_INFINITY, count_material(&board));
     }
 
     #[test]
@@ -106,7 +106,7 @@ mod tests {
         let fen = "rnbqkbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQ1BNR b KQkq - 0 1";
         board.read_fen(fen);
 
-        assert_eq!(i32::MAX, count_material(&board));
+        assert_eq!(POSITIVE_INFINITY, count_material(&board));
     }
 
     #[test]
@@ -115,7 +115,7 @@ mod tests {
         let fen = "rnbq1bnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR b KQkq - 0 1";
         board.read_fen(fen);
 
-        assert_eq!(i32::MIN, count_material(&board));
+        assert_eq!(NEGATIVE_INFINITY, count_material(&board));
     }
 
     #[test]
@@ -124,7 +124,7 @@ mod tests {
         let fen = "rnbq1bnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 0 1";
         board.read_fen(fen);
 
-        assert_eq!(i32::MAX, count_material(&board));
+        assert_eq!(POSITIVE_INFINITY, count_material(&board));
     }
 
     #[test]
@@ -151,6 +151,6 @@ mod tests {
         let fen = "rnbqkbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQ1BNR w KQkq - 0 1";
         board.read_fen(fen);
 
-        assert_eq!(i32::MIN, evaluate(&board));
+        assert_eq!(NEGATIVE_INFINITY, evaluate(&board));
     }
 }
