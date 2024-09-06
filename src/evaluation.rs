@@ -13,11 +13,13 @@ pub const DRAW: i32 = 0;
 
 /// Evaluates the current board situation and outputs the evaluation.
 /// Uses the negamax convention.
-/// Considers material advantage.
+/// Considers material advantage, 50-move rule.
 /// Checkmate (i.e. lack of king) is evaluated as i32::MAX / i32::MIN
 /// (roughly equivalent to +- inf)
 pub fn evaluate(board: &Board) -> i32 {
     let mut value = 0;
+
+    if board.half_moves == 100 { return DRAW; }
 
     value += count_material(board);
 
@@ -153,5 +155,14 @@ mod tests {
         board.read_fen(fen);
 
         assert_eq!(NEGATIVE_INFINITY, evaluate(&board));
+    }
+
+    #[test]
+    fn test_evaluation_fifty_moves() {
+        let mut board = Board::new();
+        let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 100 1";
+        board.read_fen(fen);
+
+        assert_eq!(DRAW, evaluate(&board));
     }
 }

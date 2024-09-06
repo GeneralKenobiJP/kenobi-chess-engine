@@ -68,6 +68,7 @@ pub struct MoveList<'a> {
     capture_history: Vec<u8>, // used as stack, 16 == no capture
     en_passant_history: Vec<u8>, // used as stack, 64 == no passant
     castling_rights_history: Vec<[bool;4]>, // used as stack
+    halfmoves_history: Vec<u8>, // used as stack
     king_lookup_table: [u64; 64], // should be treated as immutable after setup
     knight_lookup_table: [u64; 64], // should be treated as immutable after setup
     rook_magic_bitboard: Vec<u64>,
@@ -82,6 +83,7 @@ impl<'a> MoveList<'a> {
             capture_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
             en_passant_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
             castling_rights_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
+            halfmoves_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
             king_lookup_table: Self::setup_king_lookup_table(),
             knight_lookup_table: Self::setup_knight_lookup_table(),
             rook_magic_bitboard: Self::setup_rook_magic_bitboard(),
@@ -103,6 +105,7 @@ impl<'a> MoveList<'a> {
     pub fn make_move(&mut self, piece_move: &Move) {
         self.en_passant_history.push(self.board.en_passant_possibility);
         self.castling_rights_history.push(self.board.castling_rights);
+        self.halfmoves_history.push(self.board.half_moves as u8);
 
         let origin = 1 << piece_move.origin;
         let target = 1 << piece_move.target;
@@ -125,7 +128,11 @@ impl<'a> MoveList<'a> {
         self.board.piece_bitboards[6*active_player + piece] ^= origin;
         self.board.piece_bitboards[6*active_player + final_piece] |= target;
 
+        let mut should_reset_fifty_moves = false;
+
         if piece_move.piece == PAWN {
+            should_reset_fifty_moves = true;
+
             if piece_move.target == self.board.en_passant_possibility {
                 let en_passant_target = ((target << 8) | (target >> 8)) & EN_PASSANT_MASK;
                 self.board.main_bitboard ^= en_passant_target;
@@ -176,8 +183,13 @@ impl<'a> MoveList<'a> {
             {
                 capture = index as u8;
                 self.board.piece_bitboards[index] = new_bitboard;
+
+                should_reset_fifty_moves = true;
             }
         }
+        if should_reset_fifty_moves { self.board.half_moves = 0; }
+        else { self.board.half_moves += 1; }
+
         self.capture_history.push(capture);
 
         self.board.switch_active_player();
@@ -227,12 +239,14 @@ impl<'a> MoveList<'a> {
 
         self.capture_history.push(NO_CAPTURE);
         self.board.en_passant_possibility = NO_PASSANT;
+        self.board.half_moves += 1;
     }
 
     /// Unmakes a move on the board, given a move.
     pub fn unmake_move(&mut self, piece_move: &Move) {
         self.board.en_passant_possibility = self.en_passant_history.pop().unwrap_or_default();
         self.board.castling_rights = self.castling_rights_history.pop().unwrap_or_default();
+        self.board.half_moves = self.halfmoves_history.pop().unwrap_or_default() as u32;
 
         let origin = 1 << piece_move.target;
         let target = 1 << piece_move.origin;
@@ -268,7 +282,10 @@ impl<'a> MoveList<'a> {
         }
 
         let capture = self.capture_history.pop().unwrap_or_default();
-        if capture == NO_CAPTURE { self.board.switch_active_player(); return; }
+        if capture == NO_CAPTURE {
+            self.board.switch_active_player();
+            return;
+        }
         self.board.main_bitboard |= origin;
         self.board.empty_bitboard ^= origin;
         self.board.colour_bitboards[self.board.active_player as usize] |= origin;
@@ -2499,6 +2516,7 @@ mod tests {
         assert_eq!(44, move_list.en_passant_history[0]);
         assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
         assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
+        assert_eq!(0, move_list.get_board().half_moves);
 
         // UNMAKE MOVE
 
@@ -2512,6 +2530,7 @@ mod tests {
         }
         assert_eq!(en_passant, move_list.board.en_passant_possibility);
         assert_eq!(castling_rights, move_list.board.castling_rights);
+        assert_eq!(1, move_list.get_board().half_moves);
     }
 
     #[test]
@@ -2553,6 +2572,7 @@ mod tests {
         assert_eq!(44, move_list.en_passant_history[0]);
         assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
         assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
+        assert_eq!(2, move_list.get_board().half_moves);
 
         // UNMAKE MOVE
 
@@ -2566,6 +2586,7 @@ mod tests {
         }
         assert_eq!(en_passant, move_list.board.en_passant_possibility);
         assert_eq!(castling_rights, move_list.board.castling_rights);
+        assert_eq!(1, move_list.get_board().half_moves);
     }
 
     #[test]
@@ -2606,6 +2627,7 @@ mod tests {
         assert_eq!(44, move_list.en_passant_history[0]);
         assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
         assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
+        assert_eq!(2, move_list.get_board().half_moves);
 
         // UNMAKE MOVE
 
@@ -2619,6 +2641,7 @@ mod tests {
         }
         assert_eq!(en_passant, move_list.board.en_passant_possibility);
         assert_eq!(castling_rights, move_list.board.castling_rights);
+        assert_eq!(1, move_list.get_board().half_moves);
     }
 
     #[test]
@@ -2659,6 +2682,7 @@ mod tests {
         assert_eq!(64, move_list.en_passant_history[0]);
         assert_eq!([true, false, false, false], move_list.castling_rights_history[0]);
         assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
+        assert_eq!(0, move_list.get_board().half_moves);
 
         // UNMAKE MOVE
 
@@ -2672,6 +2696,7 @@ mod tests {
         }
         assert_eq!(en_passant, move_list.board.en_passant_possibility);
         assert_eq!(castling_rights, move_list.board.castling_rights);
+        assert_eq!(1, move_list.get_board().half_moves);
     }
 
     #[test]
@@ -2712,6 +2737,7 @@ mod tests {
         assert_eq!(64, move_list.en_passant_history[0]);
         assert_eq!([true, false, false, false], move_list.castling_rights_history[0]);
         assert_eq!(47, move_list.board.en_passant_possibility);
+        assert_eq!(0, move_list.get_board().half_moves);
 
         // UNMAKE MOVE
 
@@ -2725,6 +2751,7 @@ mod tests {
         }
         assert_eq!(en_passant, move_list.board.en_passant_possibility);
         assert_eq!(castling_rights, move_list.board.castling_rights);
+        assert_eq!(1, move_list.get_board().half_moves);
     }
 
     #[test]
@@ -2769,6 +2796,7 @@ mod tests {
         assert_eq!(7, move_list.capture_history[0]);
         assert_eq!(44, move_list.en_passant_history[0]);
         assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
+        assert_eq!(0, move_list.get_board().half_moves);
 
         // UNMAKE MOVE
 
@@ -2782,6 +2810,7 @@ mod tests {
         }
         assert_eq!(en_passant, move_list.board.en_passant_possibility);
         assert_eq!(castling_rights, move_list.board.castling_rights);
+        assert_eq!(1, move_list.get_board().half_moves);
     }
 
     #[test]
@@ -2834,6 +2863,7 @@ mod tests {
         assert_eq!(9, move_list.capture_history[0]);
         assert_eq!(44, move_list.en_passant_history[0]);
         assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
+        assert_eq!(0, move_list.get_board().half_moves);
 
         // UNMAKE MOVE
 
@@ -2850,6 +2880,7 @@ mod tests {
         }
         assert_eq!(en_passant, move_list.board.en_passant_possibility);
         assert_eq!(castling_rights, move_list.board.castling_rights);
+        assert_eq!(1, move_list.get_board().half_moves);
     }
 
     #[test]
@@ -2896,6 +2927,7 @@ mod tests {
         assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
         assert_eq!([true, true, true, true], move_list.castling_rights_history[0]);
         assert_eq!([false, false, true, true], move_list.board.castling_rights);
+        assert_eq!(2, move_list.get_board().half_moves);
 
         // UNMAKE MOVE
 
@@ -2909,6 +2941,7 @@ mod tests {
         }
         assert_eq!(en_passant, move_list.board.en_passant_possibility);
         assert_eq!(castling_rights, move_list.board.castling_rights);
+        assert_eq!(1, move_list.get_board().half_moves);
     }
 
     #[test]
@@ -2995,6 +3028,7 @@ mod tests {
         assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
         assert_eq!([true, true, true, true], move_list.castling_rights_history[0]);
         assert_eq!([true, true, false, false], move_list.board.castling_rights);
+        assert_eq!(2, move_list.get_board().half_moves);
 
         // UNMAKE MOVE
 
@@ -3008,6 +3042,7 @@ mod tests {
         }
         assert_eq!(en_passant, move_list.board.en_passant_possibility);
         assert_eq!(castling_rights, move_list.board.castling_rights);
+        assert_eq!(1, move_list.get_board().half_moves);
     }
 
     #[test]
