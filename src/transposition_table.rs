@@ -10,6 +10,8 @@ use crate::zobrist::zobrist_hash;
 
 const INITIAL_CAPACITY: usize = 1024 * 1024 * 64; // 67 108 864 entries => 2 147 483 648 Bytes
 const HASH_SET_SEARCH_LIMIT: usize = 1024;
+const REPETITION_CAPACITY: usize = 1024 * 2; // 2048 entries => 65 536 Bytes
+const THREEFOLD_REPETITION: u8 = 3;
 
 // 24 Bytes => 24 Bytes (must be a multiple of 8)
 // Option of Transposition: 24 Bytes
@@ -111,11 +113,65 @@ impl TranspositionTable {
     }
 }
 
+pub struct RepetitionTable {
+    table: Vec<u8>,
+    keys: Vec<Option<u64>>
+}
+
+impl RepetitionTable {
+    pub fn new() -> Self {
+        RepetitionTable {
+            table: vec![0; REPETITION_CAPACITY],
+            keys: vec![None; REPETITION_CAPACITY]
+        }
+    }
+
+    /// Hashes the key by implementing linear probing
+    /// Should be called for a zobrist-hashed key
+    fn hash(&self, key: u64) -> usize {
+        let mut hash = key as usize % REPETITION_CAPACITY;
+
+        while hash != (hash + REPETITION_CAPACITY - 1) % REPETITION_CAPACITY {
+            let entry = self.keys[hash];
+
+            match entry {
+                None => { return hash; }
+                Some(repetition) => {
+                    if repetition == key { return hash; }
+                    hash = (hash + 1) % REPETITION_CAPACITY;
+                }
+            }
+        }
+
+        hash
+    }
+
+    /// Increase the repetition counter for the position with a given zobrist key.
+    /// Returns true if the threefold repetition occurred, otherwise returns false.
+    pub fn visit_position(&mut self, zobrist: u64) -> bool {
+        let hash = self.hash(zobrist);
+        self.table[hash] += 1;
+        self.keys[hash] = Option::from(zobrist);
+
+        self.table[hash] >= THREEFOLD_REPETITION
+    }
+
+    /// Decrease the repetition counter for the position with a given zobrist key.
+    /// Do NOT use for unvisited positions
+    pub fn unvisit_position(&mut self, zobrist: u64) {
+        let hash = self.hash(zobrist);
+        self.table[hash] -= 1;
+
+        if self.table[hash] == 0 {
+            self.keys[hash] = None;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Instant;
     use crate::board::START_POSITION;
-
     use super::*;
 
     // Use for type size checking, not as an actual test
@@ -257,5 +313,73 @@ mod tests {
         let expected3 = Option::from(transposition3.clone());
         assert_eq!(expected3, *transposition_table.get_from_zobrist(transposition3.zobrist));
         assert_ne!(expected, expected3);
+    }
+
+    #[test]
+    fn test_linear_probing_repetition() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+
+        let mut repetition_table = RepetitionTable::new();
+        let zobrist = zobrist_hash(&board);
+        let start = Instant::now();
+        let hash = repetition_table.hash(zobrist);
+        assert_eq!(zobrist as usize % REPETITION_CAPACITY, hash);
+        let duration = start.elapsed();
+        println!("hash lasted for: {:?}", duration);
+        repetition_table.keys[hash] = Option::from(zobrist);
+
+        let start = Instant::now();
+        let hash = repetition_table.hash(zobrist + 1);
+        assert_eq!((zobrist as usize + 1) % REPETITION_CAPACITY, hash);
+        let duration = start.elapsed();
+        println!("hash lasted for: {:?}", duration);
+        repetition_table.keys[hash] = Option::from(zobrist + 1);
+
+        let start = Instant::now();
+        let hash = repetition_table.hash(zobrist + 1);
+        assert_eq!((zobrist as usize + 1) % REPETITION_CAPACITY, hash);
+        let duration = start.elapsed();
+        println!("hash lasted for: {:?}", duration);
+    }
+
+    #[test]
+    fn check_visit_unvisit_position() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+
+        let mut repetition_table = RepetitionTable::new();
+
+        for i in 0..REPETITION_CAPACITY {
+            assert_eq!(0, repetition_table.table[i]);
+            assert_eq!(None, repetition_table.keys[i]);
+        }
+
+        assert!(!repetition_table.visit_position(board.zobrist));
+        assert_eq!(1, repetition_table.table[repetition_table.hash(board.zobrist)]);
+        assert_eq!(board.zobrist, repetition_table.keys[repetition_table.hash(board.zobrist)].unwrap_or_default());
+
+        assert!(!repetition_table.visit_position(board.zobrist));
+        assert_eq!(2, repetition_table.table[repetition_table.hash(board.zobrist)]);
+        assert_eq!(board.zobrist, repetition_table.keys[repetition_table.hash(board.zobrist)].unwrap_or_default());
+
+        assert!(repetition_table.visit_position(board.zobrist));
+        assert_eq!(3, repetition_table.table[repetition_table.hash(board.zobrist)]);
+        assert_eq!(board.zobrist, repetition_table.keys[repetition_table.hash(board.zobrist)].unwrap_or_default());
+
+        repetition_table.unvisit_position(board.zobrist);
+        assert_eq!(2, repetition_table.table[repetition_table.hash(board.zobrist)]);
+        assert_eq!(board.zobrist, repetition_table.keys[repetition_table.hash(board.zobrist)].unwrap_or_default());
+
+        let mut board = Board::new();
+        board.read_fen("rnbqkbnr/pppppppp/8/8/8/7P/PPPPPPP1/RNBQKBNR w KQkq - 0 1");
+
+        assert!(!repetition_table.visit_position(board.zobrist));
+        assert_eq!(1, repetition_table.table[repetition_table.hash(board.zobrist)]);
+        assert_eq!(board.zobrist, repetition_table.keys[repetition_table.hash(board.zobrist)].unwrap_or_default());
+
+        repetition_table.unvisit_position(board.zobrist);
+        assert_eq!(0, repetition_table.table[repetition_table.hash(board.zobrist)]);
+        assert_eq!(None, repetition_table.keys[repetition_table.hash(board.zobrist)]);
     }
 }

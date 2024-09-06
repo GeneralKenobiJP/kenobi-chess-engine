@@ -7,18 +7,20 @@ use crate::board::Board;
 use crate::evaluation::{DRAW, evaluate};
 use crate::move_generator::{Move, MoveList};
 use crate::evaluation::{POSITIVE_INFINITY, NEGATIVE_INFINITY};
-use crate::transposition_table::{Transposition, TranspositionTable};
+use crate::transposition_table::{RepetitionTable, Transposition, TranspositionTable};
 use crate::transposition_table::NodeType::{ALPHA, BETA, EXACT};
 
 struct Engine {
-    transposition_table: TranspositionTable
+    transposition_table: TranspositionTable,
+    repetition_table: RepetitionTable
 }
 
 impl Engine {
     
     pub fn new() -> Self {
         Engine {
-            transposition_table: TranspositionTable::new()
+            transposition_table: TranspositionTable::new(),
+            repetition_table: RepetitionTable::new()
         }
     }
     
