@@ -113,6 +113,7 @@ impl TranspositionTable {
     }
 }
 
+#[derive(Debug)]
 pub struct RepetitionTable {
     table: Vec<u8>,
     keys: Vec<Option<u64>>
@@ -165,6 +166,20 @@ impl RepetitionTable {
         if self.table[hash] == 0 {
             self.keys[hash] = None;
         }
+    }
+
+    /// Checks if the repetition table is, i.e. if it stores any visit
+    pub fn is_empty(&self) -> bool {
+        for i in 0..REPETITION_CAPACITY {
+            if self.table[i] != 0 || self.keys[i] != None { return false }
+        }
+
+        true
+    }
+
+    /// Returns the number of visits that occurred for a position with a given zobrist
+    pub fn get_repetition(&self, zobrist: u64) -> u8 {
+        self.table[self.hash(zobrist)]
     }
 }
 

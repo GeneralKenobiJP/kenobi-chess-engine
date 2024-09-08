@@ -30,6 +30,7 @@ impl Engine {
     /// Calls the algorithm using alpha-beta prunning and quiescence search
     // #[inline(never)]
     pub fn search(&mut self, move_list: &mut MoveList, depth: u32) -> i32 {
+        // println!("Repetition table: {:?}", self.repetition_table);
         self.search_alpha_beta_prunning(move_list, depth, NEGATIVE_INFINITY, POSITIVE_INFINITY)
     }
 
@@ -51,6 +52,11 @@ impl Engine {
     /// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
     // #[inline(never)]
     fn search_alpha_beta_prunning(&mut self, move_list: &mut MoveList, depth: u32, mut alpha: i32, beta: i32) -> i32 {
+        if self.repetition_table.visit_position(move_list.get_board().zobrist) {
+            self.repetition_table.unvisit_position(move_list.get_board().zobrist);
+            return DRAW;
+        }
+
         let original_alpha=  alpha;
 
         let transposition_entry = self.transposition_table.get_from_zobrist(move_list.get_board().zobrist);
@@ -59,15 +65,16 @@ impl Engine {
         if let Some(transposition) = transposition_entry {
             if transposition.depth >= depth {
                 // println!("Transposition reached: {:?}", transposition);
-                if transposition.node_type == EXACT { return transposition.value; }
-                if transposition.node_type == ALPHA && transposition.value <= alpha { return transposition.value; } // Our alpha cut-off is even bigger than it was for the put operation
-                if /*transposition.node_type == BETA*/ transposition.value >= beta { return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
+                if transposition.node_type == EXACT { self.repetition_table.unvisit_position(move_list.get_board().zobrist); return transposition.value; }
+                if transposition.node_type == ALPHA && transposition.value <= alpha { self.repetition_table.unvisit_position(move_list.get_board().zobrist); return transposition.value; } // Our alpha cut-off is even bigger than it was for the put operation
+                if /*transposition.node_type == BETA*/ transposition.value >= beta { self.repetition_table.unvisit_position(move_list.get_board().zobrist); return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
             }
         }
 
         let mut value: i32 = NEGATIVE_INFINITY;
 
         if depth == 0 {
+            self.repetition_table.unvisit_position(move_list.get_board().zobrist);
             return self.quiescence_search(move_list, -beta, -alpha);
         }
 
@@ -98,6 +105,7 @@ impl Engine {
         }
 
         if best_moves[0] == None {
+            self.repetition_table.unvisit_position(move_list.get_board().zobrist);
             if move_list.is_in_check() { return NEGATIVE_INFINITY; }
             else { return DRAW; }
         }
@@ -105,6 +113,8 @@ impl Engine {
         // update the transposition table
         let node_type = if value <= original_alpha { ALPHA } else if value >= beta { BETA } else { EXACT };
         self.transposition_table.put_transposition(&Transposition::from_zobrist(move_list.get_board().zobrist, depth, value, &best_moves, node_type));
+
+        self.repetition_table.unvisit_position(move_list.get_board().zobrist);
 
         value
     }
@@ -170,8 +180,16 @@ impl Engine {
     /// Uses the given move list to generate moves in-place and analyze the board situation.
     /// Alpha - minimum score the current player is assured of (we found a move of at least this value earlier at this depth)
     /// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
-    // #[inline(never)]
+    #[inline(never)]
     fn quiescence_search(&mut self, move_list: &mut MoveList, mut alpha: i32, beta: i32) -> i32 {
+        println!("Is repetition table empty?: {}", self.repetition_table.is_empty());
+        println!("Visits to this position before: {}", self.repetition_table.get_repetition(move_list.get_board().zobrist));
+        if self.repetition_table.visit_position(move_list.get_board().zobrist) {
+            println!("Repetition alert MADAFAKA");
+            self.repetition_table.unvisit_position(move_list.get_board().zobrist);
+            return DRAW;
+        }
+
         let original_alpha = alpha;
 
         let transposition_entry = self.transposition_table.get_from_zobrist(move_list.get_board().zobrist);
@@ -179,9 +197,9 @@ impl Engine {
         // Check if we have a proper entry in the transposition table
         if let Some(transposition) = transposition_entry {
             // println!("Quiescence transposition reached: {:?}", transposition);
-            if transposition.node_type == EXACT { return transposition.value; }
-            if transposition.node_type == ALPHA && transposition.value <= alpha { return transposition.value; } // Our alpha cut-off is even bigger than it was for the put operation
-            if /*transposition.node_type == BETA*/ transposition.value >= beta { return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
+            if transposition.node_type == EXACT { self.repetition_table.unvisit_position(move_list.get_board().zobrist); return transposition.value; }
+            if transposition.node_type == ALPHA && transposition.value <= alpha { self.repetition_table.unvisit_position(move_list.get_board().zobrist); return transposition.value; } // Our alpha cut-off is even bigger than it was for the put operation
+            if /*transposition.node_type == BETA*/ transposition.value >= beta { self.repetition_table.unvisit_position(move_list.get_board().zobrist); return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
         }
 
         let mut value: i32 = NEGATIVE_INFINITY;
@@ -190,6 +208,7 @@ impl Engine {
         // println!("Quiescence moves: {:?}", move_list.get_moves());
 
         if move_list.get_moves().len() == 0 {
+            self.repetition_table.unvisit_position(move_list.get_board().zobrist);
             return evaluate(move_list.get_board());
         }
 
@@ -213,6 +232,7 @@ impl Engine {
         }
 
         if best_moves[0] == None {
+            self.repetition_table.unvisit_position(move_list.get_board().zobrist);
             if move_list.is_in_check() { return NEGATIVE_INFINITY; }
             else { return DRAW; }
         }
@@ -220,6 +240,8 @@ impl Engine {
         // update the transposition table
         let node_type = if value <= original_alpha { ALPHA } else if value >= beta { BETA } else { EXACT };
         self.transposition_table.put_transposition(&Transposition::from_zobrist(move_list.get_board().zobrist, 0, value, &best_moves, node_type));
+
+        self.repetition_table.unvisit_position(move_list.get_board().zobrist);
 
         value
     }
@@ -339,6 +361,7 @@ mod tests {
         let mut engine = Engine::new();
 
         assert_eq!(DRAW, engine.search_alpha_beta_prunning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert!(engine.repetition_table.is_empty());
         // assert_eq!(DRAW, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY)); // might want to solve this or might not bother at all
     }
 
@@ -352,6 +375,7 @@ mod tests {
         let mut engine = Engine::new();
 
         assert_eq!(NEGATIVE_INFINITY, engine.search_alpha_beta_prunning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert!(engine.repetition_table.is_empty());
 
         let mut board = Board::new();
         let fen = "7k/6QQ/8/8/8/8/8/4K3 w - - 0 1";
@@ -361,6 +385,7 @@ mod tests {
         let mut engine = Engine::new();
 
         assert_eq!(POSITIVE_INFINITY, engine.search_alpha_beta_prunning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert!(engine.repetition_table.is_empty());
     }
 
     #[test]
@@ -374,6 +399,7 @@ mod tests {
 
         assert_eq!(0, engine.search_naive(&mut move_list, 1));
         assert_eq!(-100, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert!(engine.repetition_table.is_empty());
     }
 
     #[test]
@@ -387,6 +413,7 @@ mod tests {
 
         assert_eq!(0, engine.search_naive(&mut move_list, 1));
         assert_eq!(-100, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert!(engine.repetition_table.is_empty());
     }
 
     #[test]
@@ -404,6 +431,7 @@ mod tests {
 
         assert_eq!(100, engine.search_naive(&mut move_list, 1));
         assert_eq!(-700, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert!(engine.repetition_table.is_empty());
     }
 
     #[test]
@@ -420,6 +448,74 @@ mod tests {
         assert_eq!([Option::from(piece_move), Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN))], best_moves);
         assert_eq!(200, value);
         assert_eq!([0, -100], best_moves_evaluation);
+    }
+
+    #[test]
+    fn test_threefold_repetition_alpha_beta() {
+        let mut board = Board::new();
+        let fen = "4k3/4p3/8/8/8/8/8/4K3 w - - 0 1";
+        board.read_fen(fen);
+        let mut move_list = MoveList::new(&mut board);
+
+        let mut engine = Engine::new();
+
+        assert_eq!(-100, engine.search_alpha_beta_prunning(&mut move_list, 0, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
+        assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
+        assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
+
+        engine = Engine::new();
+        engine.repetition_table.visit_position(move_list.get_board().zobrist);
+
+        assert_eq!(-100, engine.search_alpha_beta_prunning(&mut move_list, 0, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
+        assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
+
+        engine = Engine::new();
+        engine.repetition_table.visit_position(move_list.get_board().zobrist);
+        engine.repetition_table.visit_position(move_list.get_board().zobrist);
+
+        assert_eq!(DRAW, engine.search_alpha_beta_prunning(&mut move_list, 0, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
+
+        engine.repetition_table.unvisit_position(move_list.get_board().zobrist);
+        engine.repetition_table.unvisit_position(move_list.get_board().zobrist);
+        assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
+        assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
+    }
+
+    #[test]
+    fn test_threefold_repetition_quiescence() {
+        let mut board = Board::new();
+        let fen = "4k3/4p3/8/8/8/8/8/4K3 w - - 0 1";
+        board.read_fen(fen);
+        let mut move_list = MoveList::new(&mut board);
+
+        let mut engine = Engine::new();
+
+        assert_eq!(-100, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
+        assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
+        assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
+
+        engine = Engine::new();
+        engine.repetition_table.visit_position(move_list.get_board().zobrist);
+
+        assert_eq!(-100, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
+        assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
+
+        engine = Engine::new();
+        engine.repetition_table.visit_position(move_list.get_board().zobrist);
+        engine.repetition_table.visit_position(move_list.get_board().zobrist);
+
+        assert_eq!(DRAW, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
+
+        engine.repetition_table.unvisit_position(move_list.get_board().zobrist);
+        engine.repetition_table.unvisit_position(move_list.get_board().zobrist);
+        assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
+        assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
     }
 
     #[test]
