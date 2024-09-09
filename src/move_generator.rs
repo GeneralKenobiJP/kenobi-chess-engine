@@ -108,6 +108,10 @@ impl<'a> MoveList<'a> {
         self.castling_rights_history.push(self.board.castling_rights);
         self.halfmoves_history.push(self.board.half_moves as u8);
 
+        if self.board.en_passant_possibility != 64 {
+            self.board.zobrist ^= ZOBRIST_TABLE.en_passant[self.board.en_passant_possibility as usize % 8];
+        }
+
         let origin = 1 << piece_move.origin;
         let target = 1 << piece_move.target;
         let active_player = self.board.active_player as usize;
@@ -149,6 +153,7 @@ impl<'a> MoveList<'a> {
             }
             if piece_move.target.abs_diff(piece_move.origin) == 16 {
                 self.board.en_passant_possibility = (piece_move.target + piece_move.origin)/2;
+                self.board.zobrist ^= ZOBRIST_TABLE.en_passant[piece_move.target as usize % 8];
             }
             else { self.board.en_passant_possibility = NO_PASSANT; }
         }
@@ -250,12 +255,14 @@ impl<'a> MoveList<'a> {
     /// Unmakes a move on the board, given a move.
     pub fn unmake_move(&mut self, piece_move: &Move) {
         self.board.zobrist ^= zobrist_castling_rights(&self.board.castling_rights);
+        if self.board.en_passant_possibility != 64 { self.board.zobrist ^= ZOBRIST_TABLE.en_passant[self.board.en_passant_possibility as usize % 8] };
 
         self.board.en_passant_possibility = self.en_passant_history.pop().unwrap_or_default();
         self.board.castling_rights = self.castling_rights_history.pop().unwrap_or_default();
         self.board.half_moves = self.halfmoves_history.pop().unwrap_or_default() as u32;
 
         self.board.zobrist ^= zobrist_castling_rights(&self.board.castling_rights);
+        if self.board.en_passant_possibility != 64 { self.board.zobrist ^= ZOBRIST_TABLE.en_passant[self.board.en_passant_possibility as usize % 8] };
 
         let origin = 1 << piece_move.target;
         let target = 1 << piece_move.origin;
