@@ -8,7 +8,7 @@ use crate::piece::Colour;
 use crate::piece::Colour::BLACK;
 
 // const PIECES_POSITIONS: usize = 64*12;
-const ZOBRIST_CONSTANTS: usize = 64*12 + 8 + 16 + 1;
+const ZOBRIST_CONSTANTS: usize = 64*12 + 8 + 4 + 1;
 const ZOBRIST_SEED: u64 = 0xFFAA_B58C_5833_FE89u64;
 
 /// Each significant board position atomic setting gets its own pseudo-random key
@@ -17,7 +17,7 @@ const ZOBRIST_SEED: u64 = 0xFFAA_B58C_5833_FE89u64;
 pub struct ZobristTable {
     pub pieces: [[u64; 64]; 12],
     pub en_passant: [u64; 8], // we only need to know the file of en passant
-    pub castling_rights: [u64; 16], // there are 2^4=16 possible combinations of castling rights
+    pub castling_rights: [u64; 4],
     pub active_player: u64 // we only need to indicate if black is the active player
 }
 
@@ -61,6 +61,20 @@ pub fn zobrist_hash(board: &Board) -> u64 {
     hash
 }
 
+pub fn zobrist_disable_castling_rights(castling_rights: &[bool; 4], active_player: usize) -> u64 {
+    let mut hash = 0u64;
+
+    if castling_rights[2 * active_player] {
+        hash ^= ZOBRIST_TABLE.castling_rights[2 * active_player];
+    }
+
+    if castling_rights[2 * active_player + 1] {
+        hash ^= ZOBRIST_TABLE.castling_rights[2 * active_player + 1];
+    }
+
+    hash
+}
+
 /// Hashes a given piece type using Zobrist hashing, given a piece bitboard and its type index, as specified by Piece enum
 fn zobrist_piece(piece_bitboard: u64, piece_index: usize) -> u64 {
     let mut hash = 0u64;
@@ -92,16 +106,12 @@ fn zobrist_en_passant(en_passant_square: u8) -> u64 {
 }
 
 /// Hashes given castling rights using Zobrist hashing.
-/// Translates castling rights into 4-bit number to do so.
-fn zobrist_castling_rights(castling_rights: &[bool; 4]) -> u64 {
+pub fn zobrist_castling_rights(castling_rights: &[bool; 4]) -> u64 {
     let mut hash = 0u64;
 
-    let mut bitboard = 0usize;
     for i in 0..castling_rights.len() {
-        if castling_rights[i] { bitboard |= 1 << i; continue; }
+        if castling_rights[i] { hash ^= ZOBRIST_TABLE.castling_rights[i] }
     }
-
-    hash ^= ZOBRIST_TABLE.castling_rights[bitboard];
 
     hash
 }
@@ -116,6 +126,7 @@ fn zobrist_active_player(active_player: &Colour) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
     use crate::piece::Colour::WHITE;
     use crate::piece::Piece::{BISHOP, KING, KNIGHT, PAWN, QUEEN, ROOK};
     use super::*;
@@ -139,6 +150,19 @@ mod tests {
     }
 
     #[test]
+    fn check_zobrist_seed() {
+        let keys = [Vec::from(ZOBRIST_TABLE.pieces.as_flattened()), Vec::from(&ZOBRIST_TABLE.en_passant), Vec::from(&ZOBRIST_TABLE.castling_rights), Vec::from(&[ZOBRIST_TABLE.active_player])].concat();
+
+        for i in 0..ZOBRIST_CONSTANTS {
+            for j in i+1..ZOBRIST_CONSTANTS {
+                if keys[i] == keys[j] { panic!() }
+            }
+        }
+
+        assert!(true);
+    }
+
+    #[test]
     fn check_zobrist_piece() {
         assert_eq!(ZOBRIST_TABLE.pieces[1][0], zobrist_piece(0x0000_0000_0000_0001, 1));
         assert_eq!(ZOBRIST_TABLE.pieces[1][0] ^ ZOBRIST_TABLE.pieces[1][47], zobrist_piece(0x0000_8000_0000_0001, 1));
@@ -154,11 +178,11 @@ mod tests {
 
     #[test]
     fn check_zobrist_castling_rights() {
-        assert_eq!(ZOBRIST_TABLE.castling_rights[15], zobrist_castling_rights(&[true, true, true, true]));
-        assert_eq!(ZOBRIST_TABLE.castling_rights[7], zobrist_castling_rights(&[true, true, true, false]));
-        assert_eq!(ZOBRIST_TABLE.castling_rights[5], zobrist_castling_rights(&[true, false, true, false]));
-        assert_eq!(ZOBRIST_TABLE.castling_rights[0], zobrist_castling_rights(&[false, false, false, false]));
-        assert_eq!(ZOBRIST_TABLE.castling_rights[8], zobrist_castling_rights(&[false, false, false, true]));
+        assert_eq!(ZOBRIST_TABLE.castling_rights[0] ^ ZOBRIST_TABLE.castling_rights[1] ^ ZOBRIST_TABLE.castling_rights[2] ^ ZOBRIST_TABLE.castling_rights[3], zobrist_castling_rights(&[true, true, true, true]));
+        assert_eq!(ZOBRIST_TABLE.castling_rights[0] ^ ZOBRIST_TABLE.castling_rights[1] ^ ZOBRIST_TABLE.castling_rights[2], zobrist_castling_rights(&[true, true, true, false]));
+        assert_eq!(ZOBRIST_TABLE.castling_rights[0] ^ ZOBRIST_TABLE.castling_rights[2], zobrist_castling_rights(&[true, false, true, false]));
+        assert_eq!(0, zobrist_castling_rights(&[false, false, false, false]));
+        assert_eq!(ZOBRIST_TABLE.castling_rights[3], zobrist_castling_rights(&[false, false, false, true]));
     }
 
     #[test]
@@ -177,8 +201,11 @@ mod tests {
         ^ ZOBRIST_TABLE.pieces[PAWN as usize][16] ^ ZOBRIST_TABLE.pieces[PAWN as usize][17]
         ^ ZOBRIST_TABLE.pieces[PAWN as usize][31] ^ ZOBRIST_TABLE.pieces[KING as usize + 6 * BLACK as usize][59]
         ^ ZOBRIST_TABLE.pieces[ROOK as usize + 6 * BLACK as usize][63] ^ ZOBRIST_TABLE.pieces[KNIGHT as usize + 6 * BLACK as usize][62]
-        ^ ZOBRIST_TABLE.en_passant[7] ^ ZOBRIST_TABLE.castling_rights[8] ^ ZOBRIST_TABLE.active_player;
+        ^ ZOBRIST_TABLE.en_passant[7] ^ ZOBRIST_TABLE.castling_rights[3] ^ ZOBRIST_TABLE.active_player;
 
+        let time = Instant::now();
         assert_eq!(expected, zobrist_hash(&board));
+        let duration = time.elapsed();
+        println!("zobrist_hash lasted for: {:?}", duration);
     }
 }

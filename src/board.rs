@@ -97,6 +97,8 @@ impl Board {
         let temp = self.active_player;
         self.active_player = self.inactive_player;
         self.inactive_player = temp;
+
+        self.zobrist ^= ZOBRIST_TABLE.active_player;
     }
 
     /// Calculates distance between two given squares

@@ -9,6 +9,7 @@ use crate::board::{Board, CASTLE_BLACK_KINGSIDE_FLAGS, CASTLE_BLACK_KINGSIDE_MAS
 use crate::piece::Colour::{BLACK, WHITE};
 use crate::piece::Piece::{BISHOP, KING, KNIGHT, PAWN, QUEEN, ROOK};
 use crate::magic_hasher::{magic_hash_bishop, magic_hash_rook, MAGIC_MASK_BISHOP, MAGIC_MASK_ROOK};
+use crate::zobrist::{zobrist_castling_rights, zobrist_disable_castling_rights, ZOBRIST_TABLE};
 
 const KNIGHT_SHIFTS: [i8; 8] = [17, 10, -6, -15, -17, -10, 6, 15]; // Beginning on NW, counter-clockwise
 const INITIAL_STACK_CAPACITY: usize = 30; // used by MoveList constructor
@@ -154,23 +155,25 @@ impl<'a> MoveList<'a> {
         else if piece_move.piece == KING {
             self.board.en_passant_possibility = NO_PASSANT;
 
+            self.board.zobrist ^= zobrist_disable_castling_rights(&self.board.castling_rights, active_player);
+
             self.board.castling_rights[2*active_player] = false;
             self.board.castling_rights[2*active_player + 1] = false;
         }
         else { self.board.en_passant_possibility = NO_PASSANT; }
 
         match piece_move.origin {
-            0 => self.board.castling_rights[WHITE as usize] = false,
-            7 => self.board.castling_rights[WHITE as usize + 1] = false,
-            56 => self.board.castling_rights[2 * BLACK as usize] = false,
-            63 => self.board.castling_rights[2* BLACK as usize + 1] = false,
+            0 => self.disable_castling_right(WHITE as usize),
+            7 => self.disable_castling_right(WHITE as usize + 1),
+            56 => self.disable_castling_right(2 * BLACK as usize),
+            63 =>  self.disable_castling_right(2 * BLACK as usize + 1),
             _ => ()
         }
         match piece_move.target {
-            0 => self.board.castling_rights[WHITE as usize] = false,
-            7 => self.board.castling_rights[WHITE as usize + 1] = false,
-            56 => self.board.castling_rights[2 * BLACK as usize] = false,
-            63 => self.board.castling_rights[2 * BLACK as usize + 1] = false,
+            0 => self.disable_castling_right(WHITE as usize),
+            7 => self.disable_castling_right(WHITE as usize + 1),
+            56 => self.disable_castling_right(2 * BLACK as usize),
+            63 => self.disable_castling_right(2 * BLACK as usize + 1),
             _ => ()
         }
 
@@ -200,6 +203,8 @@ impl<'a> MoveList<'a> {
     fn make_castling_move(&mut self, piece_move: &Move) {
         let flag_pointer;
         let mask;
+
+        self.board.zobrist ^= zobrist_disable_castling_rights(&self.board.castling_rights, self.board.active_player as usize);
 
         self.board.castling_rights[2 * self.board.active_player as usize] = false;
         self.board.castling_rights[2 * self.board.active_player as usize + 1] = false;
@@ -244,9 +249,13 @@ impl<'a> MoveList<'a> {
 
     /// Unmakes a move on the board, given a move.
     pub fn unmake_move(&mut self, piece_move: &Move) {
+        self.board.zobrist ^= zobrist_castling_rights(&self.board.castling_rights);
+
         self.board.en_passant_possibility = self.en_passant_history.pop().unwrap_or_default();
         self.board.castling_rights = self.castling_rights_history.pop().unwrap_or_default();
         self.board.half_moves = self.halfmoves_history.pop().unwrap_or_default() as u32;
+
+        self.board.zobrist ^= zobrist_castling_rights(&self.board.castling_rights);
 
         let origin = 1 << piece_move.target;
         let target = 1 << piece_move.origin;
@@ -334,6 +343,12 @@ impl<'a> MoveList<'a> {
         self.board.piece_bitboards[6*self.board.inactive_player as usize + KING as usize] |= flag_pointer[0];
         self.board.piece_bitboards[6*self.board.inactive_player as usize + ROOK as usize] &= mask;
         self.board.piece_bitboards[6*self.board.inactive_player as usize + ROOK as usize] |= flag_pointer[1];
+    }
+
+    fn disable_castling_right(&mut self, index: usize) {
+        if self.board.castling_rights[index] == false { return; }
+        self.board.castling_rights[index] = false;
+        self.board.zobrist ^= ZOBRIST_TABLE.castling_rights[index];
     }
 
     /// Generates moves and updates move list based on the situation on the board
