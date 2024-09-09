@@ -4,6 +4,9 @@ mod move_generator;
 mod magic_hasher;
 mod perft;
 mod evaluation;
+mod search;
+mod zobrist;
+mod transposition_table;
 
 use std::io;
 use scanner_rust::ScannerStr;

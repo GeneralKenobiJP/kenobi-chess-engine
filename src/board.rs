@@ -10,12 +10,15 @@ use scanner_rust::ScannerStr;
 use crate::piece::Piece;
 use crate::piece::Colour;
 use crate::piece::Colour::{BLACK, WHITE};
+use crate::zobrist::{zobrist_hash, ZOBRIST_TABLE};
 
 pub const START_POSITION: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 pub const UPPER_RANK_LOWEST_TILE: u8 = 56;
 pub const LOWER_RANK_HIGHEST_TILE: u8 = 7;
 pub const NOT_FILE_A_MASK: u64 = 0b0111111101111111011111110111111101111111011111110111111101111111;
 pub const NOT_FILE_H_MASK: u64 = 0b1111111011111110111111101111111011111110111111101111111011111110;
+pub const FILE_1_MASK: u64 = 0x00000000000000FF;
+pub const FILE_8_MASK: u64 = 0xFF00000000000000;
 pub const CASTLE_WHITE_KINGSIDE_MASK: u64 =  0xFFFFFFFFFFFFFFF0;
 pub const CASTLE_WHITE_QUEENSIDE_MASK: u64 = 0xFFFFFFFFFFFFFF07;
 pub const CASTLE_BLACK_KINGSIDE_MASK: u64 =  0xF0FFFFFFFFFFFFFF;
@@ -42,6 +45,7 @@ pub struct Board {
     pub half_moves: u32, // The halfmove clock specifies a decimal number of half moves with respect to the 50 move draw rule.
     // It is reset to zero after a capture or a pawn move and incremented otherwise.
     pub full_moves: u32,
+    pub zobrist: u64
 }
 
 impl Board {
@@ -57,6 +61,7 @@ impl Board {
             en_passant_possibility: 64,
             half_moves: 0,
             full_moves: 1,
+            zobrist: 0
         }
     }
 
@@ -67,11 +72,12 @@ impl Board {
     ///     - tile - tile number (u32)
     pub fn put_piece(&mut self, piece: Piece, colour: Colour, tile: u32) {
         let bit = 1 << tile;
-        self.main_bitboard += bit;
-        self.empty_bitboard -= bit;
-        self.colour_bitboards[colour as usize] += bit;
+        self.main_bitboard |= bit;
+        self.empty_bitboard ^= bit;
+        self.colour_bitboards[colour as usize] |= bit;
         let index = piece as usize + 6 * colour as usize;
-        self.piece_bitboards[index] += bit;
+        self.piece_bitboards[index] |= bit;
+        self.zobrist ^= ZOBRIST_TABLE.pieces[index][tile as usize];
     }
 
     /// Prints debug information about the board
@@ -91,6 +97,8 @@ impl Board {
         let temp = self.active_player;
         self.active_player = self.inactive_player;
         self.inactive_player = temp;
+
+        self.zobrist ^= ZOBRIST_TABLE.active_player;
     }
 
     /// Calculates distance between two given squares
@@ -181,6 +189,8 @@ impl Board {
         let full_moves = scanner.next().unwrap_or_default().unwrap_or_default().parse().unwrap_or_default();
         self.full_moves = full_moves;
 
+        self.zobrist = zobrist_hash(&self);
+
         // self.print_board();
     }
 
@@ -228,6 +238,7 @@ mod tests {
         assert_eq!(board.en_passant_possibility, 64);
         assert_eq!(board.half_moves, 0);
         assert_eq!(board.full_moves, 1);
+        assert_eq!(board.zobrist, zobrist_hash(&board));
     }
 
     #[test]
@@ -284,6 +295,7 @@ mod tests {
         assert_eq!(board.en_passant_possibility, 19);
         assert_eq!(board.half_moves, 0);
         assert_eq!(board.full_moves, 1);
+        assert_eq!(board.zobrist, zobrist_hash(&board));
     }
 
     #[test]
@@ -313,6 +325,7 @@ mod tests {
         assert_eq!(board.en_passant_possibility, 64);
         assert_eq!(board.half_moves, 1);
         assert_eq!(board.full_moves, 2);
+        assert_eq!(board.zobrist, zobrist_hash(&board));
     }
 
     #[test]
