@@ -363,12 +363,16 @@ impl<'a> MoveList<'a> {
         self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*self.board.active_player as usize + ROOK as usize][flag_pointer[1].checked_ilog2().unwrap_or_default() as usize];
     }
 
+    /// Disables castling rights for the given player and adjusts the zobrist
     fn disable_player_castling_rights(&mut self, player: u8) {
         let disability_mask = 0b00001100 >> 2 * player;
 
         self.disable_castling_rights(disability_mask);
     }
 
+    /// Disables castling rights with a given disability mask.
+    /// Disability mask should contain 1 for every bit corresponding to the particular right that should be disabled
+    /// i.e. 1001 should disable K and q
     fn disable_castling_rights(&mut self, disability_mask: u8) {
         self.board.zobrist ^= zobrist_castling_rights(self.board.castling_rights);
         self.board.castling_rights &= !disability_mask;

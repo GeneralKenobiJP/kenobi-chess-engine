@@ -119,6 +119,7 @@ impl Engine {
         value
     }
 
+    /// Given a move and its evaluation, insert into a given array of best moves and array of best moves evaluation at a proper position
     // #[inline(never)]
     fn insert_into_best_moves(best_moves: &mut [Option<Move>; 3], value: &mut i32, best_moves_evaluation: &mut [i32; 2], piece_move: Move, move_evaluation: i32) {
         if move_evaluation > *value {
