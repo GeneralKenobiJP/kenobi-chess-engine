@@ -119,6 +119,7 @@ impl Engine {
         value
     }
 
+    /// Given a move and its evaluation, insert into a given array of best moves and array of best moves evaluation at a proper position
     // #[inline(never)]
     fn insert_into_best_moves(best_moves: &mut [Option<Move>; 3], value: &mut i32, best_moves_evaluation: &mut [i32; 2], piece_move: Move, move_evaluation: i32) {
         if move_evaluation > *value {
@@ -182,10 +183,10 @@ impl Engine {
     /// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
     #[inline(never)]
     fn quiescence_search(&mut self, move_list: &mut MoveList, mut alpha: i32, beta: i32) -> i32 {
-        println!("Is repetition table empty?: {}", self.repetition_table.is_empty());
-        println!("Visits to this position before: {}", self.repetition_table.get_repetition(move_list.get_board().zobrist));
+        // println!("Is repetition table empty?: {}", self.repetition_table.is_empty());
+        // println!("Visits to this position before: {}", self.repetition_table.get_repetition(move_list.get_board().zobrist));
         if self.repetition_table.visit_position(move_list.get_board().zobrist) {
-            println!("Repetition alert MADAFAKA");
+            // println!("Repetition alert MADAFAKA");
             self.repetition_table.unvisit_position(move_list.get_board().zobrist);
             return DRAW;
         }
@@ -576,7 +577,7 @@ mod tests {
         let mut engine = Engine::new();
 
         let now = Instant::now();
-        println!("{}", engine.search(&mut move_list, 5));
+        println!("{}", engine.search(&mut move_list, 15));
         let duration = now.elapsed();
         println!("search lasted for: {:?}", duration);
         println!("Best moves: {:?}", engine.transposition_table.get_from_position(&board).clone().unwrap().best_moves);

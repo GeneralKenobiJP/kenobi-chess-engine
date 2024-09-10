@@ -8,7 +8,7 @@ use crate::piece::Colour;
 use crate::piece::Colour::BLACK;
 
 // const PIECES_POSITIONS: usize = 64*12;
-const ZOBRIST_CONSTANTS: usize = 64*12 + 8 + 4 + 1;
+const ZOBRIST_CONSTANTS: usize = 64*12 + 8 + 16 + 1;
 const ZOBRIST_SEED: u64 = 0xFFAA_B58C_5833_FE89u64;
 
 /// Each significant board position atomic setting gets its own pseudo-random key
@@ -17,7 +17,7 @@ const ZOBRIST_SEED: u64 = 0xFFAA_B58C_5833_FE89u64;
 pub struct ZobristTable {
     pub pieces: [[u64; 64]; 12],
     pub en_passant: [u64; 8], // we only need to know the file of en passant
-    pub castling_rights: [u64; 4],
+    pub castling_rights: [u64; 16], // 2^4 = 16 combinations, little-endian
     pub active_player: u64 // we only need to indicate if black is the active player
 }
 
@@ -55,22 +55,8 @@ pub fn zobrist_hash(board: &Board) -> u64 {
     }
 
     hash ^= zobrist_en_passant(board.en_passant_possibility);
-    hash ^= zobrist_castling_rights(&board.castling_rights);
+    hash ^= zobrist_castling_rights(board.castling_rights);
     hash ^= zobrist_active_player(&board.active_player);
-
-    hash
-}
-
-pub fn zobrist_disable_castling_rights(castling_rights: &[bool; 4], active_player: usize) -> u64 {
-    let mut hash = 0u64;
-
-    if castling_rights[2 * active_player] {
-        hash ^= ZOBRIST_TABLE.castling_rights[2 * active_player];
-    }
-
-    if castling_rights[2 * active_player + 1] {
-        hash ^= ZOBRIST_TABLE.castling_rights[2 * active_player + 1];
-    }
 
     hash
 }
@@ -106,14 +92,8 @@ fn zobrist_en_passant(en_passant_square: u8) -> u64 {
 }
 
 /// Hashes given castling rights using Zobrist hashing.
-pub fn zobrist_castling_rights(castling_rights: &[bool; 4]) -> u64 {
-    let mut hash = 0u64;
-
-    for i in 0..castling_rights.len() {
-        if castling_rights[i] { hash ^= ZOBRIST_TABLE.castling_rights[i] }
-    }
-
-    hash
+pub fn zobrist_castling_rights(castling_rights: u8) -> u64 {
+    ZOBRIST_TABLE.castling_rights[castling_rights as usize]
 }
 
 /// Hashes a given active player colour using Zobrist hashing:
@@ -178,11 +158,11 @@ mod tests {
 
     #[test]
     fn check_zobrist_castling_rights() {
-        assert_eq!(ZOBRIST_TABLE.castling_rights[0] ^ ZOBRIST_TABLE.castling_rights[1] ^ ZOBRIST_TABLE.castling_rights[2] ^ ZOBRIST_TABLE.castling_rights[3], zobrist_castling_rights(&[true, true, true, true]));
-        assert_eq!(ZOBRIST_TABLE.castling_rights[0] ^ ZOBRIST_TABLE.castling_rights[1] ^ ZOBRIST_TABLE.castling_rights[2], zobrist_castling_rights(&[true, true, true, false]));
-        assert_eq!(ZOBRIST_TABLE.castling_rights[0] ^ ZOBRIST_TABLE.castling_rights[2], zobrist_castling_rights(&[true, false, true, false]));
-        assert_eq!(0, zobrist_castling_rights(&[false, false, false, false]));
-        assert_eq!(ZOBRIST_TABLE.castling_rights[3], zobrist_castling_rights(&[false, false, false, true]));
+        assert_eq!(ZOBRIST_TABLE.castling_rights[15], zobrist_castling_rights(15));
+        assert_eq!(ZOBRIST_TABLE.castling_rights[14], zobrist_castling_rights(14));
+        assert_eq!(ZOBRIST_TABLE.castling_rights[10], zobrist_castling_rights(10));
+        assert_eq!(ZOBRIST_TABLE.castling_rights[0], zobrist_castling_rights(0));
+        assert_eq!(ZOBRIST_TABLE.castling_rights[1], zobrist_castling_rights(1));
     }
 
     #[test]
@@ -201,7 +181,7 @@ mod tests {
         ^ ZOBRIST_TABLE.pieces[PAWN as usize][16] ^ ZOBRIST_TABLE.pieces[PAWN as usize][17]
         ^ ZOBRIST_TABLE.pieces[PAWN as usize][31] ^ ZOBRIST_TABLE.pieces[KING as usize + 6 * BLACK as usize][59]
         ^ ZOBRIST_TABLE.pieces[ROOK as usize + 6 * BLACK as usize][63] ^ ZOBRIST_TABLE.pieces[KNIGHT as usize + 6 * BLACK as usize][62]
-        ^ ZOBRIST_TABLE.en_passant[7] ^ ZOBRIST_TABLE.castling_rights[3] ^ ZOBRIST_TABLE.active_player;
+        ^ ZOBRIST_TABLE.en_passant[7] ^ ZOBRIST_TABLE.castling_rights[1] ^ ZOBRIST_TABLE.active_player;
 
         let time = Instant::now();
         assert_eq!(expected, zobrist_hash(&board));

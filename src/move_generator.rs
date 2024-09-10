@@ -5,11 +5,11 @@
 use std::collections::HashSet;
 use std::time::Instant;
 use crate::piece::Piece;
-use crate::board::{Board, CASTLE_BLACK_KINGSIDE_FLAGS, CASTLE_BLACK_KINGSIDE_MASK, CASTLE_BLACK_QUEENSIDE_FLAGS, CASTLE_BLACK_QUEENSIDE_MASK, CASTLE_WHITE_KINGSIDE_FLAGS, CASTLE_WHITE_KINGSIDE_MASK, CASTLE_WHITE_QUEENSIDE_FLAGS, CASTLE_WHITE_QUEENSIDE_MASK, FILE_1_MASK, FILE_8_MASK, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_MASK, UNCASTLE_BLACK_KINGSIDE_FLAGS, UNCASTLE_BLACK_QUEENSIDE_FLAGS, UNCASTLE_WHITE_KINGSIDE_FLAGS, UNCASTLE_WHITE_QUEENSIDE_FLAGS, UPPER_RANK_LOWEST_TILE};
+use crate::board::{Board, CASTLE_BLACK_KINGSIDE_FLAGS, CASTLE_BLACK_KINGSIDE_MASK, CASTLE_BLACK_QUEENSIDE_FLAGS, CASTLE_BLACK_QUEENSIDE_MASK, CASTLE_KING_POSITION_MASK, CASTLE_ROOK_POSITION_MASK, CASTLE_WHITE_KINGSIDE_FLAGS, CASTLE_WHITE_KINGSIDE_MASK, CASTLE_WHITE_QUEENSIDE_FLAGS, CASTLE_WHITE_QUEENSIDE_MASK, FILE_1_MASK, FILE_8_MASK, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_MASK, UNCASTLE_BLACK_KINGSIDE_FLAGS, UNCASTLE_BLACK_QUEENSIDE_FLAGS, UNCASTLE_WHITE_KINGSIDE_FLAGS, UNCASTLE_WHITE_QUEENSIDE_FLAGS, UPPER_RANK_LOWEST_TILE};
 use crate::piece::Colour::{BLACK, WHITE};
 use crate::piece::Piece::{BISHOP, KING, KNIGHT, PAWN, QUEEN, ROOK};
 use crate::magic_hasher::{magic_hash_bishop, magic_hash_rook, MAGIC_MASK_BISHOP, MAGIC_MASK_ROOK};
-use crate::zobrist::{zobrist_castling_rights, zobrist_disable_castling_rights, ZOBRIST_TABLE};
+use crate::zobrist::{zobrist_castling_rights, ZOBRIST_TABLE};
 
 const KNIGHT_SHIFTS: [i8; 8] = [17, 10, -6, -15, -17, -10, 6, 15]; // Beginning on NW, counter-clockwise
 const INITIAL_STACK_CAPACITY: usize = 30; // used by MoveList constructor
@@ -68,7 +68,7 @@ pub struct MoveList<'a> {
     moves: Vec<Move>,
     capture_history: Vec<u8>, // used as stack, 16 == no capture
     en_passant_history: Vec<u8>, // used as stack, 64 == no passant
-    castling_rights_history: Vec<[bool;4]>, // used as stack
+    castling_rights_history: Vec<u8>, // used as stack
     halfmoves_history: Vec<u8>, // used as stack
     king_lookup_table: [u64; 64], // should be treated as immutable after setup
     knight_lookup_table: [u64; 64], // should be treated as immutable after setup
@@ -131,7 +131,9 @@ impl<'a> MoveList<'a> {
         self.board.colour_bitboards[active_player] ^= origin;
         self.board.colour_bitboards[active_player] |= target;
         self.board.piece_bitboards[6*active_player + piece] ^= origin;
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*active_player + piece][piece_move.origin as usize];
         self.board.piece_bitboards[6*active_player + final_piece] |= target;
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*active_player + final_piece][piece_move.target as usize];
 
         let mut should_reset_fifty_moves = false;
 
@@ -144,6 +146,7 @@ impl<'a> MoveList<'a> {
                 self.board.empty_bitboard |= en_passant_target;
                 self.board.colour_bitboards[self.board.inactive_player as usize] ^= en_passant_target;
                 self.board.piece_bitboards[6 * self.board.inactive_player as usize + PAWN as usize] ^= en_passant_target;
+                self.board.zobrist ^= ZOBRIST_TABLE.pieces[6 * self.board.inactive_player as usize + PAWN as usize][en_passant_target.checked_ilog2().unwrap_or_default() as usize];
 
                 self.capture_history.push(NO_CAPTURE);
                 self.board.en_passant_possibility = NO_PASSANT;
@@ -160,25 +163,22 @@ impl<'a> MoveList<'a> {
         else if piece_move.piece == KING {
             self.board.en_passant_possibility = NO_PASSANT;
 
-            self.board.zobrist ^= zobrist_disable_castling_rights(&self.board.castling_rights, active_player);
-
-            self.board.castling_rights[2*active_player] = false;
-            self.board.castling_rights[2*active_player + 1] = false;
+            self.disable_player_castling_rights(active_player as u8);
         }
         else { self.board.en_passant_possibility = NO_PASSANT; }
 
         match piece_move.origin {
-            0 => self.disable_castling_right(WHITE as usize),
-            7 => self.disable_castling_right(WHITE as usize + 1),
-            56 => self.disable_castling_right(2 * BLACK as usize),
-            63 =>  self.disable_castling_right(2 * BLACK as usize + 1),
+            0 => self.disable_castling_rights(8),
+            7 => self.disable_castling_rights(4),
+            56 => self.disable_castling_rights(2),
+            63 =>  self.disable_castling_rights(1),
             _ => ()
         }
         match piece_move.target {
-            0 => self.disable_castling_right(WHITE as usize),
-            7 => self.disable_castling_right(WHITE as usize + 1),
-            56 => self.disable_castling_right(2 * BLACK as usize),
-            63 => self.disable_castling_right(2 * BLACK as usize + 1),
+            0 => self.disable_castling_rights(8),
+            7 => self.disable_castling_rights(4),
+            56 => self.disable_castling_rights(2),
+            63 => self.disable_castling_rights(1),
             _ => ()
         }
 
@@ -191,6 +191,8 @@ impl<'a> MoveList<'a> {
             {
                 capture = index as u8;
                 self.board.piece_bitboards[index] = new_bitboard;
+
+                self.board.zobrist ^= ZOBRIST_TABLE.pieces[index][capture_bitboard.checked_ilog2().unwrap_or_default() as usize];
 
                 should_reset_fifty_moves = true;
             }
@@ -209,10 +211,7 @@ impl<'a> MoveList<'a> {
         let flag_pointer;
         let mask;
 
-        self.board.zobrist ^= zobrist_disable_castling_rights(&self.board.castling_rights, self.board.active_player as usize);
-
-        self.board.castling_rights[2 * self.board.active_player as usize] = false;
-        self.board.castling_rights[2 * self.board.active_player as usize + 1] = false;
+        self.disable_player_castling_rights(self.board.active_player as u8);
 
         if piece_move.origin == 3 {
             if piece_move.target == 1 {
@@ -243,9 +242,13 @@ impl<'a> MoveList<'a> {
         self.board.colour_bitboards[self.board.active_player as usize] &= mask;
         self.board.colour_bitboards[self.board.active_player as usize] |= summed_flag;
         self.board.piece_bitboards[6*self.board.active_player as usize + KING as usize] &= mask;
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*self.board.active_player as usize + KING as usize][(!mask & CASTLE_KING_POSITION_MASK).checked_ilog2().unwrap_or_default() as usize];
         self.board.piece_bitboards[6*self.board.active_player as usize + KING as usize] |= flag_pointer[0];
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*self.board.active_player as usize + KING as usize][flag_pointer[0].checked_ilog2().unwrap_or_default() as usize];
         self.board.piece_bitboards[6*self.board.active_player as usize + ROOK as usize] &= mask;
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*self.board.active_player as usize + ROOK as usize][(!mask & CASTLE_ROOK_POSITION_MASK).checked_ilog2().unwrap_or_default() as usize];
         self.board.piece_bitboards[6*self.board.active_player as usize + ROOK as usize] |= flag_pointer[1];
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*self.board.active_player as usize + ROOK as usize][flag_pointer[1].checked_ilog2().unwrap_or_default() as usize];
 
         self.capture_history.push(NO_CAPTURE);
         self.board.en_passant_possibility = NO_PASSANT;
@@ -254,14 +257,14 @@ impl<'a> MoveList<'a> {
 
     /// Unmakes a move on the board, given a move.
     pub fn unmake_move(&mut self, piece_move: &Move) {
-        self.board.zobrist ^= zobrist_castling_rights(&self.board.castling_rights);
+        self.board.zobrist ^= zobrist_castling_rights(self.board.castling_rights);
         if self.board.en_passant_possibility != 64 { self.board.zobrist ^= ZOBRIST_TABLE.en_passant[self.board.en_passant_possibility as usize % 8] };
 
         self.board.en_passant_possibility = self.en_passant_history.pop().unwrap_or_default();
         self.board.castling_rights = self.castling_rights_history.pop().unwrap_or_default();
         self.board.half_moves = self.halfmoves_history.pop().unwrap_or_default() as u32;
 
-        self.board.zobrist ^= zobrist_castling_rights(&self.board.castling_rights);
+        self.board.zobrist ^= zobrist_castling_rights(self.board.castling_rights);
         if self.board.en_passant_possibility != 64 { self.board.zobrist ^= ZOBRIST_TABLE.en_passant[self.board.en_passant_possibility as usize % 8] };
 
         let origin = 1 << piece_move.target;
@@ -282,7 +285,9 @@ impl<'a> MoveList<'a> {
         self.board.colour_bitboards[active_player] ^= origin;
         self.board.colour_bitboards[active_player] |= target;
         self.board.piece_bitboards[6*active_player + target_piece] ^= origin;
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*active_player + target_piece][piece_move.target as usize];
         self.board.piece_bitboards[6*active_player + piece] |= target;
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*active_player + piece][piece_move.origin as usize];
 
         if piece_move.piece == PAWN && piece_move.target == self.board.en_passant_possibility {
             let en_passant_target = ((origin << 8) | (origin >> 8)) & EN_PASSANT_MASK;
@@ -290,6 +295,7 @@ impl<'a> MoveList<'a> {
             self.board.empty_bitboard ^= en_passant_target;
             self.board.colour_bitboards[self.board.active_player as usize] |= en_passant_target;
             self.board.piece_bitboards[6 * self.board.active_player as usize + PAWN as usize] |= en_passant_target;
+            self.board.zobrist ^= ZOBRIST_TABLE.pieces[6 * self.board.active_player as usize + PAWN as usize][en_passant_target.checked_ilog2().unwrap_or_default() as usize];
 
             self.capture_history.pop();
 
@@ -306,6 +312,7 @@ impl<'a> MoveList<'a> {
         self.board.empty_bitboard ^= origin;
         self.board.colour_bitboards[self.board.active_player as usize] |= origin;
         self.board.piece_bitboards[capture as usize] |= origin;
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[capture as usize][piece_move.target as usize];
 
         self.board.switch_active_player();
     }
@@ -347,15 +354,29 @@ impl<'a> MoveList<'a> {
         self.board.colour_bitboards[self.board.inactive_player as usize] &= mask;
         self.board.colour_bitboards[self.board.inactive_player as usize] |= summed_flag;
         self.board.piece_bitboards[6*self.board.inactive_player as usize + KING as usize] &= mask;
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*self.board.active_player as usize + KING as usize][(!mask & CASTLE_KING_POSITION_MASK).checked_ilog2().unwrap_or_default() as usize];
         self.board.piece_bitboards[6*self.board.inactive_player as usize + KING as usize] |= flag_pointer[0];
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*self.board.active_player as usize + KING as usize][flag_pointer[0].checked_ilog2().unwrap_or_default() as usize];
         self.board.piece_bitboards[6*self.board.inactive_player as usize + ROOK as usize] &= mask;
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*self.board.active_player as usize + ROOK as usize][(!mask & CASTLE_ROOK_POSITION_MASK).checked_ilog2().unwrap_or_default() as usize];
         self.board.piece_bitboards[6*self.board.inactive_player as usize + ROOK as usize] |= flag_pointer[1];
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*self.board.active_player as usize + ROOK as usize][flag_pointer[1].checked_ilog2().unwrap_or_default() as usize];
     }
 
-    fn disable_castling_right(&mut self, index: usize) {
-        if self.board.castling_rights[index] == false { return; }
-        self.board.castling_rights[index] = false;
-        self.board.zobrist ^= ZOBRIST_TABLE.castling_rights[index];
+    /// Disables castling rights for the given player and adjusts the zobrist
+    fn disable_player_castling_rights(&mut self, player: u8) {
+        let disability_mask = 0b00001100 >> 2 * player;
+
+        self.disable_castling_rights(disability_mask);
+    }
+
+    /// Disables castling rights with a given disability mask.
+    /// Disability mask should contain 1 for every bit corresponding to the particular right that should be disabled
+    /// i.e. 1001 should disable K and q
+    fn disable_castling_rights(&mut self, disability_mask: u8) {
+        self.board.zobrist ^= zobrist_castling_rights(self.board.castling_rights);
+        self.board.castling_rights &= !disability_mask;
+        self.board.zobrist ^= zobrist_castling_rights(self.board.castling_rights);
     }
 
     /// Generates moves and updates move list based on the situation on the board
@@ -508,7 +529,7 @@ impl<'a> MoveList<'a> {
     fn generate_white_castling(&mut self) {
         if self.is_in_check() { return; }
 
-        if self.board.castling_rights[0] && self.board.main_bitboard & 6 == 0
+        if (self.board.castling_rights >> 3) == 1 && self.board.main_bitboard & 6 == 0
             && !self.is_edge_square_attacked_by_black(2) && !self.is_edge_square_attacked_by_black(1)
         {
             self.moves.push(Move { origin: 3, target: 1, promotion: 1, piece: KING });
@@ -516,7 +537,7 @@ impl<'a> MoveList<'a> {
 
         let queenside_bitboard: u64 = 0b0000000000000000000000000000000000000000000000000000000001110000;
 
-        if self.board.castling_rights[1] && self.board.main_bitboard & queenside_bitboard == 0
+        if (self.board.castling_rights >> 2) % 2 == 1 && self.board.main_bitboard & queenside_bitboard == 0
             && !self.is_edge_square_attacked_by_black(4) && !self.is_edge_square_attacked_by_black(5)
         {
             self.moves.push(Move { origin: 3, target: 5, promotion: 1, piece: KING });
@@ -529,14 +550,14 @@ impl<'a> MoveList<'a> {
         if self.is_in_check() { return; }
 
         let kingside_bitboard: u64 = 0b0000011000000000000000000000000000000000000000000000000000000000;
-        if self.board.castling_rights[2] && self.board.main_bitboard & kingside_bitboard == 0
+        if (self.board.castling_rights >> 1) % 2 == 1 && self.board.main_bitboard & kingside_bitboard == 0
             && !self.is_edge_square_attacked_by_white(58) && !self.is_edge_square_attacked_by_white(57)
         {
             self.moves.push(Move { origin: 59, target: 57, promotion: 1, piece: KING });
         }
 
         let queenside_bitboard: u64 = 0b0111000000000000000000000000000000000000000000000000000000000000;
-        if self.board.castling_rights[3] && (self.board.main_bitboard & queenside_bitboard) == 0
+        if self.board.castling_rights % 2 == 1 && (self.board.main_bitboard & queenside_bitboard) == 0
             && !self.is_edge_square_attacked_by_white(60) && !self.is_edge_square_attacked_by_white(61)
         {
             self.moves.push(Move { origin: 59, target: 61, promotion: 1, piece: KING });
@@ -2536,7 +2557,7 @@ mod tests {
 
         assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
         assert_eq!(44, move_list.en_passant_history[0]);
-        assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
+        assert_eq!(1, move_list.castling_rights_history[0]);
         assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
         assert_eq!(0, move_list.get_board().half_moves);
 
@@ -2592,7 +2613,7 @@ mod tests {
 
         assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
         assert_eq!(44, move_list.en_passant_history[0]);
-        assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
+        assert_eq!(1, move_list.castling_rights_history[0]);
         assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
         assert_eq!(2, move_list.get_board().half_moves);
 
@@ -2647,7 +2668,7 @@ mod tests {
 
         assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
         assert_eq!(44, move_list.en_passant_history[0]);
-        assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
+        assert_eq!(1, move_list.castling_rights_history[0]);
         assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
         assert_eq!(2, move_list.get_board().half_moves);
 
@@ -2702,7 +2723,7 @@ mod tests {
 
         assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
         assert_eq!(64, move_list.en_passant_history[0]);
-        assert_eq!([true, false, false, false], move_list.castling_rights_history[0]);
+        assert_eq!(8, move_list.castling_rights_history[0]);
         assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
         assert_eq!(0, move_list.get_board().half_moves);
 
@@ -2740,7 +2761,10 @@ mod tests {
         let origin: u64 = 1 << 55;
         let target: u64 = 1 << 39;
 
+        let now = Instant::now();
         move_list.make_move(&piece_move);
+        let duration = now.elapsed();
+        println!("make_move lasted for: {:?}", duration);
 
         assert_eq!(main_bitboard - origin + target, move_list.board.main_bitboard);
         assert_eq!(colour_bitboards[1] - origin + target, move_list.board.colour_bitboards[1]);
@@ -2757,7 +2781,7 @@ mod tests {
 
         assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
         assert_eq!(64, move_list.en_passant_history[0]);
-        assert_eq!([true, false, false, false], move_list.castling_rights_history[0]);
+        assert_eq!(8, move_list.castling_rights_history[0]);
         assert_eq!(47, move_list.board.en_passant_possibility);
         assert_eq!(0, move_list.get_board().half_moves);
 
@@ -2795,7 +2819,10 @@ mod tests {
         let origin: u64 = 1 << 32;
         let target: u64 = 1 << 41;
 
+        let now = Instant::now();
         move_list.make_move(&piece_move);
+        let duration = now.elapsed();
+        println!("make_move lasted for: {:?}", duration);
 
         assert_eq!(main_bitboard - origin | target, move_list.board.main_bitboard);
         assert_eq!(colour_bitboards[0] - origin | target, move_list.board.colour_bitboards[0]);
@@ -2817,7 +2844,7 @@ mod tests {
 
         assert_eq!(7, move_list.capture_history[0]);
         assert_eq!(44, move_list.en_passant_history[0]);
-        assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
+        assert_eq!(1, move_list.castling_rights_history[0]);
         assert_eq!(0, move_list.get_board().half_moves);
 
         // UNMAKE MOVE
@@ -2884,7 +2911,7 @@ mod tests {
 
         assert_eq!(9, move_list.capture_history[0]);
         assert_eq!(44, move_list.en_passant_history[0]);
-        assert_eq!([false, false, false, true], move_list.castling_rights_history[0]);
+        assert_eq!(1, move_list.castling_rights_history[0]);
         assert_eq!(0, move_list.get_board().half_moves);
 
         // UNMAKE MOVE
@@ -2947,8 +2974,8 @@ mod tests {
         }
 
         assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
-        assert_eq!([true, true, true, true], move_list.castling_rights_history[0]);
-        assert_eq!([false, false, true, true], move_list.board.castling_rights);
+        assert_eq!(15, move_list.castling_rights_history[0]);
+        assert_eq!(3, move_list.board.castling_rights);
         assert_eq!(2, move_list.get_board().half_moves);
 
         // UNMAKE MOVE
@@ -3048,8 +3075,8 @@ mod tests {
         }
 
         assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
-        assert_eq!([true, true, true, true], move_list.castling_rights_history[0]);
-        assert_eq!([true, true, false, false], move_list.board.castling_rights);
+        assert_eq!(15, move_list.castling_rights_history[0]);
+        assert_eq!(12, move_list.board.castling_rights);
         assert_eq!(2, move_list.get_board().half_moves);
 
         // UNMAKE MOVE

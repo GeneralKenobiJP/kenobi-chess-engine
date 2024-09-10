@@ -6,3 +6,15 @@ edition = "2021"
 [dependencies]
 scanner-rust = "2.0.17"
 criterion = "0.5.1"
+
+[profile.dev]
+opt-level = 3
+lto = "fat"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+
+[profile.bench]
+opt-level = 3
+lto = "fat"
