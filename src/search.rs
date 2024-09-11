@@ -10,7 +10,7 @@ use crate::evaluation::{POSITIVE_INFINITY, NEGATIVE_INFINITY};
 use crate::transposition_table::{RepetitionTable, Transposition, TranspositionTable};
 use crate::transposition_table::NodeType::{ALPHA, BETA, EXACT};
 
-struct Engine {
+pub struct Engine {
     transposition_table: TranspositionTable,
     repetition_table: RepetitionTable
 }

@@ -7,6 +7,7 @@ mod evaluation;
 mod search;
 mod zobrist;
 mod transposition_table;
+mod bot;
 
 use std::io;
 use scanner_rust::ScannerStr;
