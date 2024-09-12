@@ -26,6 +26,6 @@ fn main() {
         io::stdin().read_line(&mut message)
             .expect("Failed to read line");
 
-        bot.message(&message);
+        if !bot.message(&message) { break; }
     }
 }

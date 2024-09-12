@@ -40,25 +40,6 @@ pub const WHITE_QUEENSIDE_CASTLING_FLAG: u8 = 0x04;
 pub const BLACK_KINGSIDE_CASTLING_FLAG: u8 = 0x02;
 pub const BLACK_QUEENSIDE_CASTLING_FLAG: u8 = 0x01;
 
-// pub enum CastlingRights {
-//     None = 0,
-//     q = 1,
-//     k = 2,
-//     kq = 3,
-//     Q = 4,
-//     Qq = 5,
-//     Qk = 6,
-//     Qkq = 7,
-//     K = 8,
-//     Kq = 9,
-//     Kk = 10,
-//     Kkq = 11,
-//     KQ = 12,
-//     KQq = 13,
-//     KQk = 14,
-//     KQkq = 15
-// }
-
 #[derive(Clone, Copy)]
 pub struct Board {
     pub main_bitboard: u64,
@@ -241,6 +222,9 @@ impl Board {
         square_file + square_rank * 8
     }
 
+    /// Outputs the piece occupying the given square.
+    /// Returns an option of a Piece enum.
+    /// If the square is empty, it returns None.
     pub fn get_piece_from_square(&self, square: u8) -> Option<Piece> {
         let tile = 1 << square;
         for index in 0..12 {

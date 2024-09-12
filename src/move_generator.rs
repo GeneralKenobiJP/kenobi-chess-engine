@@ -44,6 +44,8 @@ impl Move {
         }
     }
 
+    /// Converts a move encoded with the algebraic notation used by UCI to a Move object
+    /// E.g.: b7a8q -> Move{54, 63, 2, PAWN}
     pub fn from_algebraic_notation(algebraic: &str, board: &Board) -> Self {
         let mut chars = algebraic.chars();
 
@@ -128,6 +130,9 @@ impl<'a> MoveList<'a> {
         }
     }
 
+    /// Clears all the fields that should be cleared if we want to start over,
+    /// that is: all the vectors, which hold the game state.
+    /// Look-up tables are left untouched.
     pub fn clear(&mut self) {
         self.moves = Vec::new();
         self.capture_history = Vec::with_capacity(INITIAL_STACK_CAPACITY);
