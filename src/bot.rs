@@ -1,15 +1,19 @@
 use scanner_rust::ScannerStr;
+use crate::board::Board;
 use crate::initiate_bot;
+use crate::move_generator::MoveList;
 use crate::search::Engine;
 
-struct Bot {
-    engine: Engine
+pub struct Bot {
+    engine: Engine,
+    // move_list: MoveList<'a>
 }
 
 impl Bot {
     pub fn new() -> Self {
         Bot {
-            engine: Engine::new()
+            engine: Engine::new(),
+            // move_list: MoveList::new()
         }
     }
 
@@ -21,7 +25,7 @@ impl Bot {
             "uci" => Bot::uci(),
             "ucinewgame" => self.new_game(),
             "isready" => println!("readyok"),
-            // "position" => board.read_fen(scanner.next().unwrap_or_default().unwrap_or_default()),
+            // "position" => self.input_position(&mut scanner),
             // "quit" => break,
             _ => println!("unexpected command"),
         }
@@ -37,6 +41,14 @@ impl Bot {
     fn new_game(&mut self) {
         self.engine = Engine::new();
     }
+
+    // fn input_position(&mut self, scanner: &mut ScannerStr) {
+    //     let mode = scanner.next().unwrap_or_default().unwrap_or_default();
+    //
+    //     if mode == "startpos" {
+    //         self.move_list.
+    //     }
+    // }
 
     fn id() {
         println!("id name Kenobi {}", env!("CARGO_PKG_VERSION"));

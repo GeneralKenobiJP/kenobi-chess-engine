@@ -77,7 +77,7 @@ pub struct MoveList<'a> {
 }
 
 impl<'a> MoveList<'a> {
-    pub fn new(board: &'a mut Board) -> Self {
+    pub fn from_board(board: &'a mut Board) -> Self {
         MoveList {
             board,
             moves: Vec::new(),
@@ -91,6 +91,21 @@ impl<'a> MoveList<'a> {
             bishop_magic_bitboard: Self::setup_bishop_magic_bitboard()
         }
     }
+
+    // pub fn new() -> Self {
+    //     MoveList {
+    //         board: &mut Board::new(),
+    //         moves: Vec::new(),
+    //         capture_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
+    //         en_passant_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
+    //         castling_rights_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
+    //         halfmoves_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
+    //         king_lookup_table: Self::setup_king_lookup_table(),
+    //         knight_lookup_table: Self::setup_knight_lookup_table(),
+    //         rook_magic_bitboard: Self::setup_rook_magic_bitboard(),
+    //         bishop_magic_bitboard: Self::setup_bishop_magic_bitboard()
+    //     }
+    // }
 
     /// Getter for the move list
     pub fn get_moves(&self) -> &Vec<Move> {
@@ -438,7 +453,7 @@ impl<'a> MoveList<'a> {
     /// Does NOT construct a new vector for moves
     /// Note: this method is somewhat slow
     pub fn generate_checks(&mut self) {
-        let mut move_list = MoveList::new(&mut self.board);
+        let mut move_list = MoveList::from_board(&mut self.board);
 
         move_list.generate_moves();
 
@@ -456,10 +471,12 @@ impl<'a> MoveList<'a> {
 
     /// Outputs a lookup table for bitboards of possible king moves at given square, assuming no blocks
     /// Used by the constructor of the board for initialization of the lookup table
-    fn setup_king_lookup_table() -> [u64; 64] {
+    const fn setup_king_lookup_table() -> [u64; 64] {
         let mut lookup_table: [u64; 64] = [0; 64];
         let mut current_bit: u64 = 1;
-        for i in 0..64 {
+
+        let mut i = 0;
+        while i < 64 {
             let is_east: bool = if i % 8 == 0 { true } else { false };
             let is_west: bool = if i % 8 == 7 { true } else { false };
             let is_north: bool = if i / 8 == 7 { true } else { false };
@@ -475,6 +492,7 @@ impl<'a> MoveList<'a> {
             if !is_east && !is_south { lookup_table[i] |= current_bit >> 9 };
 
             current_bit <<= 1;
+            i += 1;
         }
 
         lookup_table
@@ -931,10 +949,13 @@ impl<'a> MoveList<'a> {
 
     /// Outputs a lookup table for bitboards of possible knight moves at given square, assuming no occupancy
     /// Used by the constructor of the board for initialization of the lookup table
-    fn setup_knight_lookup_table() -> [u64; 64] {
+    const fn setup_knight_lookup_table() -> [u64; 64] {
         let mut lookup_table: [u64; 64] = [0; 64];
-        for origin in 0..64 {
-            for direction in 0..8 {
+
+        let mut origin = 0;
+        while origin < 64 {
+            let mut direction = 0;
+            while direction < 8 {
                 let target: i8 = origin + KNIGHT_SHIFTS[direction];
                 if target > 63 || target < 0 {
                     continue;
@@ -945,7 +966,11 @@ impl<'a> MoveList<'a> {
                 }
 
                 lookup_table[origin as usize] |= 1 << target;
+
+                direction += 1;
             }
+
+            origin += 1;
         }
 
         lookup_table
@@ -1526,7 +1551,7 @@ mod tests {
     fn start_position() {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         // SETUP
 
@@ -1697,7 +1722,7 @@ mod tests {
     fn position_2() {
         let mut board = Board::new();
         board.read_fen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let expected_push_bitboard: u64 = 0b0000000000000000111111110000000000000000000000000000000000000000;
         let expected_double_push_bitboard: u64 = 0b0000000000000000000000001111111100000000000000000000000000000000;
@@ -1862,7 +1887,7 @@ mod tests {
     fn position_4() {
         let mut board = Board::new();
         board.read_fen("r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/2R2N2/P7/RK6 w q d6 1 25");
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let expected_push_bitboard: u64 =               0b0100000000000000000010010000000000000000100000000000000000000000;
         let expected_double_push_bitboard: u64 =        0b0000000000000000000000000000000010000000000000000000000000000000;
@@ -2036,7 +2061,7 @@ mod tests {
     fn check_king_lookup() {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         assert_eq!(0b0000000000000000000000000000000000000000000000000000001100000010, move_list.king_lookup_table[0]);
         assert_eq!(0b0000000000000000000000000000000000000000000000000000011100000101, move_list.king_lookup_table[1]);
@@ -2053,7 +2078,7 @@ mod tests {
     fn check_castling_white_both_possible() {
         let mut board = Board::new();
         board.read_fen("8/8/8/8/8/8/8/R3K2R w KQ - 1 1");
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let mut expected_move_list = Vec::<Move>::new();
 
@@ -2069,7 +2094,7 @@ mod tests {
     fn check_castling_white_kingside_possible() {
         let mut board = Board::new();
         board.read_fen("8/8/8/8/8/8/8/R3K2R w K - 1 1");
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let mut expected_move_list = Vec::<Move>::new();
 
@@ -2084,7 +2109,7 @@ mod tests {
     fn check_castling_white_queenside_possible() {
         let mut board = Board::new();
         board.read_fen("8/8/8/8/8/8/8/R3K2R w Q - 1 1");
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let mut expected_move_list = Vec::<Move>::new();
 
@@ -2099,7 +2124,7 @@ mod tests {
     fn check_castling_white_check() {
         let mut board = Board::new();
         board.read_fen("8/8/8/8/8/8/5p2/R3K2R w KQ - 1 1");
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let expected_move_list = Vec::<Move>::new();
 
@@ -2112,7 +2137,7 @@ mod tests {
     fn check_castling_white_block() {
         let mut board = Board::new();
         board.read_fen("8/8/8/8/8/8/5p2/RP2KP1R w KQ - 1 1");
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let expected_move_list = Vec::<Move>::new();
 
@@ -2125,7 +2150,7 @@ mod tests {
     fn check_castling_white_guarded() {
         let mut board = Board::new();
         board.read_fen("8/8/8/8/8/8/p5p1/R3K2R w KQ - 1 1");
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let mut expected_move_list = Vec::<Move>::new();
         expected_move_list.push(Move {origin: 3, target: 5, promotion: 1, piece: KING});
@@ -2139,7 +2164,7 @@ mod tests {
     fn check_castling_black_both_possible() {
         let mut board = Board::new();
         board.read_fen("r3k2r/8/8/8/8/8/8/8 b kq - 1 1");
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let mut expected_move_list = Vec::<Move>::new();
 
@@ -2155,7 +2180,7 @@ mod tests {
     fn check_castling_black_kingside_possible() {
         let mut board = Board::new();
         board.read_fen("r3k2r/8/8/8/8/8/8/8 b k - 1 1");
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let mut expected_move_list = Vec::<Move>::new();
 
@@ -2170,7 +2195,7 @@ mod tests {
     fn check_castling_black_queenside_possible() {
         let mut board = Board::new();
         board.read_fen("r3k2r/8/8/8/8/8/8/8 b q - 1 1");
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let mut expected_move_list = Vec::<Move>::new();
 
@@ -2185,7 +2210,7 @@ mod tests {
     fn check_castling_black_check() {
         let mut board = Board::new();
         board.read_fen("r3k2r/5P2/8/8/8/8/8/8 b kq - 1 1");
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let expected_move_list = Vec::<Move>::new();
 
@@ -2198,7 +2223,7 @@ mod tests {
     fn check_castling_black_block() {
         let mut board = Board::new();
         board.read_fen("rp2kp1r/8/8/8/8/8/8/8 b kq - 1 1");
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let expected_move_list = Vec::<Move>::new();
 
@@ -2211,7 +2236,7 @@ mod tests {
     fn check_castling_black_guarded() {
         let mut board = Board::new();
         board.read_fen("r3k2r/6P1/8/8/8/8/8/8 b kq - 1 1");
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let mut expected_move_list = Vec::<Move>::new();
         expected_move_list.push(Move {origin: 59, target: 61, promotion: 1, piece: KING});
@@ -2225,7 +2250,7 @@ mod tests {
     fn check_castling_white_knight_check() {
         let mut board = Board::new();
         board.read_fen("8/8/8/8/8/5n2/8/R3K2R w KQ - 1 1");
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let expected_move_list = Vec::<Move>::new();
 
@@ -2238,7 +2263,7 @@ mod tests {
     fn check_castling_white_bishop_check() {
         let mut board = Board::new();
         board.read_fen("8/8/8/8/8/4b3/8/R3K2R w KQ - 1 1");
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let expected_move_list = Vec::<Move>::new();
 
@@ -2251,7 +2276,7 @@ mod tests {
     fn check_castling_white_rook_check() {
         let mut board = Board::new();
         board.read_fen("8/8/8/8/8/5r2/8/R3K2R w KQ - 1 1");
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let mut expected_move_list = Vec::<Move>::new();
         expected_move_list.push(Move {origin: 3, target: 5, promotion: 1, piece: KING});
@@ -2265,7 +2290,7 @@ mod tests {
     fn check_castling_white_queen_check() {
         let mut board = Board::new();
         board.read_fen("8/8/8/2q5/8/8/8/R3K2R w KQ - 1 1");
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let expected_move_list = Vec::<Move>::new();
 
@@ -2278,7 +2303,7 @@ mod tests {
     fn check_knight_lookup() {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         assert_eq!(0b0000000000000000000000000000000000000000000000100000010000000000, move_list.knight_lookup_table[0]);
         assert_eq!(0b0000000000000000000000000000000000000000000001010000100000000000, move_list.knight_lookup_table[1]);
@@ -2430,7 +2455,7 @@ mod tests {
     fn check_rook_magic_bitboard() {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
-        let move_list = MoveList::new(&mut board);
+        let move_list = MoveList::from_board(&mut board);
 
         assert_eq!(0x01010101010101FE, move_list.rook_magic_bitboard[0]);
         assert_eq!(0x808080808080807F, move_list.rook_magic_bitboard[0 | (0b111 << 12)]);
@@ -2514,7 +2539,7 @@ mod tests {
     fn check_bishop_magic_bitboard() {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
-        let move_list = MoveList::new(&mut board);
+        let move_list = MoveList::from_board(&mut board);
 
         assert_eq!(0x8040201008040200, move_list.bishop_magic_bitboard[0]);
         assert_eq!(0x0102040810204000, move_list.bishop_magic_bitboard[0 | (0b111 << 10)]);
@@ -2527,7 +2552,7 @@ mod tests {
         let fen = "r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/2R2N2/P7/RK6 w q d6 1 25";
         board.read_fen(fen);
         let board_copy = board.clone();
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let main_bitboard = board_copy.main_bitboard;
         let colour_bitboards = board_copy.colour_bitboards.clone();
@@ -2582,7 +2607,7 @@ mod tests {
         let fen = "r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/2R2N2/P7/RK6 w q d6 1 25";
         board.read_fen(fen);
         let board_copy = board.clone();
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
 
         let main_bitboard = board_copy.main_bitboard;
@@ -2638,7 +2663,7 @@ mod tests {
         let fen = "r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/2R2N2/P7/RK6 w q d6 1 25";
         board.read_fen(fen);
         let board_copy = board.clone();
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let main_bitboard = board_copy.main_bitboard;
         let colour_bitboards = board_copy.colour_bitboards.clone();
@@ -2693,7 +2718,7 @@ mod tests {
         let fen = "rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b K - 1 2";
         board.read_fen(fen);
         let board_copy = board.clone();
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let main_bitboard = board_copy.main_bitboard;
         let colour_bitboards = board_copy.colour_bitboards.clone();
@@ -2748,7 +2773,7 @@ mod tests {
         let fen = "rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b K - 1 2";
         board.read_fen(fen);
         let board_copy = board.clone();
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let main_bitboard = board_copy.main_bitboard;
         let colour_bitboards = board_copy.colour_bitboards.clone();
@@ -2806,7 +2831,7 @@ mod tests {
         let fen = "r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/2R2N2/P7/RK6 w q d6 1 25";
         board.read_fen(fen);
         let board_copy = board.clone();
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let main_bitboard = board_copy.main_bitboard;
         let colour_bitboards = board_copy.colour_bitboards.clone();
@@ -2868,7 +2893,7 @@ mod tests {
         let fen = "r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/2R2N2/P7/RK6 w q d6 1 25";
         board.read_fen(fen);
         let board_copy = board.clone();
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let main_bitboard = board_copy.main_bitboard;
         let colour_bitboards = board_copy.colour_bitboards.clone();
@@ -2938,7 +2963,7 @@ mod tests {
         let fen = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 1 1";
         board.read_fen(fen);
         let board_copy = board.clone();
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let main_bitboard = board_copy.main_bitboard;
         let colour_bitboards = board_copy.colour_bitboards.clone();
@@ -2999,7 +3024,7 @@ mod tests {
         let fen = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 1 1";
         board.read_fen(fen);
         let board_copy = board.clone();
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let main_bitboard = board_copy.main_bitboard;
         let colour_bitboards = board_copy.colour_bitboards.clone();
@@ -3039,7 +3064,7 @@ mod tests {
         let fen = "r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 1 1";
         board.read_fen(fen);
         let board_copy = board.clone();
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let main_bitboard = board_copy.main_bitboard;
         let colour_bitboards = board_copy.colour_bitboards.clone();
@@ -3100,7 +3125,7 @@ mod tests {
         let fen = "r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 1 1";
         board.read_fen(fen);
         let board_copy = board.clone();
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let main_bitboard = board_copy.main_bitboard;
         let mut colour_bitboards = board_copy.colour_bitboards;
@@ -3139,7 +3164,7 @@ mod tests {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
 
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let start = Instant::now();
         move_list.is_in_check();
@@ -3156,7 +3181,7 @@ mod tests {
         expected_move_list.push(Move {origin: 3, target: 4, promotion: 0, piece: KING});
         expected_move_list.push(Move {origin: 3, target: 11, promotion: 0, piece: KING});
 
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         move_list.generate_king_captures();
 
@@ -3171,7 +3196,7 @@ mod tests {
         let mut expected_move_list = Vec::<Move>::new();
         expected_move_list.push(Move {origin: 3, target: 12, promotion: 0, piece: PAWN});
 
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         move_list.generate_white_pawn_captures();
 
@@ -3189,7 +3214,7 @@ mod tests {
         expected_move_list.push(Move {origin: 12, target: 3, promotion: 4, piece: PAWN});
         expected_move_list.push(Move {origin: 12, target: 3, promotion: 5, piece: PAWN});
 
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         move_list.generate_black_pawn_captures();
 
@@ -3204,7 +3229,7 @@ mod tests {
         let mut expected_move_list = Vec::<Move>::new();
         expected_move_list.push(Move {origin: 3, target: 20, promotion: 0, piece: KNIGHT});
 
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         move_list.generate_knight_captures();
 
@@ -3220,7 +3245,7 @@ mod tests {
         expected_move_list.push(Move {origin: 3, target: 43, promotion: 0, piece: ROOK});
         expected_move_list.push(Move {origin: 3, target: 5, promotion: 0, piece: ROOK});
 
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         move_list.generate_rook_captures();
 
@@ -3236,7 +3261,7 @@ mod tests {
         expected_move_list.push(Move {origin: 19, target: 40, promotion: 0, piece: BISHOP});
         expected_move_list.push(Move {origin: 19, target: 37, promotion: 0, piece: BISHOP});
 
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         move_list.generate_bishop_captures();
 
@@ -3254,7 +3279,7 @@ mod tests {
         expected_move_list.push(Move {origin: 19, target: 21, promotion: 0, piece: QUEEN});
         expected_move_list.push(Move {origin: 19, target: 51, promotion: 0, piece: QUEEN});
 
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         move_list.generate_queen_captures();
 
@@ -3278,7 +3303,7 @@ mod tests {
         expected_move_list.push(Move {origin: 35, target: 50, promotion: 0, piece: KNIGHT});
         expected_move_list.push(Move {origin: 35, target: 52, promotion: 0, piece: KNIGHT});
 
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         move_list.generate_captures();
 
@@ -3296,7 +3321,7 @@ mod tests {
         expected_move_list.push(Move {origin: 55, target: 63, promotion: 4, piece: PAWN});
         expected_move_list.push(Move {origin: 55, target: 63, promotion: 5, piece: PAWN});
 
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         move_list.generate_white_promotions();
 
@@ -3314,7 +3339,7 @@ mod tests {
         expected_move_list.push(Move {origin: 8, target: 0, promotion: 4, piece: PAWN});
         expected_move_list.push(Move {origin: 8, target: 0, promotion: 5, piece: PAWN});
 
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         move_list.generate_black_promotions();
 
@@ -3332,7 +3357,7 @@ mod tests {
         expected_move_list.push(Move {origin: 20, target: 41, promotion: 0, piece: BISHOP});
         expected_move_list.push(Move {origin: 20, target: 38, promotion: 0, piece: BISHOP});
 
-        let mut move_list = MoveList::new(&mut board);
+        let mut move_list = MoveList::from_board(&mut board);
 
         let start = Instant::now();
         move_list.generate_checks();

@@ -129,7 +129,7 @@ impl Board {
 
     /// Calculates distance between two given squares
     /// The squares are given as their number in the order (not bit)
-    pub fn distance(square1: u8, square2: u8) -> u8 {
+    pub const fn distance(square1: u8, square2: u8) -> u8 {
         let file1 = square1 % 8;
         let rank1 = square1 / 8;
 
