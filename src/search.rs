@@ -288,7 +288,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::new(&mut board);
         
         let mut engine = Engine::new();
 
@@ -308,7 +308,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "4k3/5r2/8/8/8/5R2/8/4K3 w - - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::new(&mut board);
         
         let mut engine = Engine::new();
 
@@ -331,7 +331,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "4k3/8/8/8/8/5PP1/1q6/P3K3 w - - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::new(&mut board);
 
         let mut engine = Engine::new();
 
@@ -344,7 +344,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "4k3/8/6q1/7P/8/8/PP6/4K3 w - - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::new(&mut board);
 
         let mut engine = Engine::new();
 
@@ -357,7 +357,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "8/8/8/R7/6k1/4Q3/8/4K2R b K - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::new(&mut board);
 
         let mut engine = Engine::new();
 
@@ -371,7 +371,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "7k/6QQ/8/8/8/8/8/4K3 b - - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::new(&mut board);
 
         let mut engine = Engine::new();
 
@@ -381,7 +381,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "7k/6QQ/8/8/8/8/8/4K3 w - - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::new(&mut board);
 
         let mut engine = Engine::new();
 
@@ -394,7 +394,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "8/3pk3/3p4/2P5/8/8/8/4K3 w - - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::new(&mut board);
 
         let mut engine = Engine::new();
 
@@ -408,7 +408,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "4k3/8/4pp2/4p3/3P4/3P4/8/4K3 w - - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::new(&mut board);
 
         let mut engine = Engine::new();
 
@@ -422,7 +422,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "8/3pk3/3p3P/2P5/8/8/8/4K3 w - - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::new(&mut board);
 
         let mut engine = Engine::new();
 
@@ -456,7 +456,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "4k3/4p3/8/8/8/8/8/4K3 w - - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::new(&mut board);
 
         let mut engine = Engine::new();
 
@@ -490,7 +490,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "4k3/4p3/8/8/8/8/8/4K3 w - - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::new(&mut board);
 
         let mut engine = Engine::new();
 
@@ -572,7 +572,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::new(&mut board);
 
         let mut engine = Engine::new();
 
