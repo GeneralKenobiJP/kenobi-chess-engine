@@ -146,7 +146,7 @@ impl Board {
     ///     fen - FEN string holding board position
     pub fn read_fen(&mut self, fen: &str) {
         let fen = if fen == "" { START_POSITION } else { fen };
-        println!("Received fen: {}", fen);
+        // println!("Received fen: {}", fen);
 
         let mut scanner = ScannerStr::new(fen);
 

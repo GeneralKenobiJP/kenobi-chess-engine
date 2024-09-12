@@ -1,7 +1,6 @@
 use std::time::Instant;
 use scanner_rust::ScannerStr;
 use crate::board::{Board, START_POSITION};
-use crate::initiate_bot;
 use crate::move_generator::{Move, MoveList};
 use crate::perft::perft_log;
 use crate::search::Engine;
@@ -53,12 +52,17 @@ impl<'a> Bot<'a> {
 
         let mut board = self.move_list.get_mutable_board();
 
-        if mode == "startpos" {
-            board.read_fen(START_POSITION);
+        match mode {
+            "startpos" => board.read_fen(START_POSITION),
+            "fen" => {let fen = scanner.next().unwrap_or_default().unwrap_or_default();
+                board.read_fen(fen);},
+            _ => return
         }
-        else /*fen*/ {
-            let fen = scanner.next().unwrap_or_default().unwrap_or_default();
-            board.read_fen(fen);
+
+        let option = scanner.next().unwrap_or_default();
+        match option {
+            None => return,
+            Some(subcommand) => if subcommand != "moves" { return }
         }
 
         self.input_moves(scanner);
