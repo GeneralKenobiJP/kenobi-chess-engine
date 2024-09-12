@@ -44,6 +44,42 @@ impl Move {
         }
     }
 
+    pub fn from_algebraic_notation(algebraic: &str, board: &Board) -> Self {
+        let mut chars = algebraic.chars();
+
+        let file = chars.next().unwrap_or_default();
+        let rank = chars.next().unwrap_or_default();
+
+        let origin = Board::encode_square(&file, &rank);
+
+        let file = chars.next().unwrap_or_default();
+        let rank = chars.next().unwrap_or_default();
+
+        let target = Board::encode_square(&file, &rank);
+
+        let mut promotion = 0;
+
+        if let Some(promotion_piece) = chars.next() {
+            match promotion_piece {
+                'q' => promotion = 2,
+                'r' => promotion = 3,
+                'b' => promotion = 4,
+                'n' => promotion = 5,
+                _ => promotion = 0
+            }
+        }
+
+        let piece = board.get_piece_from_square(origin).unwrap();
+
+        Move {
+            origin,
+            target,
+            promotion,
+            piece,
+        }
+
+    }
+
     /// Converts Move object to an algebraic notation used by UCI
     /// E.g.: Move{54, 63, 2, PAWN} -> b7a8q
     pub fn to_algebraic_notation(&self) -> String {
@@ -92,21 +128,6 @@ impl<'a> MoveList<'a> {
         }
     }
 
-    // pub fn new() -> Self {
-    //     MoveList {
-    //         board: &mut Board::new(),
-    //         moves: Vec::new(),
-    //         capture_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
-    //         en_passant_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
-    //         castling_rights_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
-    //         halfmoves_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
-    //         king_lookup_table: Self::setup_king_lookup_table(),
-    //         knight_lookup_table: Self::setup_knight_lookup_table(),
-    //         rook_magic_bitboard: Self::setup_rook_magic_bitboard(),
-    //         bishop_magic_bitboard: Self::setup_bishop_magic_bitboard()
-    //     }
-    // }
-
     /// Getter for the move list
     pub fn get_moves(&self) -> &Vec<Move> {
         &self.moves
@@ -114,7 +135,12 @@ impl<'a> MoveList<'a> {
 
     /// Getter for the board
     pub fn get_board(&self) -> &Board {
-        &self.board
+        self.board
+    }
+
+    /// Mutable getter for the board
+    pub fn get_mutable_board(&mut self) -> &mut Board {
+        self.board
     }
     
     /// Makes a move on the board, given a move.

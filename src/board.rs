@@ -5,6 +5,7 @@
 //! Defines some methods for board
 //! Implements FEN utility that allows to convert input FEN string into attributes of Board
 
+use num_traits::FromPrimitive;
 use scanner_rust::ScannerStr;
 
 use crate::piece::Piece;
@@ -229,6 +230,26 @@ impl Board {
         algebraic.push(char::from_digit(square as u32 / 8 + 1, 10).unwrap_or_default());
 
         algebraic
+    }
+
+    /// Given a human-readable format of the square name, outputs a u8 square representation.
+    /// E.g.: b2 -> 14
+    pub fn encode_square(file: &char, rank: &char) -> u8 {
+        let square_file = 'h' as u8 - *file as u8;
+        let square_rank = rank.to_digit(10).unwrap_or_default() as u8 - 1;
+
+        square_file + square_rank * 8
+    }
+
+    pub fn get_piece_from_square(&self, square: u8) -> Option<Piece> {
+        let tile = 1 << square;
+        for index in 0..12 {
+            if self.piece_bitboards[index] & tile != 0 {
+                return Option::from(FromPrimitive::from_usize(index));
+            }
+        }
+
+        None
     }
 }
 
