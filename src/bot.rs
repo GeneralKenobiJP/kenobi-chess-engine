@@ -40,6 +40,9 @@ impl<'a> Bot<'a> {
 
     fn new_game(&mut self) {
         self.engine = Engine::new();
+        let mut board = self.move_list.get_mutable_board();
+        *board = Board::new();
+        self.move_list = MoveList::from_board(board);
     }
 
     fn input_position(&mut self, scanner: &mut ScannerStr) {
