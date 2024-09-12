@@ -128,6 +128,14 @@ impl<'a> MoveList<'a> {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.moves = Vec::new();
+        self.capture_history = Vec::with_capacity(INITIAL_STACK_CAPACITY);
+        self.en_passant_history = Vec::with_capacity(INITIAL_STACK_CAPACITY);
+        self.castling_rights_history = Vec::with_capacity(INITIAL_STACK_CAPACITY);
+        self.halfmoves_history = Vec::with_capacity(INITIAL_STACK_CAPACITY);
+    }
+
     /// Getter for the move list
     pub fn get_moves(&self) -> &Vec<Move> {
         &self.moves
