@@ -89,8 +89,8 @@ impl<'a> Bot<'a> {
 
         match mode {
             "startpos" => board.read_fen(START_POSITION),
-            "fen" => {let fen = scanner.next().unwrap_or_default().unwrap_or_default();
-                board.read_fen(fen);},
+            "fen" => {let fen = Self::extract_fen(scanner);
+                board.read_fen(&fen);},
             _ => return response
         }
 
@@ -105,11 +105,23 @@ impl<'a> Bot<'a> {
         response
     }
 
+    /// Extracts fen from a string scanner
+    fn extract_fen(scanner: &mut ScannerStr) -> String {
+        let mut fen = String::new();
+
+        for i in 0..5 {
+            fen.push_str(scanner.next().unwrap_or_default().unwrap_or_default());
+            fen.push(' ');
+        }
+        fen.push_str(scanner.next().unwrap_or_default().unwrap_or_default());
+
+        fen
+    }
+
     /// Inputs moves after a "moves" subcommand within the "position" command.
     /// Makes moves, one by one, on the board until the moves are exhausted
     fn input_moves(&mut self, scanner: &mut ScannerStr) {
         while let Some(input) = scanner.next().unwrap_or_default() {
-            println!("{:?}", input);
             self.move_list.make_move(&Move::from_algebraic_notation(input, self.move_list.get_board()));
         }
     }
@@ -241,7 +253,7 @@ mod tests {
         let mut board = Board::new();
         let mut bot = Bot::new(&mut board);
 
-        bot.input_position(&mut ScannerStr::new(&"startpos"));
+        assert_eq!("", bot.input_position(&mut ScannerStr::new(&"startpos")));
 
         let mut expected_board = Board::new();
         expected_board.read_fen(START_POSITION);
@@ -254,12 +266,48 @@ mod tests {
         let mut board = Board::new();
         let mut bot = Bot::new(&mut board);
 
-        bot.input_position(&mut ScannerStr::new(&"8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1"));
+        assert_eq!("", bot.input_position(&mut ScannerStr::new(&"fen 8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1")));
 
         let mut expected_board = Board::new();
         expected_board.read_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
 
         assert_eq!(expected_board, *bot.move_list.get_board());
+    }
+
+    #[test]
+    fn check_extract_fen() {
+        let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 blabla yadayada";
+        assert_eq!(START_POSITION, Bot::extract_fen(&mut ScannerStr::new(&fen)));
+    }
+
+    #[test]
+    fn check_input_position_fen_moves() {
+        let mut board = Board::new();
+        let mut bot = Bot::new(&mut board);
+
+        assert_eq!("", bot.input_position(&mut ScannerStr::new(&"fen 8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1 moves e2e4")));
+
+        let mut expected_board = Board::new();
+        expected_board.read_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
+        let mut expected_move_list = MoveList::from_board(&mut expected_board);
+        expected_move_list.make_move(&Move{origin: 11, target: 27, promotion: 0, piece: PAWN});
+
+        assert_eq!(expected_move_list.get_board(), bot.move_list.get_board());
+    }
+
+    #[test]
+    fn check_input_position_startpos_moves() {
+        let mut board = Board::new();
+        let mut bot = Bot::new(&mut board);
+
+        assert_eq!("", bot.input_position(&mut ScannerStr::new(&"startpos moves e2e4")));
+
+        let mut expected_board = Board::new();
+        expected_board.read_fen(START_POSITION);
+        let mut expected_move_list = MoveList::from_board(&mut expected_board);
+        expected_move_list.make_move(&Move{origin: 11, target: 27, promotion: 0, piece: PAWN});
+
+        assert_eq!(expected_move_list.get_board(), bot.move_list.get_board());
     }
 
 }
