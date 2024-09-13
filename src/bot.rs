@@ -236,4 +236,30 @@ mod tests {
         assert_eq!(expected_bot.move_list.get_board(), bot.move_list.get_board());
     }
 
+    #[test]
+    fn check_input_position_start_position() {
+        let mut board = Board::new();
+        let mut bot = Bot::new(&mut board);
+
+        bot.input_position(&mut ScannerStr::new(&"startpos"));
+
+        let mut expected_board = Board::new();
+        expected_board.read_fen(START_POSITION);
+
+        assert_eq!(expected_board, *bot.move_list.get_board());
+    }
+
+    #[test]
+    fn check_input_position_fen() {
+        let mut board = Board::new();
+        let mut bot = Bot::new(&mut board);
+
+        bot.input_position(&mut ScannerStr::new(&"8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1"));
+
+        let mut expected_board = Board::new();
+        expected_board.read_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
+
+        assert_eq!(expected_board, *bot.move_list.get_board());
+    }
+
 }
