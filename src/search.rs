@@ -23,6 +23,10 @@ impl Engine {
             repetition_table: RepetitionTable::new()
         }
     }
+
+    pub fn get_best_move(&self, board: &Board) -> Move {
+        self.transposition_table.get_from_zobrist(board.zobrist).clone().unwrap().best_moves[0].unwrap().clone()
+    }
     
     /// Calls search algorithm to find the best possible moves in the current situation.
     /// Searches up to the given depth.
