@@ -109,6 +109,7 @@ impl<'a> Bot<'a> {
     /// Makes moves, one by one, on the board until the moves are exhausted
     fn input_moves(&mut self, scanner: &mut ScannerStr) {
         while let Some(input) = scanner.next().unwrap_or_default() {
+            println!("{:?}", input);
             self.move_list.make_move(&Move::from_algebraic_notation(input, self.move_list.get_board()));
         }
     }
@@ -171,6 +172,7 @@ impl<'a> Bot<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::piece::Piece::PAWN;
     use super::*;
 
     #[test]
@@ -210,6 +212,28 @@ mod tests {
 
         assert!(bot.move_list.get_moves().is_empty());
         assert_eq!(Engine::new(), bot.engine);
+    }
+
+    #[test]
+    fn check_readyok() {
+        assert_eq!("readyok", Bot::readyok());
+    }
+
+    #[test]
+    fn check_input_moves() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+
+        let mut bot = Bot::new(&mut board);
+        bot.input_moves(&mut ScannerStr::new(&"e2e4 e7e5"));
+
+        let mut expected_board = Board::new();
+        expected_board.read_fen(START_POSITION);
+        let mut expected_bot = Bot::new(&mut expected_board);
+        expected_bot.move_list.make_move(&Move{origin: 3, target: 19, promotion: 0, piece: PAWN});
+        expected_bot.move_list.make_move(&Move{origin: 59, target: 43, promotion: 0, piece: PAWN});
+
+        assert_eq!(expected_bot.move_list.get_board(), bot.move_list.get_board());
     }
 
 }

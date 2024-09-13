@@ -40,7 +40,7 @@ pub const WHITE_QUEENSIDE_CASTLING_FLAG: u8 = 0x04;
 pub const BLACK_KINGSIDE_CASTLING_FLAG: u8 = 0x02;
 pub const BLACK_QUEENSIDE_CASTLING_FLAG: u8 = 0x01;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Board {
     pub main_bitboard: u64,
     pub empty_bitboard: u64,
@@ -229,7 +229,7 @@ impl Board {
         let tile = 1 << square;
         for index in 0..12 {
             if self.piece_bitboards[index] & tile != 0 {
-                return Option::from(FromPrimitive::from_usize(index));
+                return Option::from(FromPrimitive::from_usize(index % 6));
             }
         }
 
@@ -239,6 +239,7 @@ impl Board {
 
 #[cfg(test)]
 mod tests {
+    use crate::piece::Piece::{BISHOP, KING, KNIGHT, PAWN, QUEEN, ROOK};
     use super::*;
 
     #[test]
@@ -362,5 +363,37 @@ mod tests {
     #[test]
     fn decode_square() {
         assert_eq!("b2", Board::decode_square(14));
+    }
+
+    #[test]
+    fn check_distance() {
+        assert_eq!(0, Board::distance(0,0));
+        assert_eq!(1, Board::distance(0,1));
+        assert_eq!(1, Board::distance(0,8));
+        assert_eq!(2, Board::distance(0,9));
+        assert_eq!(3, Board::distance(0,10));
+        assert_eq!(7, Board::distance(0, 56));
+        assert_eq!(14, Board::distance(0, 63));
+    }
+
+    #[test]
+    fn check_get_piece_from_square() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+
+        assert_eq!(Option::from(PAWN), board.get_piece_from_square(8));
+        assert_eq!(Option::from(PAWN), board.get_piece_from_square(13));
+        assert_eq!(Option::from(PAWN), board.get_piece_from_square(49));
+        assert_eq!(Option::from(ROOK), board.get_piece_from_square(0));
+        assert_eq!(Option::from(ROOK), board.get_piece_from_square(63));
+        assert_eq!(Option::from(KNIGHT), board.get_piece_from_square(6));
+        assert_eq!(Option::from(KNIGHT), board.get_piece_from_square(57));
+        assert_eq!(Option::from(BISHOP), board.get_piece_from_square(2));
+        assert_eq!(Option::from(BISHOP), board.get_piece_from_square(58));
+        assert_eq!(Option::from(QUEEN), board.get_piece_from_square(4));
+        assert_eq!(Option::from(QUEEN), board.get_piece_from_square(60));
+        assert_eq!(Option::from(KING), board.get_piece_from_square(3));
+        assert_eq!(Option::from(KING), board.get_piece_from_square(59));
+        assert_eq!(None, board.get_piece_from_square(30));
     }
 }
