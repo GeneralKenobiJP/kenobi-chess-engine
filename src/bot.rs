@@ -60,7 +60,7 @@ impl<'a> Bot<'a> {
         response.push_str(&Bot::id());
         response.push_str(&Bot::option());
 
-        response.push_str(&"uciok");
+        response.push_str(&"\nuciok");
         response
     }
 
@@ -155,7 +155,7 @@ impl<'a> Bot<'a> {
     fn id() -> String {
         let mut response = String::new();
         response.push_str(&format!("id name Kenobi {}", env!("CARGO_PKG_VERSION")));
-        response.push_str("id author Jakub Pietrzak");
+        response.push_str("\nid author Jakub Pietrzak");
         response
     }
 
@@ -175,6 +175,24 @@ mod tests {
     fn check_bot_new() {
         let mut board = Board::new();
         let bot = Bot::new(&mut board);
+    }
+
+    #[test]
+    fn check_id() {
+        let expected = format!("id name Kenobi {}\nid author Jakub Pietrzak", env!("CARGO_PKG_VERSION"));
+        assert_eq!(expected, Bot::id());
+    }
+
+    #[test]
+    fn check_option() {
+        let expected = "";
+        assert_eq!(expected, Bot::option());
+    }
+
+    #[test]
+    fn check_uci() {
+        let expected = format!("id name Kenobi {}\nid author Jakub Pietrzak\nuciok", env!("CARGO_PKG_VERSION"));
+        assert_eq!(expected, Bot::uci());
     }
 
 }
