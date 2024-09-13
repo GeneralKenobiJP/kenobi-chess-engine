@@ -27,3 +27,36 @@ impl StringBuilder {
         self.buffer
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::string_builder::StringBuilder;
+
+    #[test]
+    fn test_string_builder() {
+        let mut string_builder = StringBuilder::new();
+        assert_eq!("", string_builder.build());
+
+        let mut string_builder = StringBuilder::new();
+        string_builder.append_line("");
+        assert_eq!("", string_builder.build());
+
+        let mut string_builder = StringBuilder::new();
+        string_builder.append_line("");
+        string_builder.append_line("test");
+        assert_eq!("test", string_builder.build());
+
+        let mut string_builder = StringBuilder::new();
+        string_builder.append_line("");
+        string_builder.append_line("test");
+        string_builder.append_line("");
+        assert_eq!("test", string_builder.build());
+
+        let mut string_builder = StringBuilder::new();
+        string_builder.append_line("");
+        string_builder.append_line("test");
+        string_builder.append_line("");
+        string_builder.append_line("newline");
+        assert_eq!("test\nnewline", string_builder.build());
+    }
+}
