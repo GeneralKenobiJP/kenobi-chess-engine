@@ -230,8 +230,8 @@ mod tests {
         let mut expected_board = Board::new();
         expected_board.read_fen(START_POSITION);
         let mut expected_bot = Bot::new(&mut expected_board);
-        expected_bot.move_list.make_move(&Move{origin: 3, target: 19, promotion: 0, piece: PAWN});
-        expected_bot.move_list.make_move(&Move{origin: 59, target: 43, promotion: 0, piece: PAWN});
+        expected_bot.move_list.make_move(&Move{origin: 11, target: 27, promotion: 0, piece: PAWN});
+        expected_bot.move_list.make_move(&Move{origin: 51, target: 35, promotion: 0, piece: PAWN});
 
         assert_eq!(expected_bot.move_list.get_board(), bot.move_list.get_board());
     }
