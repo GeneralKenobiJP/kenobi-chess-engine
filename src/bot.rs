@@ -197,4 +197,19 @@ mod tests {
         assert_eq!(expected, Bot::uci());
     }
 
+    #[test]
+    fn check_new_game() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+        let mut bot = Bot::new(&mut board);
+        bot.engine.search(&mut bot.move_list, 1);
+        bot.move_list.generate_moves();
+        assert!(!bot.move_list.get_moves().is_empty());
+
+        assert_eq!("", bot.new_game());
+
+        assert!(bot.move_list.get_moves().is_empty());
+        assert_eq!(Engine::new(), bot.engine);
+    }
+
 }

@@ -53,6 +53,7 @@ impl Transposition {
     }
 }
 
+#[derive(Eq, PartialEq, Debug)]
 pub struct TranspositionTable {
     table: Vec<Option<Transposition>>
 }
@@ -113,7 +114,7 @@ impl TranspositionTable {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct RepetitionTable {
     table: Vec<u8>,
     keys: Vec<Option<u64>>
