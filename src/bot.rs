@@ -184,6 +184,7 @@ impl<'a> Bot<'a> {
 
 #[cfg(test)]
 mod tests {
+    use regex::Regex;
     use crate::piece::Piece::PAWN;
     use super::*;
 
@@ -308,6 +309,20 @@ mod tests {
         expected_move_list.make_move(&Move{origin: 11, target: 27, promotion: 0, piece: PAWN});
 
         assert_eq!(expected_move_list.get_board(), bot.move_list.get_board());
+    }
+
+    #[test]
+    fn check_go_perft() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+        let mut bot = Bot::new(&mut board);
+
+        let expected_regex = Regex::new(r"^perft \d+ searched \d+ nodes in (\d+.\d+|\d+)(ns|µs|ms|s)$").unwrap();
+
+        let response = bot.go_perft(&mut ScannerStr::new(&"1"));
+        println!("{}", response);
+
+        assert!(expected_regex.is_match(&*response));
     }
 
 }
