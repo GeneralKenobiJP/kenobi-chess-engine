@@ -11,6 +11,7 @@ use crate::board::{Board, START_POSITION};
 use crate::move_generator::{Move, MoveList};
 use crate::perft::perft_log;
 use crate::search::Engine;
+use crate::string_builder::StringBuilder;
 
 pub struct Bot<'a> {
     engine: Engine,
@@ -56,12 +57,12 @@ impl<'a> Bot<'a> {
     /// Returns the id of the engine (name, version, author) and available options.
     /// Ends the response with "uciok"
     fn uci() -> String {
-        let mut response = String::new();
-        response.push_str(&Bot::id());
-        response.push_str(&Bot::option());
-
-        response.push_str(&"\nuciok");
+        let mut response = StringBuilder::new();
         response
+            .append_line(&Bot::id())
+            .append_line(&Bot::option())
+            .append_line(&"uciok");
+        response.build()
     }
 
     /// Responds to a "isready" command with "readyok".
@@ -153,17 +154,18 @@ impl<'a> Bot<'a> {
 
     /// Responds with the id of the engine: name, version, author
     fn id() -> String {
-        let mut response = String::new();
-        response.push_str(&format!("id name Kenobi {}", env!("CARGO_PKG_VERSION")));
-        response.push_str("\nid author Jakub Pietrzak");
+        let mut response = StringBuilder::new();
         response
+            .append_line(&format!("id name Kenobi {}", env!("CARGO_PKG_VERSION")))
+            .append_line("id author Jakub Pietrzak");
+        response.build()
     }
 
     /// Responds with the options of the engine.
     /// Option is a setting that can be changed through the UCI.
     fn option() -> String {
-        let mut response = String::new();
-        response
+        let mut response = StringBuilder::new();
+        response.build()
     }
 }
 
