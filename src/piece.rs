@@ -5,7 +5,6 @@
 
 use crate::piece::Colour::{BLACK, WHITE};
 use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug, FromPrimitive)]
 pub enum Piece {

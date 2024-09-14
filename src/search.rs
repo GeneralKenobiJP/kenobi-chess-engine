@@ -2,7 +2,6 @@
 //! Builds a search tree to find the best possible move according to the evaluation algorithm
 //! Uses negamax convention, alpha-beta prunning, quiescence search.
 
-use std::ops::Deref;
 use crate::board::Board;
 use crate::evaluation::{DRAW, evaluate};
 use crate::move_generator::{Move, MoveList};
@@ -111,8 +110,7 @@ impl Engine {
 
         if best_moves[0] == None {
             self.repetition_table.unvisit_position(move_list.get_board().zobrist);
-            if move_list.is_in_check() { return NEGATIVE_INFINITY; }
-            else { return DRAW; }
+            return if move_list.is_in_check() { NEGATIVE_INFINITY } else { DRAW }
         }
 
         // update the transposition table
@@ -239,8 +237,7 @@ impl Engine {
 
         if best_moves[0] == None {
             self.repetition_table.unvisit_position(move_list.get_board().zobrist);
-            if move_list.is_in_check() { return NEGATIVE_INFINITY; }
-            else { return DRAW; }
+            return if move_list.is_in_check() { NEGATIVE_INFINITY } else { DRAW }
         }
 
         // update the transposition table

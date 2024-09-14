@@ -5,7 +5,6 @@
 
 use crate::board::Board;
 use crate::move_generator::Move;
-use crate::transposition_table::NodeType::EXACT;
 use crate::zobrist::zobrist_hash;
 
 const INITIAL_CAPACITY: usize = 1024 * 1024 * 64; // 67 108 864 entries => 2 147 483 648 Bytes
@@ -188,6 +187,7 @@ impl RepetitionTable {
 mod tests {
     use std::time::Instant;
     use crate::board::START_POSITION;
+    use crate::transposition_table::NodeType::EXACT;
     use super::*;
 
     // Use for type size checking, not as an actual test

@@ -11,7 +11,6 @@ mod bot;
 mod string_builder;
 
 use std::io;
-use scanner_rust::ScannerStr;
 use crate::bot::Bot;
 
 fn main() {

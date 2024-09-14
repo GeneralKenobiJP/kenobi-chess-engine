@@ -34,7 +34,7 @@ mod tests {
 
     #[test]
     fn test_string_builder() {
-        let mut string_builder = StringBuilder::new();
+        let string_builder = StringBuilder::new();
         assert_eq!("", string_builder.build());
 
         let mut string_builder = StringBuilder::new();

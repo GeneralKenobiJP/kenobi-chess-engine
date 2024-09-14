@@ -11,7 +11,6 @@
 //! Position 6: up to perft 4
 //! /// Currently move generation seems to be working correctly until proven otherwise ///
 
-use crate::board::Board;
 use crate::move_generator::{MoveList};
 
 /// Walks the move generation tree of strictly legal moves to count all the leaf nodes of a certain depth.
@@ -69,7 +68,7 @@ pub fn perft_log(move_list: &mut MoveList, depth: u32) -> u64 {
 #[cfg(test)]
 mod tests {
     use std::time::Instant;
-    use crate::board::START_POSITION;
+    use crate::board::{Board, START_POSITION};
     use super::*;
 
     #[test]

@@ -4,9 +4,10 @@
 //! Communication is realized through the message() function.
 //! It should be called in the game loop of the main function.
 
-use std::fmt::format;
 use std::time::Instant;
+
 use scanner_rust::ScannerStr;
+
 use crate::board::{Board, START_POSITION};
 use crate::move_generator::{Move, MoveList};
 use crate::perft::perft_log;
@@ -107,7 +108,7 @@ impl<'a> Bot<'a> {
     fn extract_fen(scanner: &mut ScannerStr) -> String {
         let mut fen = String::new();
 
-        for i in 0..5 {
+        for _i in 0..5 {
             fen.push_str(scanner.next().unwrap_or_default().unwrap_or_default());
             fen.push(' ');
         }
@@ -183,15 +184,16 @@ impl<'a> Bot<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::{self, Write};
     use regex::Regex;
+
     use crate::piece::Piece::PAWN;
+
     use super::*;
 
     #[test]
     fn check_bot_new() {
         let mut board = Board::new();
-        let bot = Bot::new(&mut board);
+        Bot::new(&mut board);
     }
 
     #[test]
