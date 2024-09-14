@@ -146,6 +146,7 @@ impl<'a> Bot<'a> {
     /// and the number of nodes from each immediate response
     fn go_perft(&mut self, scanner: &mut ScannerStr) -> String {
         let depth = scanner.next().unwrap_or_default().unwrap_or_default().parse::<u32>().unwrap_or_default();
+        println!("{}", depth);
 
         let start = Instant::now();
         let nodes = perft_log(&mut self.move_list, depth);
@@ -317,12 +318,28 @@ mod tests {
         board.read_fen(START_POSITION);
         let mut bot = Bot::new(&mut board);
 
-        let expected_regex = Regex::new(r"^perft \d+ searched \d+ nodes in (\d+.\d+|\d+)(ns|µs|ms|s)$").unwrap();
+        let expected_regex = Regex::new(r"^perft 1 searched \d+ nodes in (\d+.\d+|\d+)(ns|µs|ms|s)$").unwrap();
 
         let response = bot.go_perft(&mut ScannerStr::new(&"1"));
         println!("{}", response);
 
         assert!(expected_regex.is_match(&*response));
+    }
+
+    #[test]
+    fn check_go() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+        let mut bot = Bot::new(&mut board);
+
+        let expected_regex = Regex::new(r"^perft 1 searched \d+ nodes in (\d+.\d+|\d+)(ns|µs|ms|s)$").unwrap();
+
+        let response = bot.go(&mut ScannerStr::new(&"perft 1"));
+        println!("{}", response);
+
+        assert!(expected_regex.is_match(&*response));
+
+        // todo: test the infinite option once it's properly implemented
     }
 
 }

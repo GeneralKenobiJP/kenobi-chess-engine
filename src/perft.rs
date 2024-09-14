@@ -46,7 +46,7 @@ pub fn perft_log(move_list: &mut MoveList, depth: u32) -> u64 {
     let mut nodes = 0u64;
 
     if depth == 0 {
-        println!("Main bitboard: {}", move_list.get_board().main_bitboard);
+        // println!("Main bitboard: {}", move_list.get_board().main_bitboard);
         return 1;
     }
 
