@@ -45,6 +45,7 @@ impl<'a> Bot<'a> {
             "isready" => Self::readyok(),
             "position" => self.input_position(&mut scanner),
             "go" => self.go(&mut scanner),
+            "stop" => self.stop(),
             "quit" => return None,
             _ => String::from("Unexpected command. This command might be unsupported by the current version of the engine or by the UCI standard."),
         };
@@ -161,6 +162,22 @@ impl<'a> Bot<'a> {
         self.engine.search(&mut self.move_list, 1);
         let best_move = self.engine.get_best_move(self.move_list.get_board());
         let response = best_move.to_algebraic_notation();
+
+        response
+    }
+
+    /// Responds to a "stop command".
+    /// Immediately ceases further position analysis.
+    /// Responds with the best move
+    fn stop(&mut self) -> String {
+        self.best_move()
+    }
+
+    /// Implements the "best_move" UCI command.
+    /// Retrieves what the engine currently deems the best move
+    fn best_move(&mut self) -> String {
+        let mut response = String::from("bestmove ");
+        response.push_str(&*self.engine.get_best_move(self.move_list.get_board()).to_algebraic_notation());
 
         response
     }
@@ -344,6 +361,21 @@ mod tests {
     }
 
     #[test]
+    fn check_stop() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+        let mut bot = Bot::new(&mut board);
+
+        bot.engine.search(&mut bot.move_list, 1);
+
+        let expected_regex = Regex::new(r"^bestmove [a-h][1-8][a-h][1-8]$").unwrap();
+
+        let response = bot.stop();
+        assert!(expected_regex.is_match(&*response));
+
+    }
+
+    #[test]
     fn test_message() {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
@@ -381,6 +413,11 @@ mod tests {
 
         let expected_regex = Regex::new(r"^perft 1 searched \d+ nodes in (\d+.\d+|\d+)(ns|µs|ms|s)$").unwrap();
         let response = bot.message("go perft 1").unwrap_or_default();
+        assert!(expected_regex.is_match(&*response));
+
+        let expected_regex = Regex::new(r"^bestmove [a-h][1-8][a-h][1-8]$").unwrap();
+        bot.engine.search(&mut bot.move_list, 1);
+        let response = bot.stop();
         assert!(expected_regex.is_match(&*response));
     }
 
