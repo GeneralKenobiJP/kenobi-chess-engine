@@ -27,6 +27,10 @@ fn main() {
         io::stdin().read_line(&mut message)
             .expect("Failed to read line");
 
-        if !bot.message(&message) { break; }
+        let response = bot.message(&message);
+        match response {
+            Some(output) => println!("{}", output),
+            None => break
+        }
     }
 }

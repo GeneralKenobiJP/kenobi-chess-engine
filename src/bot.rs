@@ -32,9 +32,9 @@ impl<'a> Bot<'a> {
     /// with "Unexpected command. This command might be unsupported by the current version of the engine or by the UCI standard."
     /// Calls relevant response functions that use a StringBuilder to return a response String,
     /// which is printed out in this method.
-    /// Returns true if no error occurred.
-    /// Returns false if the "quit" command was provided
-    pub fn message(&mut self, message: &str) -> bool {
+    /// Returns Option from a response string if no error occurred.
+    /// Returns None if the "quit" command was provided
+    pub fn message(&mut self, message: &str) -> Option<String> {
         let mut scanner = ScannerStr::new(message);
 
         let command = scanner.next().unwrap_or_default().unwrap_or_default();
@@ -44,13 +44,11 @@ impl<'a> Bot<'a> {
             "isready" => Self::readyok(),
             "position" => self.input_position(&mut scanner),
             "go" => self.go(&mut scanner),
-            "quit" => return false,
+            "quit" => return None,
             _ => String::from("Unexpected command. This command might be unsupported by the current version of the engine or by the UCI standard."),
         };
 
-        println!("{}", response);
-
-        true
+        Option::from(response)
     }
 
     /// Responds to a "uci" command.
@@ -185,6 +183,7 @@ impl<'a> Bot<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{self, Write};
     use regex::Regex;
     use crate::piece::Piece::PAWN;
     use super::*;
@@ -340,6 +339,47 @@ mod tests {
         assert!(expected_regex.is_match(&*response));
 
         // todo: test the infinite option once it's properly implemented
+    }
+
+    #[test]
+    fn test_message() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+        let mut bot = Bot::new(&mut board);
+
+        assert_eq!(None, bot.message("quit"));
+        assert_eq!(Option::from(
+            String::from("Unexpected command. This command might be unsupported by the current version of the engine or by the UCI standard.")),
+                   bot.message("illegal command"));
+        assert_eq!(Option::from(
+            String::from(format!("id name Kenobi {}\nid author Jakub Pietrzak\nuciok", env!("CARGO_PKG_VERSION")))),
+                   bot.message("uci"));
+
+        bot.engine.search(&mut bot.move_list, 1);
+        bot.move_list.generate_moves();
+        assert_eq!(Option::from(
+            String::from("")),
+                   bot.message("ucinewgame"));
+        assert!(bot.move_list.get_moves().is_empty());
+        assert_eq!(Engine::new(), bot.engine);
+
+        assert_eq!(Option::from(
+            String::from("readyok")),
+                   bot.message("isready"));
+
+        assert_eq!(Option::from(
+            String::from("")),
+                   bot.message("position startpos moves e2e4 e7e5"));
+        let mut expected_board = Board::new();
+        expected_board.read_fen(START_POSITION);
+        let mut expected_bot = Bot::new(&mut expected_board);
+        expected_bot.move_list.make_move(&Move{origin: 11, target: 27, promotion: 0, piece: PAWN});
+        expected_bot.move_list.make_move(&Move{origin: 51, target: 35, promotion: 0, piece: PAWN});
+        assert_eq!(expected_bot.move_list.get_board(), bot.move_list.get_board());
+
+        let expected_regex = Regex::new(r"^perft 1 searched \d+ nodes in (\d+.\d+|\d+)(ns|µs|ms|s)$").unwrap();
+        let response = bot.message("go perft 1").unwrap_or_default();
+        assert!(expected_regex.is_match(&*response));
     }
 
 }
