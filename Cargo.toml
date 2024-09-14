@@ -6,6 +6,9 @@ edition = "2021"
 [dependencies]
 scanner-rust = "2.0.17"
 criterion = "0.5.1"
+num-derive = "0.4.2"
+num-traits = "0.2.19"
+regex = "1.10.6"
 
 [profile.dev]
 opt-level = 3

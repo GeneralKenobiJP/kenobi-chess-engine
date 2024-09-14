@@ -3,8 +3,6 @@
 //! Used for rook and bishops (and thus also for queens)
 //! All data is little-endian (h1-a1, h2-a2, ..., h8-a8)
 
-use std::hash::{Hash, Hasher};
-
 /// Mask containing relevant bits for each rook position
 pub const MAGIC_MASK_ROOK: [u64; 64] = [
     0x000101010101017E, 0x000202020202027C, 0x000404040404047A, 0x0008080808080876, 0x001010101010106E, 0x002020202020205E, 0x004040404040403E, 0x008080808080807E,

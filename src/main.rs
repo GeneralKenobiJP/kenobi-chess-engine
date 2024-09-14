@@ -7,20 +7,18 @@ mod evaluation;
 mod search;
 mod zobrist;
 mod transposition_table;
+mod bot;
+mod string_builder;
 
 use std::io;
-use scanner_rust::ScannerStr;
-
-fn initiate_bot(board: &mut board::Board) {
-    *board = board::Board::new();
-    println!("initiating...");
-}
+use crate::bot::Bot;
 
 fn main() {
 
     let mut board = board::Board::new();
+    let mut bot = Bot::new(&mut board);
 
-    // Handling of UCI
+    // Handling of UCI <=> the game loop
 
     loop {
         let mut message = String::new();
@@ -28,15 +26,10 @@ fn main() {
         io::stdin().read_line(&mut message)
             .expect("Failed to read line");
 
-        let mut scanner = ScannerStr::new(&message);
-
-        let command = scanner.next().unwrap_or_default().unwrap_or_default();
-        match command {
-            "ucinewgame" => initiate_bot(&mut board),
-            "isready" => println!("readyok"),
-            "position" => board.read_fen(scanner.next().unwrap_or_default().unwrap_or_default()),
-            "quit" => break,
-            _ => println!("unexpected command"),
+        let response = bot.message(&message);
+        match response {
+            Some(output) => println!("{}", output),
+            None => break
         }
     }
 }

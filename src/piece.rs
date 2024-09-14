@@ -4,8 +4,9 @@
 //!
 
 use crate::piece::Colour::{BLACK, WHITE};
+use num_derive::FromPrimitive;
 
-#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug, FromPrimitive)]
 pub enum Piece {
     KING = 0,
     PAWN = 1,
@@ -15,7 +16,7 @@ pub enum Piece {
     KNIGHT = 5
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Colour {
     WHITE = 0,
     BLACK = 1
