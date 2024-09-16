@@ -177,15 +177,7 @@ impl<'a> MoveList<'a> {
         let final_piece = if promotion == 0 {piece} else { promotion as usize };
         let target_mask = !target;
 
-        self.board.main_bitboard ^= origin;
-        self.board.main_bitboard |= target;
-        self.board.empty_bitboard = !self.board.main_bitboard;
-        self.board.colour_bitboards[active_player] ^= origin;
-        self.board.colour_bitboards[active_player] |= target;
-        self.board.piece_bitboards[6*active_player + piece] ^= origin;
-        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*active_player + piece][piece_move.origin as usize];
-        self.board.piece_bitboards[6*active_player + final_piece] |= target;
-        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*active_player + final_piece][piece_move.target as usize];
+        self.move_piece(origin, target, piece, final_piece, active_player);
 
         let mut should_reset_fifty_moves = false;
 
@@ -255,6 +247,22 @@ impl<'a> MoveList<'a> {
         self.capture_history.push(capture);
 
         self.board.switch_active_player();
+    }
+
+    fn move_piece(&mut self, origin: u64, target: u64, piece: usize, final_piece: usize, active_player: usize) {
+        self.board.main_bitboard ^= origin;
+        self.board.main_bitboard |= target;
+        self.board.empty_bitboard = !self.board.main_bitboard;
+        self.board.colour_bitboards[self.board.active_player] ^= origin;
+        self.board.colour_bitboards[self.board.active_player] |= target;
+
+        let piece_index = 6 * active_player + piece;
+        self.board.piece_bitboards[6*piece_index] ^= origin;
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[piece_index][origin];
+
+        let final_piece_index = 6 * active_player + final_piece;
+        self.board.piece_bitboards[final_piece_index] |= target;
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[final_piece_index][target];
     }
 
     /// Makes a castling move on the board, given a castling move.
