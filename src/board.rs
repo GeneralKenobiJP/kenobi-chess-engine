@@ -235,6 +235,17 @@ impl Board {
 
         None
     }
+
+    pub fn get_piece_from_square_by_player(&self, square: u8, player: usize) -> Option<Piece> {
+        let tile = 1 << square;
+        for index in 6* player..6* player + 6 {
+            if self.piece_bitboards[index] & tile != 0 {
+                return Option::from(FromPrimitive::from_usize(index % 6));
+            }
+        }
+
+        None
+    }
 }
 
 #[cfg(test)]
