@@ -406,13 +406,13 @@ impl<'a> MoveList<'a> {
         self.board.colour_bitboards[self.board.inactive_player as usize] &= mask;
         self.board.colour_bitboards[self.board.inactive_player as usize] |= summed_flag;
         self.board.piece_bitboards[6*self.board.inactive_player as usize + KING as usize] &= mask;
-        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*self.board.active_player as usize + KING as usize][(!mask & CASTLE_KING_POSITION_MASK).checked_ilog2().unwrap_or_default() as usize];
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*self.board.inactive_player as usize + KING as usize][(!mask & CASTLE_KING_POSITION_MASK).checked_ilog2().unwrap_or_default() as usize];
         self.board.piece_bitboards[6*self.board.inactive_player as usize + KING as usize] |= flag_pointer[0];
-        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*self.board.active_player as usize + KING as usize][flag_pointer[0].checked_ilog2().unwrap_or_default() as usize];
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*self.board.inactive_player as usize + KING as usize][flag_pointer[0].checked_ilog2().unwrap_or_default() as usize];
         self.board.piece_bitboards[6*self.board.inactive_player as usize + ROOK as usize] &= mask;
-        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*self.board.active_player as usize + ROOK as usize][(!mask & CASTLE_ROOK_POSITION_MASK).checked_ilog2().unwrap_or_default() as usize];
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*self.board.inactive_player as usize + ROOK as usize][(!mask & CASTLE_ROOK_POSITION_MASK).checked_ilog2().unwrap_or_default() as usize];
         self.board.piece_bitboards[6*self.board.inactive_player as usize + ROOK as usize] |= flag_pointer[1];
-        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*self.board.active_player as usize + ROOK as usize][flag_pointer[1].checked_ilog2().unwrap_or_default() as usize];
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*self.board.inactive_player as usize + ROOK as usize][flag_pointer[1].checked_ilog2().unwrap_or_default() as usize];
     }
 
     /// Disables castling rights for the given player and adjusts the zobrist
@@ -2586,6 +2586,7 @@ mod tests {
         let piece_bitboards = board_copy.piece_bitboards.clone();
         let en_passant = board_copy.en_passant_possibility.clone();
         let castling_rights = board_copy.castling_rights.clone();
+        let zobrist = board_copy.zobrist.clone();
 
         let piece_move = Move { origin: 15, target: 23, promotion: 0, piece: PAWN };
 
@@ -2626,6 +2627,7 @@ mod tests {
         assert_eq!(en_passant, move_list.board.en_passant_possibility);
         assert_eq!(castling_rights, move_list.board.castling_rights);
         assert_eq!(1, move_list.get_board().half_moves);
+        assert_eq!(zobrist, move_list.get_board().zobrist);
     }
 
     #[test]
@@ -2642,6 +2644,7 @@ mod tests {
         let piece_bitboards = board_copy.piece_bitboards.clone();
         let en_passant = board_copy.en_passant_possibility.clone();
         let castling_rights = board_copy.castling_rights.clone();
+        let zobrist = board_copy.zobrist.clone();
 
         let piece_move = Move { origin: 34, target: 43, promotion: 0, piece: BISHOP };
 
@@ -2682,6 +2685,7 @@ mod tests {
         assert_eq!(en_passant, move_list.board.en_passant_possibility);
         assert_eq!(castling_rights, move_list.board.castling_rights);
         assert_eq!(1, move_list.get_board().half_moves);
+        assert_eq!(zobrist, move_list.get_board().zobrist);
     }
 
     #[test]
@@ -2697,6 +2701,7 @@ mod tests {
         let piece_bitboards = board_copy.piece_bitboards.clone();
         let en_passant = board_copy.en_passant_possibility.clone();
         let castling_rights = board_copy.castling_rights.clone();
+        let zobrist = board_copy.zobrist.clone();
 
         let piece_move = Move { origin: 6, target: 5, promotion: 0, piece: KING };
 
@@ -2737,6 +2742,7 @@ mod tests {
         assert_eq!(en_passant, move_list.board.en_passant_possibility);
         assert_eq!(castling_rights, move_list.board.castling_rights);
         assert_eq!(1, move_list.get_board().half_moves);
+        assert_eq!(zobrist, move_list.get_board().zobrist);
     }
 
     #[test]
@@ -2752,6 +2758,7 @@ mod tests {
         let piece_bitboards = board_copy.piece_bitboards.clone();
         let en_passant = board_copy.en_passant_possibility.clone();
         let castling_rights = board_copy.castling_rights.clone();
+        let zobrist = board_copy.zobrist.clone();
 
         let piece_move = Move { origin: 37, target: 29, promotion: 0, piece: PAWN };
 
@@ -2792,6 +2799,7 @@ mod tests {
         assert_eq!(en_passant, move_list.board.en_passant_possibility);
         assert_eq!(castling_rights, move_list.board.castling_rights);
         assert_eq!(1, move_list.get_board().half_moves);
+        assert_eq!(zobrist, move_list.get_board().zobrist);
     }
 
     #[test]
@@ -2807,6 +2815,7 @@ mod tests {
         let piece_bitboards = board_copy.piece_bitboards.clone();
         let en_passant = board_copy.en_passant_possibility.clone();
         let castling_rights = board_copy.castling_rights.clone();
+        let zobrist = board_copy.zobrist.clone();
 
         let piece_move = Move { origin: 55, target: 39, promotion: 0, piece: PAWN };
 
@@ -2850,6 +2859,7 @@ mod tests {
         assert_eq!(en_passant, move_list.board.en_passant_possibility);
         assert_eq!(castling_rights, move_list.board.castling_rights);
         assert_eq!(1, move_list.get_board().half_moves);
+        assert_eq!(zobrist, move_list.get_board().zobrist);
     }
 
     #[test]
@@ -2865,6 +2875,7 @@ mod tests {
         let piece_bitboards = board_copy.piece_bitboards.clone();
         let en_passant = board_copy.en_passant_possibility.clone();
         let castling_rights = board_copy.castling_rights.clone();
+        let zobrist = board_copy.zobrist.clone();
 
         let piece_move = Move { origin: 32, target: 41, promotion: 0, piece: PAWN };
 
@@ -2912,6 +2923,7 @@ mod tests {
         assert_eq!(en_passant, move_list.board.en_passant_possibility);
         assert_eq!(castling_rights, move_list.board.castling_rights);
         assert_eq!(1, move_list.get_board().half_moves);
+        assert_eq!(zobrist, move_list.get_board().zobrist);
     }
 
     #[test]
@@ -2927,6 +2939,7 @@ mod tests {
         let piece_bitboards = board_copy.piece_bitboards.clone();
         let en_passant = board_copy.en_passant_possibility.clone();
         let castling_rights = board_copy.castling_rights.clone();
+        let zobrist = board_copy.zobrist.clone();
 
         let piece_move = Move { origin: 54, target: 63, promotion: 2, piece: PAWN };
 
@@ -2982,6 +2995,7 @@ mod tests {
         assert_eq!(en_passant, move_list.board.en_passant_possibility);
         assert_eq!(castling_rights, move_list.board.castling_rights);
         assert_eq!(1, move_list.get_board().half_moves);
+        assert_eq!(zobrist, move_list.get_board().zobrist);
     }
 
     #[test]
@@ -2997,6 +3011,7 @@ mod tests {
         let piece_bitboards = board_copy.piece_bitboards.clone();
         let en_passant = board_copy.en_passant_possibility.clone();
         let castling_rights = board_copy.castling_rights.clone();
+        let zobrist = board_copy.zobrist.clone();
 
         let piece_move = Move { origin: 3, target: 1, promotion: 1, piece: KING };
 
@@ -3006,6 +3021,8 @@ mod tests {
         let rook_target: u64 = 1 << 2;
 
         move_list.make_move(&piece_move);
+        assert_eq!(zobrist ^ ZOBRIST_TABLE.pieces[0][3] ^ ZOBRIST_TABLE.pieces[0][1] ^ ZOBRIST_TABLE.pieces[3][0] ^ ZOBRIST_TABLE.pieces[3][2], move_list.get_board().zobrist);
+        println!("interim zobrist: {}", move_list.get_board().zobrist);
 
         assert_eq!(main_bitboard - origin + target - rook_origin + rook_target, move_list.board.main_bitboard);
         assert_eq!(colour_bitboards[0] - origin + target - rook_origin + rook_target, move_list.board.colour_bitboards[0]);
@@ -3043,6 +3060,10 @@ mod tests {
         assert_eq!(en_passant, move_list.board.en_passant_possibility);
         assert_eq!(castling_rights, move_list.board.castling_rights);
         assert_eq!(1, move_list.get_board().half_moves);
+        println!("zobrist_table: {:?}", ZOBRIST_TABLE);
+        println!("old zobrist: {}", zobrist);
+        println!("new zobrist: {}", move_list.get_board().zobrist);
+        assert_eq!(zobrist, move_list.get_board().zobrist);
     }
 
     #[test]
@@ -3098,6 +3119,7 @@ mod tests {
         let piece_bitboards = board_copy.piece_bitboards.clone();
         let en_passant = board_copy.en_passant_possibility.clone();
         let castling_rights = board_copy.castling_rights.clone();
+        let zobrist = board_copy.zobrist.clone();
 
         let piece_move = Move { origin: 59, target: 57, promotion: 1, piece: KING };
 
@@ -3144,6 +3166,7 @@ mod tests {
         assert_eq!(en_passant, move_list.board.en_passant_possibility);
         assert_eq!(castling_rights, move_list.board.castling_rights);
         assert_eq!(1, move_list.get_board().half_moves);
+        assert_eq!(zobrist, move_list.get_board().zobrist);
     }
 
     #[test]
