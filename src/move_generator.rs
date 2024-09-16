@@ -164,7 +164,6 @@ impl<'a> MoveList<'a> {
             self.board.zobrist ^= ZOBRIST_TABLE.en_passant[self.board.en_passant_possibility as usize % 8];
         }
 
-        let origin = 1 << piece_move.origin;
         let target = 1 << piece_move.target;
         let active_player = self.board.active_player as usize;
         let piece = piece_move.piece.clone() as usize;
@@ -177,7 +176,7 @@ impl<'a> MoveList<'a> {
         let final_piece = if promotion == 0 {piece} else { promotion as usize };
         let target_mask = !target;
 
-        self.move_piece(origin, target, piece, final_piece, active_player);
+        self.move_piece(piece_move.origin, piece_move.target, target, piece, final_piece, active_player);
 
         let mut should_reset_fifty_moves = false;
 
@@ -226,43 +225,45 @@ impl<'a> MoveList<'a> {
             _ => ()
         }
 
-        self.board.colour_bitboards[self.board.inactive_player as usize] &= target_mask;
-        let mut capture: u8 = NO_CAPTURE;
-        for index in 6*self.board.inactive_player as usize..=6*self.board.inactive_player as usize + 5 {
-            let new_bitboard = self.board.piece_bitboards[index] & target_mask;
-            let capture_bitboard = new_bitboard ^ self.board.piece_bitboards[index];
-            if capture_bitboard != 0
-            {
-                capture = index as u8;
-                self.board.piece_bitboards[index] = new_bitboard;
+        self.handle_capture(piece_move.target, target, self.board.inactive_player as usize, &mut should_reset_fifty_moves);
 
-                self.board.zobrist ^= ZOBRIST_TABLE.pieces[index][capture_bitboard.checked_ilog2().unwrap_or_default() as usize];
-
-                should_reset_fifty_moves = true;
-            }
-        }
         if should_reset_fifty_moves { self.board.half_moves = 0; }
         else { self.board.half_moves += 1; }
-
-        self.capture_history.push(capture);
 
         self.board.switch_active_player();
     }
 
-    fn move_piece(&mut self, origin: u64, target: u64, piece: usize, final_piece: usize, active_player: usize) {
-        self.board.main_bitboard ^= origin;
-        self.board.main_bitboard |= target;
+    fn move_piece(&mut self, origin: u8, target: u8, target_tile: u64, piece: usize, final_piece: usize, active_player: usize) {
+        let origin_tile = 1 << origin;
+        self.board.main_bitboard ^= origin_tile;
+        self.board.main_bitboard |= target_tile;
         self.board.empty_bitboard = !self.board.main_bitboard;
-        self.board.colour_bitboards[self.board.active_player] ^= origin;
-        self.board.colour_bitboards[self.board.active_player] |= target;
+        self.board.colour_bitboards[self.board.active_player] ^= origin_tile;
+        self.board.colour_bitboards[self.board.active_player] |= target_tile;
 
         let piece_index = 6 * active_player + piece;
-        self.board.piece_bitboards[6*piece_index] ^= origin;
+        self.board.piece_bitboards[6*piece_index] ^= origin_tile;
         self.board.zobrist ^= ZOBRIST_TABLE.pieces[piece_index][origin];
 
         let final_piece_index = 6 * active_player + final_piece;
-        self.board.piece_bitboards[final_piece_index] |= target;
+        self.board.piece_bitboards[final_piece_index] |= target_tile;
         self.board.zobrist ^= ZOBRIST_TABLE.pieces[final_piece_index][target];
+    }
+
+    fn handle_capture(&mut self, target: u8, target_tile: u64, inactive_player: usize, should_reset_fifty_moves: &mut bool) {
+        self.board.colour_bitboards[inactive_player] &= !target_tile; // we mask it with the bits indicating NOT a target square
+
+        let capture = self.board.get_piece_from_square(target);
+        match capture {
+            Some(captured_piece) => {
+                let index = 6 * inactive_player + captured_piece as usize;
+                self.board.piece_bitboards[index] ^= target_tile;
+                self.board.zobrist ^= ZOBRIST_TABLE.pieces[index][target];
+                self.capture_history.push(captured_piece as u8);
+                *should_reset_fifty_moves = true;
+            },
+            None => self.capture_history.push(NO_CAPTURE)
+        }
     }
 
     /// Makes a castling move on the board, given a castling move.
