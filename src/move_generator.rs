@@ -15,6 +15,16 @@ const NO_CAPTURE: u8 = 1 << 4;
 pub const NO_PASSANT: u8 = 64;
 const EN_PASSANT_MASK: u64 = 0x000000FFFF000000;
 
+// The arrays below are used to make/unmake castling moves. They are accessed with move target square index divided by 5.
+// The idea is to omit conditional statements and limit the computational overhead as much as possible
+const CASTLING_MASK_ARRAY: [u64; 13] = [CASTLE_WHITE_KINGSIDE_MASK, CASTLE_WHITE_QUEENSIDE_MASK, 0, 0, 0, 0, 0, 0, 0, 0, 0, CASTLE_BLACK_KINGSIDE_MASK, CASTLE_BLACK_QUEENSIDE_MASK];
+const CASTLING_FLAG_ARRAY: [[u64;2]; 13] = [CASTLE_WHITE_KINGSIDE_FLAGS, CASTLE_WHITE_QUEENSIDE_FLAGS, [0,0], [0,0], [0,0], [0,0], [0,0], [0,0], [0,0], [0,0], [0,0], CASTLE_BLACK_KINGSIDE_FLAGS, CASTLE_BLACK_QUEENSIDE_FLAGS];
+const ROOK_POSITION_ARRAY: [u8; 13] = [0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 56, 63];
+const CASTLING_ROOK_POSTPOSITION_ARRAY: [u8; 13] = [2, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 58, 60];
+const KING_POSTPOSITION_ARRAY: [u8; 13] = [1, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 57, 61];
+// The array belowed is accessed with origin square index divided by 32;
+const KING_POSITION_ARRAY: [u8; 2] = [3, 59];
+
 #[derive(PartialEq, Eq, Hash, Clone, Debug, Copy)]
 pub struct Move {
     pub origin: u8,
@@ -300,47 +310,37 @@ impl<'a> MoveList<'a> {
     /// Makes a castling move on the board, given a castling move.
     /// Called by make_move, should not be called independently.
     fn make_castling_move(&mut self, piece_move: &Move) {
-        let flag_pointer;
-        let mask;
-
         self.disable_player_castling_rights(self.board.active_player as u8);
 
-        if piece_move.origin == 3 {
-            if piece_move.target == 1 {
-                flag_pointer = &CASTLE_WHITE_KINGSIDE_FLAGS;
-                mask = CASTLE_WHITE_KINGSIDE_MASK;
-            }
-            else {
-                flag_pointer = &CASTLE_WHITE_QUEENSIDE_FLAGS;
-                mask = CASTLE_WHITE_QUEENSIDE_MASK;
-            }
-        }
-        else {
-            if piece_move.target == 57 {
-                flag_pointer = &CASTLE_BLACK_KINGSIDE_FLAGS;
-                mask = CASTLE_BLACK_KINGSIDE_MASK;
-            }
-            else {
-                flag_pointer = &CASTLE_BLACK_QUEENSIDE_FLAGS;
-                mask = CASTLE_BLACK_QUEENSIDE_MASK;
-            }
-        }
+        // We use const arrays to access the necessary masks and flags.
+        // They are accessed with move target square index divided by 5.
+        // The idea is to omit conditional statements and limit the computational overhead as much as possible.
+        let index = (piece_move.target / 5) as usize;
+        let flag_pointer = &CASTLING_FLAG_ARRAY[index];
+        let mask = CASTLING_MASK_ARRAY[index];
+
+        // Masks are used to clear the tiles concerned by castling.
+        // Flags are used to set the position of king and rook after castling
 
         let summed_flag = flag_pointer[0] | flag_pointer[1];
+
+        let active_player = self.board.active_player as usize;
+        let king_index = 6 * active_player + KING as usize;
+        let rook_index = 6 * active_player + ROOK as usize;
 
         self.board.main_bitboard &= mask;
         self.board.main_bitboard |= summed_flag;
         self.board.empty_bitboard = !self.board.main_bitboard;
-        self.board.colour_bitboards[self.board.active_player as usize] &= mask;
-        self.board.colour_bitboards[self.board.active_player as usize] |= summed_flag;
-        self.board.piece_bitboards[6*self.board.active_player as usize + KING as usize] &= mask;
-        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*self.board.active_player as usize + KING as usize][(!mask & CASTLE_KING_POSITION_MASK).checked_ilog2().unwrap_or_default() as usize];
-        self.board.piece_bitboards[6*self.board.active_player as usize + KING as usize] |= flag_pointer[0];
-        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*self.board.active_player as usize + KING as usize][flag_pointer[0].checked_ilog2().unwrap_or_default() as usize];
-        self.board.piece_bitboards[6*self.board.active_player as usize + ROOK as usize] &= mask;
-        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*self.board.active_player as usize + ROOK as usize][(!mask & CASTLE_ROOK_POSITION_MASK).checked_ilog2().unwrap_or_default() as usize];
-        self.board.piece_bitboards[6*self.board.active_player as usize + ROOK as usize] |= flag_pointer[1];
-        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*self.board.active_player as usize + ROOK as usize][flag_pointer[1].checked_ilog2().unwrap_or_default() as usize];
+        self.board.colour_bitboards[active_player] &= mask;
+        self.board.colour_bitboards[active_player] |= summed_flag;
+        self.board.piece_bitboards[king_index] &= mask;
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[king_index][KING_POSITION_ARRAY[piece_move.origin as usize / 32] as usize];
+        self.board.piece_bitboards[king_index] |= flag_pointer[0];
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[king_index][KING_POSTPOSITION_ARRAY[index] as usize];
+        self.board.piece_bitboards[rook_index] &= mask;
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[rook_index][ROOK_POSITION_ARRAY[index] as usize];
+        self.board.piece_bitboards[rook_index] |= flag_pointer[1];
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[rook_index][CASTLING_ROOK_POSTPOSITION_ARRAY[index] as usize];
 
         self.capture_history.push(NO_CAPTURE);
         self.board.en_passant_possibility = NO_PASSANT;
