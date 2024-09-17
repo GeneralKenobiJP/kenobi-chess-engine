@@ -178,17 +178,20 @@ impl<'a> MoveList<'a> {
 
         self.move_piece(piece_move.origin, piece_move.target, target, piece, final_piece, active_player);
 
-        let mut should_reset_fifty_moves = false;
+        let mut should_reset_fifty_moves = false; // is set to true if the moved piece is a pawn or the move is a capture
 
         if piece_move.piece == PAWN {
             should_reset_fifty_moves = true;
 
             if piece_move.target == self.board.en_passant_possibility {
                 self.handle_en_passant(piece_move.target, target, inactive_player);
+                self.capture_history.push(NO_CAPTURE);
+                self.board.en_passant_possibility = NO_PASSANT;
                 self.board.switch_active_player();
                 return;
             }
             if piece_move.target.abs_diff(piece_move.origin) == 16 {
+                // We pushed the pawn by 2 squares and therefore allowed en passant
                 self.board.en_passant_possibility = (piece_move.target + piece_move.origin)/2;
                 self.board.zobrist ^= ZOBRIST_TABLE.en_passant[piece_move.target as usize % 8];
             }
@@ -201,9 +204,11 @@ impl<'a> MoveList<'a> {
         }
         else { self.board.en_passant_possibility = NO_PASSANT; }
 
+        // Checks if castle rights need to change and updates them
         self.handle_castling_rights(piece_move);
 
-        self.handle_capture(piece_move.target, target, inactive_player, &mut should_reset_fifty_moves);
+        // Checks if this is a capture and handles it appropriately
+        self.make_capture(piece_move.target, target, inactive_player, &mut should_reset_fifty_moves);
 
         if should_reset_fifty_moves { self.board.half_moves = 0; }
         else { self.board.half_moves += 1; }
@@ -214,15 +219,12 @@ impl<'a> MoveList<'a> {
     fn handle_en_passant(&mut self, target: u8, target_tile: u64, inactive_player: usize) {
         let en_passant_target = ((target_tile << 8) | (target_tile >> 8)) & EN_PASSANT_MASK;
         self.board.main_bitboard ^= en_passant_target;
-        self.board.empty_bitboard |= en_passant_target;
+        self.board.empty_bitboard ^= en_passant_target; // XOR is there so that it works with both making and unmaking the en passant
         self.board.colour_bitboards[inactive_player] ^= en_passant_target;
 
         let piece_index = 6 * inactive_player + PAWN as usize;
         self.board.piece_bitboards[piece_index] ^= en_passant_target;
         self.board.zobrist ^= ZOBRIST_TABLE.pieces[piece_index][target as usize];
-
-        self.capture_history.push(NO_CAPTURE);
-        self.board.en_passant_possibility = NO_PASSANT;
     }
 
     fn handle_castling_rights(&mut self, piece_move: &Move) {
@@ -259,7 +261,7 @@ impl<'a> MoveList<'a> {
         self.board.zobrist ^= ZOBRIST_TABLE.pieces[final_piece_index][target as usize];
     }
 
-    fn handle_capture(&mut self, target: u8, target_tile: u64, inactive_player: usize, should_reset_fifty_moves: &mut bool) {
+    fn make_capture(&mut self, target: u8, target_tile: u64, inactive_player: usize, should_reset_fifty_moves: &mut bool) {
         self.board.colour_bitboards[inactive_player] &= !target_tile; // we mask it with the bits indicating NOT a target square
 
         let capture = self.board.get_piece_from_square_by_player(target, inactive_player);
@@ -272,6 +274,26 @@ impl<'a> MoveList<'a> {
                 *should_reset_fifty_moves = true;
             },
             None => self.capture_history.push(NO_CAPTURE)
+        }
+    }
+
+    fn unmake_capture(&mut self, target: u8, target_tile: u64, active_player: usize) {
+        let capture = self.capture_history.pop();
+        match capture {
+            Some(captured_piece) => {
+                if captured_piece == NO_CAPTURE { return; }
+
+                self.board.main_bitboard |= target_tile;
+                self.board.empty_bitboard ^= target_tile;
+                self.board.colour_bitboards[active_player] |= target_tile;
+
+                let captured_piece = captured_piece as usize;
+                println!("captured_piece: {}", captured_piece);
+                println!("target_tile: {}", target_tile);
+                self.board.piece_bitboards[captured_piece] |= target_tile;
+                self.board.zobrist ^= ZOBRIST_TABLE.pieces[captured_piece][target as usize];
+            },
+            None => ()
         }
     }
 
@@ -327,19 +349,12 @@ impl<'a> MoveList<'a> {
 
     /// Unmakes a move on the board, given a move.
     pub fn unmake_move(&mut self, piece_move: &Move) {
-        self.board.zobrist ^= zobrist_castling_rights(self.board.castling_rights);
-        if self.board.en_passant_possibility != 64 { self.board.zobrist ^= ZOBRIST_TABLE.en_passant[self.board.en_passant_possibility as usize % 8] };
+        self.restore_state();
 
-        self.board.en_passant_possibility = self.en_passant_history.pop().unwrap_or_default();
-        self.board.castling_rights = self.castling_rights_history.pop().unwrap_or_default();
-        self.board.half_moves = self.halfmoves_history.pop().unwrap_or_default() as u32;
-
-        self.board.zobrist ^= zobrist_castling_rights(self.board.castling_rights);
-        if self.board.en_passant_possibility != 64 { self.board.zobrist ^= ZOBRIST_TABLE.en_passant[self.board.en_passant_possibility as usize % 8] };
-
-        let origin = 1 << piece_move.target;
-        let target = 1 << piece_move.origin;
-        let active_player = self.board.inactive_player as usize; // !
+        let target = 1 << piece_move.target;
+        let origin = 1 << piece_move.origin;
+        let active_player = self.board.active_player as usize;
+        let inactive_player = self.board.inactive_player as usize;
         let piece = piece_move.piece.clone() as usize;
         let promotion = piece_move.promotion;
         if promotion == 1 {
@@ -349,23 +364,10 @@ impl<'a> MoveList<'a> {
         }
         let target_piece = if promotion == 0 {piece} else { promotion as usize };
 
-        self.board.main_bitboard ^= origin;
-        self.board.main_bitboard |= target;
-        self.board.empty_bitboard = !self.board.main_bitboard;
-        self.board.colour_bitboards[active_player] ^= origin;
-        self.board.colour_bitboards[active_player] |= target;
-        self.board.piece_bitboards[6*active_player + target_piece] ^= origin;
-        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*active_player + target_piece][piece_move.target as usize];
-        self.board.piece_bitboards[6*active_player + piece] |= target;
-        self.board.zobrist ^= ZOBRIST_TABLE.pieces[6*active_player + piece][piece_move.origin as usize];
+        self.move_piece(piece_move.target, piece_move.origin, origin, target_piece, piece, inactive_player);
 
         if piece_move.piece == PAWN && piece_move.target == self.board.en_passant_possibility {
-            let en_passant_target = ((origin << 8) | (origin >> 8)) & EN_PASSANT_MASK;
-            self.board.main_bitboard |= en_passant_target;
-            self.board.empty_bitboard ^= en_passant_target;
-            self.board.colour_bitboards[self.board.active_player as usize] |= en_passant_target;
-            self.board.piece_bitboards[6 * self.board.active_player as usize + PAWN as usize] |= en_passant_target;
-            self.board.zobrist ^= ZOBRIST_TABLE.pieces[6 * self.board.active_player as usize + PAWN as usize][en_passant_target.checked_ilog2().unwrap_or_default() as usize];
+            self.handle_en_passant(piece_move.target, target, active_player);
 
             self.capture_history.pop();
 
@@ -373,18 +375,21 @@ impl<'a> MoveList<'a> {
             return;
         }
 
-        let capture = self.capture_history.pop().unwrap_or_default();
-        if capture == NO_CAPTURE {
-            self.board.switch_active_player();
-            return;
-        }
-        self.board.main_bitboard |= origin;
-        self.board.empty_bitboard ^= origin;
-        self.board.colour_bitboards[self.board.active_player as usize] |= origin;
-        self.board.piece_bitboards[capture as usize] |= origin;
-        self.board.zobrist ^= ZOBRIST_TABLE.pieces[capture as usize][piece_move.target as usize];
+        self.unmake_capture(piece_move.target, target, active_player);
 
         self.board.switch_active_player();
+    }
+
+    fn restore_state(&mut self) {
+        self.board.zobrist ^= zobrist_castling_rights(self.board.castling_rights);
+        if self.board.en_passant_possibility != 64 { self.board.zobrist ^= ZOBRIST_TABLE.en_passant[self.board.en_passant_possibility as usize % 8] };
+
+        self.board.en_passant_possibility = self.en_passant_history.pop().unwrap_or_default();
+        self.board.castling_rights = self.castling_rights_history.pop().unwrap_or_default();
+        self.board.half_moves = self.halfmoves_history.pop().unwrap_or_default() as u32;
+
+        self.board.zobrist ^= zobrist_castling_rights(self.board.castling_rights);
+        if self.board.en_passant_possibility != 64 { self.board.zobrist ^= ZOBRIST_TABLE.en_passant[self.board.en_passant_possibility as usize % 8] };
     }
 
     /// Unmakes a castling move on the board, given a castling move.
