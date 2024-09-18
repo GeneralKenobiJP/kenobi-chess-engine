@@ -236,6 +236,9 @@ impl Board {
         None
     }
 
+    /// Outputs the piece occupying the given square if it belongs to a given player.
+    /// Returns an option of a Piece enum.
+    /// If the square is empty or occupied by a piece of the other player, it returns None.
     pub fn get_piece_from_square_by_player(&self, square: u8, player: usize) -> Option<Piece> {
         let tile = 1 << square;
         for index in 6* player..6* player + 6 {

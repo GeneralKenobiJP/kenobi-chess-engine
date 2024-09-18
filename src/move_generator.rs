@@ -224,6 +224,13 @@ impl<'a> MoveList<'a> {
         self.board.switch_active_player();
     }
 
+    /// Handles en passant.
+    /// Adjusts the board and the zobrist accordingly.
+    /// Parameters:
+    ///     - target - index of a target square
+    ///     - target_tile - 1 << target
+    ///     - inactive_player - index of an IN-active player as usize
+    /// Parameters are optimized in a way to allow make_move and unmake_move run as fast as possible.
     fn handle_en_passant(&mut self, target: u8, target_tile: u64, inactive_player: usize) {
         let en_passant_target = ((target_tile << 8) | (target_tile >> 8)) & EN_PASSANT_MASK;
         self.board.main_bitboard ^= en_passant_target;
@@ -235,6 +242,8 @@ impl<'a> MoveList<'a> {
         self.board.zobrist ^= ZOBRIST_TABLE.pieces[piece_index][target as usize];
     }
 
+    /// Handles castling rights for a given move.
+    /// Checks if a castling right should change, based on an origin and target of a given move
     fn handle_castling_rights(&mut self, piece_move: &Move) {
         match piece_move.origin {
             0 => self.disable_castling_rights(8),
@@ -252,6 +261,15 @@ impl<'a> MoveList<'a> {
         }
     }
 
+    /// Moves piece from origin to target. Used by make_move/unmake_move.
+    /// Parameters:
+    ///     - origin - index of an origin square
+    ///     - target - index of a target square
+    ///     - target_tile - 1 << target
+    ///     - piece - piece type before move as usize
+    ///     - final_piece - piece type after move as usize
+    ///     - active_player - index of an active player as usize
+    /// Parameters are optimized in a way to allow make_move and unmake_move run as fast as possible.
     fn move_piece(&mut self, origin: u8, target: u8, target_tile: u64, piece: usize, final_piece: usize, active_player: usize) {
         let origin_tile = 1 << origin;
         self.board.main_bitboard ^= origin_tile;
@@ -269,6 +287,14 @@ impl<'a> MoveList<'a> {
         self.board.zobrist ^= ZOBRIST_TABLE.pieces[final_piece_index][target as usize];
     }
 
+    /// Checks if a given move is a capture and handles it accordingly. Used by make_move.
+    /// Parameters:
+    ///     - target - index of a target square
+    ///     - target_tile - 1 << target
+    ///     - inactive_player - index of an IN-active player as usize
+    ///     - should_reset_fifty_moves - pointer to a boolean, dictating whether a given move should
+    ///         reset a fifty-move rule. Necessary for make_move
+    /// Parameters are optimized in a way to allow make_move run as fast as possible.
     fn make_capture(&mut self, target: u8, target_tile: u64, inactive_player: usize, should_reset_fifty_moves: &mut bool) {
         self.board.colour_bitboards[inactive_player] &= !target_tile; // we mask it with the bits indicating NOT a target square
 
@@ -285,6 +311,12 @@ impl<'a> MoveList<'a> {
         }
     }
 
+    /// Checks if a given move is a capture and unmakes it. Used by unmake_move.
+    /// Parameters:
+    ///     - target - index of a target square
+    ///     - target_tile - 1 << target
+    ///     - active_player - index of an active player as usize
+    /// Parameters are optimized in a way to allow unmake_move run as fast as possible.
     fn unmake_capture(&mut self, target: u8, target_tile: u64, active_player: usize) {
         let capture = self.capture_history.pop();
         match capture {
@@ -376,6 +408,8 @@ impl<'a> MoveList<'a> {
         self.board.switch_active_player();
     }
 
+    /// Restores the state from before the last move was made
+    /// Pops relevant values from the history stacks and handles them
     fn restore_state(&mut self) {
         self.board.zobrist ^= zobrist_castling_rights(self.board.castling_rights);
         if self.board.en_passant_possibility != 64 { self.board.zobrist ^= ZOBRIST_TABLE.en_passant[self.board.en_passant_possibility as usize % 8] };
