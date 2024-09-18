@@ -410,4 +410,25 @@ mod tests {
         assert_eq!(Option::from(KING), board.get_piece_from_square(59));
         assert_eq!(None, board.get_piece_from_square(30));
     }
+
+    #[test]
+    fn check_get_piece_from_square_by_player() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+
+        assert_eq!(Option::from(PAWN), board.get_piece_from_square_by_player(8, 0));
+        assert_eq!(None, board.get_piece_from_square_by_player(13, 1));
+        assert_eq!(None, board.get_piece_from_square_by_player(49, 0));
+        assert_eq!(None, board.get_piece_from_square_by_player(0, 1));
+        assert_eq!(Option::from(ROOK), board.get_piece_from_square_by_player(63, 1));
+        assert_eq!(Option::from(KNIGHT), board.get_piece_from_square_by_player(6, 0));
+        assert_eq!(Option::from(KNIGHT), board.get_piece_from_square_by_player(57, 1));
+        assert_eq!(None, board.get_piece_from_square_by_player(2, 1));
+        assert_eq!(Option::from(BISHOP), board.get_piece_from_square_by_player(58, 1));
+        assert_eq!(Option::from(QUEEN), board.get_piece_from_square_by_player(4, 0));
+        assert_eq!(None, board.get_piece_from_square_by_player(60, 0));
+        assert_eq!(Option::from(KING), board.get_piece_from_square_by_player(3, 0));
+        assert_eq!(Option::from(KING), board.get_piece_from_square_by_player(59, 1));
+        assert_eq!(None, board.get_piece_from_square_by_player(30, 0));
+    }
 }
