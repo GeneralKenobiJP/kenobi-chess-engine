@@ -192,7 +192,7 @@ impl<'a> MoveList<'a> {
             should_reset_fifty_moves = true;
 
             if piece_move.target == self.board.en_passant_possibility {
-                self.handle_en_passant(piece_move.target, target, inactive_player);
+                self.handle_en_passant(target, inactive_player);
                 self.capture_history.push(NO_CAPTURE);
                 self.board.en_passant_possibility = NO_PASSANT;
                 self.board.switch_active_player();
@@ -227,11 +227,10 @@ impl<'a> MoveList<'a> {
     /// Handles en passant.
     /// Adjusts the board and the zobrist accordingly.
     /// Parameters:
-    ///     - target - index of a target square
     ///     - target_tile - 1 << target
     ///     - inactive_player - index of an IN-active player as usize
     /// Parameters are optimized in a way to allow make_move and unmake_move run as fast as possible.
-    fn handle_en_passant(&mut self, target: u8, target_tile: u64, inactive_player: usize) {
+    fn handle_en_passant(&mut self, target_tile: u64, inactive_player: usize) {
         let en_passant_target = ((target_tile << 8) | (target_tile >> 8)) & EN_PASSANT_MASK;
         self.board.main_bitboard ^= en_passant_target;
         self.board.empty_bitboard ^= en_passant_target; // XOR is there so that it works with both making and unmaking the en passant
@@ -239,7 +238,7 @@ impl<'a> MoveList<'a> {
 
         let piece_index = 6 * inactive_player + PAWN as usize;
         self.board.piece_bitboards[piece_index] ^= en_passant_target;
-        self.board.zobrist ^= ZOBRIST_TABLE.pieces[piece_index][target as usize];
+        self.board.zobrist ^= ZOBRIST_TABLE.pieces[piece_index][en_passant_target.checked_ilog2().unwrap_or_default() as usize];
     }
 
     /// Handles castling rights for a given move.
@@ -395,7 +394,7 @@ impl<'a> MoveList<'a> {
         self.move_piece(piece_move.target, piece_move.origin, origin, target_piece, piece, inactive_player);
 
         if piece_move.piece == PAWN && piece_move.target == self.board.en_passant_possibility {
-            self.handle_en_passant(piece_move.target, target, active_player);
+            self.handle_en_passant(target, active_player);
 
             self.capture_history.pop();
 
@@ -3588,5 +3587,65 @@ mod tests {
             assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
         }
         assert_eq!(zobrist ^ ZOBRIST_TABLE.pieces[PAWN as usize + 6][41] ^ ZOBRIST_TABLE.pieces[PAWN as usize + 6][33], move_list.board.zobrist);
+    }
+
+    #[test]
+    fn test_handle_en_passant() {
+        let mut board = Board::new();
+        board.read_fen("rnbqkbnr/ppp1pppp/8/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 1");
+
+        let main_bitboard = board.main_bitboard.clone();
+        let empty_bitboard = board.empty_bitboard.clone();
+        let colour_bitboards = board.colour_bitboards.clone();
+        let piece_bitboards = board.piece_bitboards.clone();
+        let zobrist = board.zobrist.clone();
+
+        println!("{}", empty_bitboard);
+
+        let mut move_list = MoveList::from_board(&mut board);
+
+        move_list.move_piece(35, 44, 1 << 44, PAWN as usize, PAWN as usize, WHITE as usize);
+        move_list.handle_en_passant(1 << 44, BLACK as usize);
+        let origin = 1 << 35;
+        let target = 1 << 44;
+        let en_passant: u64 = 1 << 36;
+
+        assert_eq!(main_bitboard ^ origin ^ en_passant | target, move_list.board.main_bitboard);
+        assert_eq!(empty_bitboard ^ target | en_passant | origin, move_list.board.empty_bitboard);
+        assert_eq!(colour_bitboards[0] ^ origin | target, move_list.board.colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1] ^ en_passant, move_list.board.colour_bitboards[1]);
+        for i in 0..12 {
+            if i == PAWN as usize
+            {
+                assert_eq!(piece_bitboards[i] ^ origin | target, move_list.board.piece_bitboards[i]);
+                continue;
+            }
+            if i == PAWN as usize + 6
+            {
+                assert_eq!(piece_bitboards[i] ^ en_passant, move_list.board.piece_bitboards[i]);
+                continue;
+            }
+
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
+        }
+        assert_eq!(zobrist ^ ZOBRIST_TABLE.pieces[PAWN as usize][35] ^ ZOBRIST_TABLE.pieces[PAWN as usize][44] ^
+                       ZOBRIST_TABLE.pieces[PAWN as usize + 6][36], move_list.board.zobrist);
+
+        // unhandle en passant
+        move_list.handle_en_passant(1 << 44, BLACK as usize);
+        assert_eq!(main_bitboard ^ origin | target, move_list.board.main_bitboard);
+        assert_eq!(empty_bitboard ^ target | origin, move_list.board.empty_bitboard);
+        assert_eq!(colour_bitboards[0] ^ origin | target, move_list.board.colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1], move_list.board.colour_bitboards[1]);
+        for i in 0..12 {
+            if i == PAWN as usize
+            {
+                assert_eq!(piece_bitboards[i] ^ origin | target, move_list.board.piece_bitboards[i]);
+                continue;
+            }
+
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
+        }
+        assert_eq!(zobrist ^ ZOBRIST_TABLE.pieces[PAWN as usize][35] ^ ZOBRIST_TABLE.pieces[PAWN as usize][44], move_list.board.zobrist);
     }
 }

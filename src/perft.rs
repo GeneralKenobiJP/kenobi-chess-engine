@@ -77,7 +77,7 @@ mod tests {
     //     board.read_fen(START_POSITION);
     //     let mut move_list = MoveList::from_board(&mut board);
     //
-    //     let depth = 6;
+    //     let depth = 7;
     //
     //     let start = Instant::now();
     //     let nodes = perft(&mut move_list, depth);
