@@ -3702,4 +3702,56 @@ mod tests {
         move_list.disable_player_castling_rights(1);
         assert_eq!(12, move_list.get_board().castling_rights);
     }
+
+    #[test]
+    fn test_handle_castling_rights() {
+        let mut board = Board::new();
+        board.read_fen("rnbqkbnr/ppp1pppp/8/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 1");
+
+        let mut move_list = MoveList::from_board(&mut board);
+        
+        let piece_move = Move::new(0,1,0,PAWN);
+        move_list.handle_castling_rights(&piece_move);
+        assert_eq!(0b00000111, move_list.get_board().castling_rights);
+
+        move_list.board.castling_rights = 0b00001111;
+        let piece_move = Move::new(7,1,0,PAWN);
+        move_list.handle_castling_rights(&piece_move);
+        assert_eq!(0b00001011, move_list.get_board().castling_rights);
+
+        move_list.board.castling_rights = 0b00001111;
+        let piece_move = Move::new(56,1,0,PAWN);
+        move_list.handle_castling_rights(&piece_move);
+        assert_eq!(0b00001101, move_list.get_board().castling_rights);
+
+        move_list.board.castling_rights = 0b00001111;
+        let piece_move = Move::new(63,1,0,PAWN);
+        move_list.handle_castling_rights(&piece_move);
+        assert_eq!(0b00001110, move_list.get_board().castling_rights);
+
+        move_list.board.castling_rights = 0b00001111;
+        let piece_move = Move::new(1,0,0,PAWN);
+        move_list.handle_castling_rights(&piece_move);
+        assert_eq!(0b00000111, move_list.get_board().castling_rights);
+
+        move_list.board.castling_rights = 0b00001111;
+        let piece_move = Move::new(1,7,0,PAWN);
+        move_list.handle_castling_rights(&piece_move);
+        assert_eq!(0b00001011, move_list.get_board().castling_rights);
+
+        move_list.board.castling_rights = 0b00001111;
+        let piece_move = Move::new(1,56,0,PAWN);
+        move_list.handle_castling_rights(&piece_move);
+        assert_eq!(0b00001101, move_list.get_board().castling_rights);
+
+        move_list.board.castling_rights = 0b00001111;
+        let piece_move = Move::new(1,63,0,PAWN);
+        move_list.handle_castling_rights(&piece_move);
+        assert_eq!(0b00001110, move_list.get_board().castling_rights);
+
+        move_list.board.castling_rights = 0b00001111;
+        let piece_move = Move::new(5,10,0,PAWN);
+        move_list.handle_castling_rights(&piece_move);
+        assert_eq!(0b00001111, move_list.get_board().castling_rights);
+    }
 }
