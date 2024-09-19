@@ -3687,4 +3687,19 @@ mod tests {
         move_list.disable_castling_rights(0b00001111);
         assert_eq!(0b00000000, move_list.get_board().castling_rights);
     }
+
+    #[test]
+    fn test_disable_player_castling_rights() {
+        let mut board = Board::new();
+        board.read_fen("rnbqkbnr/ppp1pppp/8/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 1");
+
+        let mut move_list = MoveList::from_board(&mut board);
+
+        move_list.disable_player_castling_rights(0);
+        assert_eq!(3, move_list.get_board().castling_rights);
+
+        move_list.board.castling_rights = 0b00001111;
+        move_list.disable_player_castling_rights(1);
+        assert_eq!(12, move_list.get_board().castling_rights);
+    }
 }
