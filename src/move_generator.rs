@@ -3490,4 +3490,103 @@ mod tests {
     //
     //     assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
     // }
+
+    #[test]
+    fn check_move_piece_quiet_move() {
+        let mut board = Board::new();
+        board.read_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
+
+        let main_bitboard = board.main_bitboard.clone();
+        let empty_bitboard = board.empty_bitboard.clone();
+        let colour_bitboards = board.colour_bitboards.clone();
+        let piece_bitboards = board.piece_bitboards.clone();
+        let zobrist = board.zobrist.clone();
+
+        let mut move_list = MoveList::from_board(&mut board);
+
+        move_list.move_piece(0, 1, 2, ROOK as usize, ROOK as usize, WHITE as usize);
+
+        assert_eq!(main_bitboard ^ 1 | 2, move_list.board.main_bitboard);
+        assert_eq!(empty_bitboard ^ 2 | 1, move_list.board.empty_bitboard);
+        assert_eq!(colour_bitboards[0] ^ 1 | 2, move_list.board.colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1], move_list.board.colour_bitboards[1]);
+        for i in 0..12 {
+            if i == ROOK as usize
+            {
+                assert_eq!(piece_bitboards[i] ^ 1 | 2, move_list.board.piece_bitboards[i]);
+                continue;
+            }
+
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
+        }
+        assert_eq!(zobrist ^ ZOBRIST_TABLE.pieces[ROOK as usize][0] ^ ZOBRIST_TABLE.pieces[ROOK as usize][1], move_list.board.zobrist);
+    }
+
+    #[test]
+    fn check_move_piece_capture() {
+        let mut board = Board::new();
+        board.read_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
+
+        let main_bitboard = board.main_bitboard.clone();
+        let empty_bitboard = board.empty_bitboard.clone();
+        let colour_bitboards = board.colour_bitboards.clone();
+        let piece_bitboards = board.piece_bitboards.clone();
+        let zobrist = board.zobrist.clone();
+
+        let mut move_list = MoveList::from_board(&mut board);
+
+        move_list.move_piece(18, 42, 1 << 42, QUEEN as usize, QUEEN as usize, WHITE as usize);
+        let origin = 1 << 18;
+        let target = 1 << 42;
+
+        assert_eq!(main_bitboard ^ origin, move_list.board.main_bitboard);
+        assert_eq!(empty_bitboard | origin, move_list.board.empty_bitboard);
+        assert_eq!(colour_bitboards[0] ^ origin | target, move_list.board.colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1], move_list.board.colour_bitboards[1]);
+        for i in 0..12 {
+            if i == QUEEN as usize
+            {
+                assert_eq!(piece_bitboards[i] ^ origin | target, move_list.board.piece_bitboards[i]);
+                continue;
+            }
+
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
+        }
+        assert_eq!(zobrist ^ ZOBRIST_TABLE.pieces[QUEEN as usize][18] ^ ZOBRIST_TABLE.pieces[QUEEN as usize][42], move_list.board.zobrist);
+    }
+
+    #[test]
+    fn check_move_piece_black() {
+        let mut board = Board::new();
+        board.read_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
+
+        let main_bitboard = board.main_bitboard.clone();
+        let empty_bitboard = board.empty_bitboard.clone();
+        let colour_bitboards = board.colour_bitboards.clone();
+        let piece_bitboards = board.piece_bitboards.clone();
+        let zobrist = board.zobrist.clone();
+
+        println!("{}", empty_bitboard);
+
+        let mut move_list = MoveList::from_board(&mut board);
+
+        move_list.move_piece(41, 33, 1 << 33, PAWN as usize, PAWN as usize, BLACK as usize);
+        let origin = 1 << 41;
+        let target = 1 << 33;
+
+        assert_eq!(main_bitboard ^ origin | target, move_list.board.main_bitboard);
+        assert_eq!(empty_bitboard ^ target | origin, move_list.board.empty_bitboard);
+        assert_eq!(colour_bitboards[1] ^ origin | target, move_list.board.colour_bitboards[1]);
+        assert_eq!(colour_bitboards[0], move_list.board.colour_bitboards[0]);
+        for i in 0..12 {
+            if i == PAWN as usize + 6
+            {
+                assert_eq!(piece_bitboards[i] ^ origin | target, move_list.board.piece_bitboards[i]);
+                continue;
+            }
+
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
+        }
+        assert_eq!(zobrist ^ ZOBRIST_TABLE.pieces[PAWN as usize + 6][41] ^ ZOBRIST_TABLE.pieces[PAWN as usize + 6][33], move_list.board.zobrist);
+    }
 }
