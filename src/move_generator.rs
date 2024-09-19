@@ -3648,4 +3648,43 @@ mod tests {
         }
         assert_eq!(zobrist ^ ZOBRIST_TABLE.pieces[PAWN as usize][35] ^ ZOBRIST_TABLE.pieces[PAWN as usize][44], move_list.board.zobrist);
     }
+
+    #[test]
+    fn test_disable_castling_rights() {
+        let mut board = Board::new();
+        board.read_fen("rnbqkbnr/ppp1pppp/8/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 1");
+
+        let mut move_list = MoveList::from_board(&mut board);
+
+        move_list.disable_castling_rights(0b00001000);
+        assert_eq!(0b00000111, move_list.get_board().castling_rights);
+
+        move_list.board.castling_rights = 0b00001111;
+        move_list.disable_castling_rights(0b00000100);
+        assert_eq!(0b00001011, move_list.get_board().castling_rights);
+
+        move_list.board.castling_rights = 0b00001111;
+        move_list.disable_castling_rights(0b00000010);
+        assert_eq!(0b00001101, move_list.get_board().castling_rights);
+
+        move_list.board.castling_rights = 0b00001111;
+        move_list.disable_castling_rights(0b00000001);
+        assert_eq!(0b00001110, move_list.get_board().castling_rights);
+
+        move_list.board.castling_rights = 0b00001111;
+        move_list.disable_castling_rights(0b00001100);
+        assert_eq!(0b00000011, move_list.get_board().castling_rights);
+
+        move_list.board.castling_rights = 0b00001111;
+        move_list.disable_castling_rights(0b00000101);
+        assert_eq!(0b00001010, move_list.get_board().castling_rights);
+
+        move_list.board.castling_rights = 0b00001111;
+        move_list.disable_castling_rights(0b00000011);
+        assert_eq!(0b00001100, move_list.get_board().castling_rights);
+
+        move_list.board.castling_rights = 0b00001111;
+        move_list.disable_castling_rights(0b00001111);
+        assert_eq!(0b00000000, move_list.get_board().castling_rights);
+    }
 }
