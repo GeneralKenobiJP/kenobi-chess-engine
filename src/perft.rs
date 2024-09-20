@@ -71,20 +71,20 @@ mod tests {
     use crate::board::{Board, START_POSITION};
     use super::*;
 
-    #[test]
-    fn bench_perft() {
-        let mut board = Board::new();
-        board.read_fen(START_POSITION);
-        let mut move_list = MoveList::from_board(&mut board);
-
-        let depth = 5;
-
-        let start = Instant::now();
-        let nodes = perft(&mut move_list, depth);
-        let duration = start.elapsed();
-        println!("perft {} returned {} nodes", depth, nodes);
-        println!("bench_perft lasted for: {:?}", duration);
-    }
+    // #[test]
+    // fn bench_perft() {
+    //     let mut board = Board::new();
+    //     board.read_fen(START_POSITION);
+    //     let mut move_list = MoveList::from_board(&mut board);
+    //
+    //     let depth = 7;
+    //
+    //     let start = Instant::now();
+    //     let nodes = perft(&mut move_list, depth);
+    //     let duration = start.elapsed();
+    //     println!("perft {} returned {} nodes", depth, nodes);
+    //     println!("bench_perft lasted for: {:?}", duration);
+    // }
 
     #[test]
     fn perft_test() {

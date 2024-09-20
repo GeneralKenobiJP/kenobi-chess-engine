@@ -569,28 +569,28 @@ mod tests {
         assert_eq!([0, -300], best_moves_evaluation);
     }
 
-    #[test]
-    fn bench_search_start_position() {
-        let mut board = Board::new();
-        let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-        board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
-
-        let mut engine = Engine::new();
-
-        let now = Instant::now();
-        println!("{}", engine.search(&mut move_list, 15));
-        let duration = now.elapsed();
-        println!("search lasted for: {:?}", duration);
-        println!("Best moves: {:?}", engine.transposition_table.get_from_position(&board).clone().unwrap().best_moves);
-    }
+    // #[test]
+    // fn bench_search_start_position() {
+    //     let mut board = Board::new();
+    //     let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    //     board.read_fen(fen);
+    //     let mut move_list = MoveList::from_board(&mut board);
+    //
+    //     let mut engine = Engine::new();
+    //
+    //     let now = Instant::now();
+    //     println!("{}", engine.search(&mut move_list, 8));
+    //     let duration = now.elapsed();
+    //     println!("search lasted for: {:?}", duration);
+    //     println!("Best moves: {:?}", engine.transposition_table.get_from_position(&board).clone().unwrap().best_moves);
+    // }
     //
     // #[test]
     // fn bench_search_kiwipete_position() {
     //     let mut board = Board::new();
     //     let fen = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
     //     board.read_fen(fen);
-    //     let mut move_list = MoveList::new(&mut board);
+    //     let mut move_list = MoveList::from_board(&mut board);
     //
     //     let mut engine = Engine::new();
     //
