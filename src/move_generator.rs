@@ -3848,4 +3848,91 @@ mod tests {
         }
         assert!(should_reset_fifty_moves);
     }
+
+    #[test]
+    fn check_unmake_capture_quiet_move() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+
+        let main_bitboard = board.main_bitboard.clone();
+        let empty_bitboard = board.empty_bitboard.clone();
+        let colour_bitboards = board.colour_bitboards.clone();
+        let piece_bitboards = board.piece_bitboards.clone();
+        let zobrist = board.zobrist.clone();
+
+        let mut move_list = MoveList::from_board(&mut board);
+
+        let mut should_reset_fifty_moves = false;
+        move_list.make_capture(16, 1 << 16, BLACK as usize, &mut should_reset_fifty_moves);
+        move_list.unmake_capture(16, 1 << 16, BLACK as usize);
+
+        assert_eq!(None, move_list.capture_history.pop());
+        assert_eq!(zobrist, move_list.get_board().zobrist);
+        assert_eq!(main_bitboard, move_list.get_board().main_bitboard);
+        assert_eq!(empty_bitboard, move_list.get_board().empty_bitboard);
+        assert_eq!(colour_bitboards, move_list.get_board().colour_bitboards);
+        assert_eq!(piece_bitboards, move_list.get_board().piece_bitboards);
+    }
+
+    #[test]
+    fn check_unmake_capture_capture() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+
+        let main_bitboard = board.main_bitboard.clone();
+        let empty_bitboard = board.empty_bitboard.clone();
+        let colour_bitboards = board.colour_bitboards.clone();
+        let piece_bitboards = board.piece_bitboards.clone();
+        let zobrist = board.zobrist.clone();
+
+        let target = 1 << 48;
+        board.main_bitboard ^= target; // we need to do this manually so that unmake_capture works properly
+        board.empty_bitboard |= target; // does not influence the behaviour of make_capture
+
+        let mut move_list = MoveList::from_board(&mut board);
+
+        let mut should_reset_fifty_moves = false;
+        move_list.make_capture(48, target, BLACK as usize, &mut should_reset_fifty_moves);
+        move_list.unmake_capture(48, 1 << 48, BLACK as usize);
+
+        let index = PAWN as u8 + 6 * BLACK as u8;
+        assert_eq!(None, move_list.capture_history.pop());
+        assert_eq!(zobrist, move_list.get_board().zobrist);
+        assert_eq!(main_bitboard, move_list.get_board().main_bitboard);
+        assert_eq!(empty_bitboard, move_list.get_board().empty_bitboard);
+        assert_eq!(colour_bitboards[1], move_list.get_board().colour_bitboards[1]);
+        assert_eq!(colour_bitboards[0], move_list.get_board().colour_bitboards[0]);
+        assert_eq!(piece_bitboards, move_list.get_board().piece_bitboards);
+    }
+
+    #[test]
+    fn check_unmake_capture_black() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+        board.active_player = BLACK;
+
+        let main_bitboard = board.main_bitboard.clone();
+        let empty_bitboard = board.empty_bitboard.clone();
+        let colour_bitboards = board.colour_bitboards.clone();
+        let piece_bitboards = board.piece_bitboards.clone();
+        let zobrist = board.zobrist.clone();
+
+        let target = 1 << 4;
+        board.main_bitboard ^= target; // we need to do this manually so that unmake_capture works properly
+        board.empty_bitboard |= target; // does not influence the behaviour of make_capture
+
+        let mut move_list = MoveList::from_board(&mut board);
+
+        let mut should_reset_fifty_moves = false;
+        move_list.make_capture(4, target, WHITE as usize, &mut should_reset_fifty_moves);
+        move_list.unmake_capture(4, target, WHITE as usize);
+
+        let index = QUEEN as u8 + 6 * WHITE as u8;
+        assert_eq!(None, move_list.capture_history.pop());
+        assert_eq!(zobrist, move_list.get_board().zobrist);
+        assert_eq!(main_bitboard, move_list.get_board().main_bitboard);
+        assert_eq!(empty_bitboard, move_list.get_board().empty_bitboard);
+        assert_eq!(colour_bitboards, move_list.get_board().colour_bitboards);
+        assert_eq!(piece_bitboards, move_list.get_board().piece_bitboards);
+    }
 }
