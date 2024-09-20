@@ -409,6 +409,7 @@ impl<'a> MoveList<'a> {
 
     /// Restores the state from before the last move was made
     /// Pops relevant values from the history stacks and handles them
+    /// Does NOT handle capture history
     fn restore_state(&mut self) {
         self.board.zobrist ^= zobrist_castling_rights(self.board.castling_rights);
         if self.board.en_passant_possibility != 64 { self.board.zobrist ^= ZOBRIST_TABLE.en_passant[self.board.en_passant_possibility as usize % 8] };
@@ -3934,5 +3935,28 @@ mod tests {
         assert_eq!(empty_bitboard, move_list.get_board().empty_bitboard);
         assert_eq!(colour_bitboards, move_list.get_board().colour_bitboards);
         assert_eq!(piece_bitboards, move_list.get_board().piece_bitboards);
+    }
+
+    #[test]
+    fn test_restore_state() {
+        let mut board = Board::new();
+        // board.read_fen("rnbqkbnr/ppp1pppp/8/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 1"); // what we regard as the initial position in this test
+        board.read_fen("rnbqkbnr/ppp1pppp/8/3pP3/8/8/PPPPBPPP/RNBQK1NR b Kkq - 1 1"); // we delete castling rights for no reason in terms of chess rules. Deal with it
+        let zobrist = board.zobrist.clone();
+
+        let mut move_list = MoveList::from_board(&mut board);
+        move_list.castling_rights_history.push(0b00001111);
+        move_list.en_passant_history.push(Board::encode_square(&'d',&'6'));
+        move_list.halfmoves_history.push(0);
+
+        move_list.restore_state();
+
+        assert_eq!(0b00001111, move_list.get_board().castling_rights);
+        assert_eq!(Board::encode_square(&'d',&'6'), move_list.get_board().en_passant_possibility);
+        assert_eq!(0, move_list.get_board().half_moves);
+        assert_eq!(zobrist ^ ZOBRIST_TABLE.castling_rights[0b00001011]
+                    ^ ZOBRIST_TABLE.castling_rights[0b00001111]
+                    ^ ZOBRIST_TABLE.en_passant[4],
+                   move_list.get_board().zobrist);
     }
 }
