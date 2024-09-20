@@ -3565,8 +3565,6 @@ mod tests {
         let piece_bitboards = board.piece_bitboards.clone();
         let zobrist = board.zobrist.clone();
 
-        println!("{}", empty_bitboard);
-
         let mut move_list = MoveList::from_board(&mut board);
 
         move_list.move_piece(41, 33, 1 << 33, PAWN as usize, PAWN as usize, BLACK as usize);
@@ -3599,8 +3597,6 @@ mod tests {
         let colour_bitboards = board.colour_bitboards.clone();
         let piece_bitboards = board.piece_bitboards.clone();
         let zobrist = board.zobrist.clone();
-
-        println!("{}", empty_bitboard);
 
         let mut move_list = MoveList::from_board(&mut board);
 
@@ -3753,5 +3749,103 @@ mod tests {
         let piece_move = Move::new(5,10,0,PAWN);
         move_list.handle_castling_rights(&piece_move);
         assert_eq!(0b00001111, move_list.get_board().castling_rights);
+    }
+
+    #[test]
+    fn check_make_capture_quiet_move() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+
+        let main_bitboard = board.main_bitboard.clone();
+        let empty_bitboard = board.empty_bitboard.clone();
+        let colour_bitboards = board.colour_bitboards.clone();
+        let piece_bitboards = board.piece_bitboards.clone();
+        let zobrist = board.zobrist.clone();
+
+        let mut move_list = MoveList::from_board(&mut board);
+
+        let mut should_reset_fifty_moves = false;
+        move_list.make_capture(16, 1 << 16, BLACK as usize, &mut should_reset_fifty_moves);
+
+        assert_eq!(NO_CAPTURE, move_list.capture_history.pop().unwrap_or_default());
+        assert_eq!(zobrist, move_list.get_board().zobrist);
+        assert_eq!(main_bitboard, move_list.get_board().main_bitboard);
+        assert_eq!(empty_bitboard, move_list.get_board().empty_bitboard);
+        assert_eq!(colour_bitboards, move_list.get_board().colour_bitboards);
+        assert_eq!(piece_bitboards, move_list.get_board().piece_bitboards);
+        assert!(!should_reset_fifty_moves);
+    }
+
+    #[test]
+    fn check_make_capture_capture() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+
+        let main_bitboard = board.main_bitboard.clone();
+        let empty_bitboard = board.empty_bitboard.clone();
+        let colour_bitboards = board.colour_bitboards.clone();
+        let piece_bitboards = board.piece_bitboards.clone();
+        let zobrist = board.zobrist.clone();
+
+        let mut move_list = MoveList::from_board(&mut board);
+
+        let mut should_reset_fifty_moves = false;
+        let target = 1 << 48;
+        move_list.make_capture(48, target, BLACK as usize, &mut should_reset_fifty_moves);
+
+        let index = PAWN as u8 + 6 * BLACK as u8;
+        assert_eq!(index, move_list.capture_history.pop().unwrap_or_default());
+        assert_eq!(zobrist ^ ZOBRIST_TABLE.pieces[index as usize][48], move_list.get_board().zobrist);
+        assert_eq!(main_bitboard, move_list.get_board().main_bitboard);
+        assert_eq!(empty_bitboard, move_list.get_board().empty_bitboard);
+        assert_eq!(colour_bitboards[1] ^ target, move_list.get_board().colour_bitboards[1]);
+        assert_eq!(colour_bitboards[0], move_list.get_board().colour_bitboards[0]);
+        for i in 0..12 {
+            if i == index as usize
+            {
+                assert_eq!(piece_bitboards[i] ^ target, move_list.board.piece_bitboards[i]);
+                continue;
+            }
+
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
+        }
+        assert!(should_reset_fifty_moves);
+    }
+
+    #[test]
+    fn check_make_capture_black() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+        board.active_player = BLACK;
+
+        let main_bitboard = board.main_bitboard.clone();
+        let empty_bitboard = board.empty_bitboard.clone();
+        let colour_bitboards = board.colour_bitboards.clone();
+        let piece_bitboards = board.piece_bitboards.clone();
+        let zobrist = board.zobrist.clone();
+
+        let mut move_list = MoveList::from_board(&mut board);
+
+        let mut should_reset_fifty_moves = false;
+        let target = 1 << 4;
+        move_list.make_capture(4, target, WHITE as usize, &mut should_reset_fifty_moves);
+
+        let index = QUEEN as u8 + 6 * WHITE as u8;
+        assert_eq!(index, move_list.capture_history.pop().unwrap_or_default());
+        assert_eq!(zobrist ^ ZOBRIST_TABLE.pieces[index as usize][4], move_list.get_board().zobrist);
+        assert_eq!(main_bitboard, move_list.get_board().main_bitboard);
+        assert_eq!(empty_bitboard, move_list.get_board().empty_bitboard);
+        assert_eq!(colour_bitboards[0] ^ target, move_list.get_board().colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1], move_list.get_board().colour_bitboards[1]);
+        for i in 0..12 {
+            if i == index as usize
+            {
+                assert_eq!(piece_bitboards[i] ^ target, move_list.board.piece_bitboards[i]);
+                continue;
+            }
+
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
+        }
+        assert!(should_reset_fifty_moves);
     }
 }
