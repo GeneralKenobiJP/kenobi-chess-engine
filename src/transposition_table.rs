@@ -65,6 +65,12 @@ impl TranspositionTable {
         }
     }
 
+    pub fn with_capacity(capacity: usize) -> Self {
+        TranspositionTable {
+            table: vec![None; capacity]
+        }
+    }
+
     /// Hashes the key by implementing linear probing
     /// Should be called for a zobrist-hashed key
     fn hash(&self, key: u64) -> usize {
