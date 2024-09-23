@@ -100,6 +100,7 @@ impl Engine {
         }
 
         move_list.generate_moves();
+        move_list.order_moves(&self.transposition_table);
 
         let moves = move_list.get_moves().clone();
 
@@ -230,6 +231,8 @@ impl Engine {
             self.repetition_table.unvisit_position(move_list.get_board().zobrist);
             return evaluate(move_list.get_board());
         }
+
+        move_list.order_moves(&self.transposition_table);
 
         let mut best_moves: [Option<Move>; 3] = [None; 3];
         let mut best_moves_evaluation: [i32; 2] = [NEGATIVE_INFINITY; 2]; // we omit the first move evaluation, as this is simply the value variable
@@ -594,7 +597,7 @@ mod tests {
     //     let mut engine = Engine::new();
     //
     //     let now = Instant::now();
-    //     println!("{}", engine.search(&mut move_list, 8));
+    //     println!("{}", engine.search(&mut move_list, 7));
     //     let duration = now.elapsed();
     //     println!("search lasted for: {:?}", duration);
     //     println!("Best moves: {:?}", engine.transposition_table.get_from_position(&board).clone().unwrap().best_moves);

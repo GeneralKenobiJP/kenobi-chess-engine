@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 use crate::move_generator::{Move, MoveList};
 use crate::transposition_table::{Transposition, TranspositionTable};
+use crate::transposition_table::NodeType::EXACT;
 
 type OrderTable = HashMap<Move, i32>;
 
 const HASH_MOVE_PRIORITY: [i32; 3] = [256, 128, 32];
+const PV_NODE_PRIORITY: i32 = 64;
 
 impl<'a> MoveList<'a> {
     pub fn order_moves(&mut self, transposition_table: &TranspositionTable) {
@@ -38,12 +40,19 @@ impl<'a> MoveList<'a> {
 
                 let mut index = 0;
 
+                // PV-Node
+                let mut pv_node = 0;
+                if transposition.node_type == EXACT {
+                    pv_node = PV_NODE_PRIORITY;
+                }
+
                 for entry in transposition.best_moves {
                     match entry {
                         None => { return; }
                         Some(piece_move) => {
                             let old_value = order_table.get(&piece_move).unwrap();
-                            order_table.insert(piece_move, old_value + HASH_MOVE_PRIORITY[index]);
+                            order_table.insert(piece_move, old_value + HASH_MOVE_PRIORITY[index] + pv_node);
+                            pv_node = 0;
                         }
                     }
                 }
