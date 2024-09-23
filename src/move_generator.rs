@@ -166,12 +166,15 @@ impl<'a> MoveList<'a> {
         self.board
     }
 
+    /// Orders the move list in-place based on the supplied OrderTable.
+    /// OrderTable is a hashmap of Move as a key, and i32 as a priority value.
+    /// The higher the priority value, the higher the move should be.
+    /// The first move after ordering is the one with the highest priority.
     pub fn order_moves(&mut self, order_table: &OrderTable) {
         self.moves.sort_by(|move_a, move_b| {
-            let priority_a = order_table.get(move_a).unwrap();  // Default to 0 if not found
+            let priority_a = order_table.get(move_a).unwrap();
             let priority_b = order_table.get(move_b).unwrap();
 
-            // Compare priorities
             priority_b.cmp(priority_a)  // Sort in descending order (higher priority first)
         });
     }
@@ -3972,5 +3975,31 @@ mod tests {
                     ^ ZOBRIST_TABLE.castling_rights[0b00001111]
                     ^ ZOBRIST_TABLE.en_passant[4],
                    move_list.get_board().zobrist);
+    }
+
+    #[test]
+    fn test_order_moves() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+
+        let mut move_list = MoveList::from_board(&mut board);
+        move_list.generate_moves();
+
+        let mut order_table = OrderTable::with_capacity(20);
+        for piece_move in move_list.get_moves() {
+            order_table.insert(*piece_move, 0);
+        }
+
+        order_table.insert(Move::new(8, 16, 0, PAWN), 4);
+        order_table.insert(Move::new(1, 18, 0, KNIGHT), 64);
+        order_table.insert(Move::new(11, 27, 0, PAWN), 32);
+        order_table.insert(Move::new(12, 28, 0, PAWN), 32);
+
+        move_list.order_moves(&order_table);
+
+        assert_eq!(Move::new(1, 18, 0, KNIGHT), move_list.moves[0]);
+        assert_eq!(Move::new(11, 27, 0, PAWN), move_list.moves[1]);
+        assert_eq!(Move::new(12, 28, 0, PAWN), move_list.moves[2]);
+        assert_eq!(Move::new(8, 16, 0, PAWN), move_list.moves[3]);
     }
 }
