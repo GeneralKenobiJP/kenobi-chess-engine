@@ -10,6 +10,7 @@ const HASH_MOVE_PRIORITY: [i32; 3] = [256, 128, 32];
 const PV_NODE_PRIORITY: i32 = 64;
 
 impl Engine {
+    /// Orders moves in-place using order heuristics, given a move list.
     pub fn order_moves(&self, move_list: &mut MoveList) {
         let mut order_table = self.construct_order_table(move_list);
 
@@ -145,22 +146,23 @@ mod tests {
         assert_eq!(HASH_MOVE_PRIORITY[1], *order_table.get(&Move::new(11, 27, 0, PAWN)).unwrap());
     }
 
-    //
-    // #[test]
-    // fn test_order_moves() {
-    //     let mut board = Board::new();
-    //     board.read_fen(START_POSITION);
-    //
-    //     let mut move_list = MoveList::from_board(&mut board);
-    //     move_list.generate_moves();
-    //     let mut transposition_table = TranspositionTable::with_capacity(256);
-    //     transposition_table.put_position(move_list.board, 5, 200,
-    //                                      &[Option::from(Move::new(11, 27, 0, PAWN)), Option::from(Move::new(12, 28, 0, PAWN)), None],
-    //                                      EXACT);
-    //
-    //     let time = Instant::now();
-    //     move_list.order_moves(&transposition_table);
-    //     let duration = time.elapsed();
-    //     println!("order_moves lasted for: {:?}", duration);
-    // }
+    #[test]
+    fn test_order_moves() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+
+        let mut move_list = MoveList::from_board(&mut board);
+        move_list.generate_moves();
+        let mut engine = Engine::with_capacity(256);
+        engine.transposition_table.put_position(move_list.get_board(), 5, 200,
+                                         &[Option::from(Move::new(1, 18, 0, KNIGHT)), Option::from(Move::new(12, 28, 0, PAWN)), None],
+                                         EXACT);
+
+        let time = Instant::now();
+        engine.order_moves(&mut move_list);
+        let duration = time.elapsed();
+        println!("order_moves lasted for: {:?}", duration);
+        assert_eq!(Move::new(1, 18, 0, KNIGHT), move_list.get_moves()[0]);
+        assert_eq!(Move::new(12, 28, 0, PAWN), move_list.get_moves()[1]);
+    }
 }
