@@ -18,6 +18,10 @@ impl Engine {
         move_list.order_moves(&order_table);
     }
 
+    /// Constructs an order table, given a MoveList.
+    /// OrderTable is a hashmap of Move as a key, and i32 as a priority value.
+    /// It is used for ordering the moves.
+    /// The order table is initialized with all the moves inserted and given a priority of 0.
     fn construct_order_table(&self, move_list: &MoveList) -> OrderTable {
         let mut order_table = HashMap::<Move, i32>::with_capacity(move_list.get_moves().len());
 
@@ -58,18 +62,29 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
-    // #[test]
-    // fn test_construct_order_table() {
-    //     let mut board = Board::new();
-    //     board.read_fen(START_POSITION);
-    //
-    //     let move_list = MoveList::from_board(&mut board);
-    //
-    //     let time = Instant::now();
-    //     move_list.construct_order_table();
-    //     let duration = time.elapsed();
-    //     println!("construct_order_table lasted for: {:?}", duration);
-    // }
+    use std::time::Instant;
+    use crate::board::{Board, START_POSITION};
+    use crate::move_generator::MoveList;
+    use crate::search::Engine;
+
+    #[test]
+    fn test_construct_order_table() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+
+        let move_list = MoveList::from_board(&mut board);
+        let engine = Engine::with_capacity(256);
+
+        let time = Instant::now();
+        let order_table = engine.construct_order_table(&move_list);
+        let duration = time.elapsed();
+        println!("construct_order_table lasted for: {:?}", duration);
+
+        for piece_move in move_list.get_moves() {
+            assert_eq!(0, *order_table.get(piece_move).unwrap());
+        }
+        assert_eq!(move_list.get_moves().len(), order_table.keys().len());
+    }
     //
     // #[test]
     // fn test_order_moves() {

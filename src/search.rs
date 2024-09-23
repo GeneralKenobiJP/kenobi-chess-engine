@@ -31,6 +31,15 @@ impl Engine {
         }
     }
 
+    pub fn with_capacity(capacity: usize) -> Self {
+        Engine {
+            transposition_table: TranspositionTable::with_capacity(capacity),
+            repetition_table: RepetitionTable::new(),
+            depth: 0,
+            best_moves: [None; 3]
+        }
+    }
+
     pub fn get_best_move(&self, board: &Board) -> Move {
         self.transposition_table.get_from_zobrist(board.zobrist).clone().unwrap().best_moves[0].unwrap()
     }
