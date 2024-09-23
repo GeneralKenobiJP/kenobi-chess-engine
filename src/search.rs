@@ -2,6 +2,8 @@
 //! Builds a search tree to find the best possible move according to the evaluation algorithm
 //! Uses negamax convention, alpha-beta prunning, quiescence search.
 
+mod ordering;
+
 use std::thread::current;
 use crate::board::Board;
 use crate::evaluation::{DRAW, evaluate};
@@ -100,7 +102,7 @@ impl Engine {
         }
 
         move_list.generate_moves();
-        move_list.order_moves(&self.transposition_table);
+        self.order_moves(move_list);
 
         let moves = move_list.get_moves().clone();
 
@@ -232,7 +234,7 @@ impl Engine {
             return evaluate(move_list.get_board());
         }
 
-        move_list.order_moves(&self.transposition_table);
+        self.order_moves(move_list);
 
         let mut best_moves: [Option<Move>; 3] = [None; 3];
         let mut best_moves_evaluation: [i32; 2] = [NEGATIVE_INFINITY; 2]; // we omit the first move evaluation, as this is simply the value variable

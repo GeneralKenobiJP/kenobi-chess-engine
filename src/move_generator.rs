@@ -2,14 +2,16 @@
 //! Generates a vector of pseudo-legal moves based on the input board position
 //! Involves bitboards, magic bitboards.
 
+use std::collections::HashMap;
 use crate::piece::Piece;
 use crate::board::{Board, CASTLE_BLACK_KINGSIDE_FLAGS, CASTLE_BLACK_KINGSIDE_MASK, CASTLE_BLACK_QUEENSIDE_FLAGS, CASTLE_BLACK_QUEENSIDE_MASK, CASTLE_WHITE_KINGSIDE_FLAGS, CASTLE_WHITE_KINGSIDE_MASK, CASTLE_WHITE_QUEENSIDE_FLAGS, CASTLE_WHITE_QUEENSIDE_MASK, FILE_1_MASK, FILE_8_MASK, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_MASK, UNCASTLE_BLACK_KINGSIDE_FLAGS, UNCASTLE_BLACK_QUEENSIDE_FLAGS, UNCASTLE_WHITE_KINGSIDE_FLAGS, UNCASTLE_WHITE_QUEENSIDE_FLAGS, UPPER_RANK_LOWEST_TILE};
 use crate::piece::Colour::{BLACK, WHITE};
 use crate::piece::Piece::{BISHOP, KING, KNIGHT, PAWN, QUEEN, ROOK};
 use crate::magic_hasher::{magic_hash_bishop, magic_hash_rook, MAGIC_MASK_BISHOP, MAGIC_MASK_ROOK};
+use crate::transposition_table::TranspositionTable;
 use crate::zobrist::{zobrist_castling_rights, ZOBRIST_TABLE};
 
-mod ordering;
+type OrderTable = HashMap<Move, i32>;
 
 const KNIGHT_SHIFTS: [i8; 8] = [17, 10, -6, -15, -17, -10, 6, 15]; // Beginning on NW, counter-clockwise
 const INITIAL_STACK_CAPACITY: usize = 30; // used by MoveList constructor
@@ -162,6 +164,16 @@ impl<'a> MoveList<'a> {
     /// Mutable getter for the board
     pub fn get_mutable_board(&mut self) -> &mut Board {
         self.board
+    }
+
+    pub fn order_moves(&mut self, order_table: &OrderTable) {
+        self.moves.sort_by(|move_a, move_b| {
+            let priority_a = order_table.get(move_a).unwrap();  // Default to 0 if not found
+            let priority_b = order_table.get(move_b).unwrap();
+
+            // Compare priorities
+            priority_b.cmp(priority_a)  // Sort in descending order (higher priority first)
+        });
     }
     
     /// Makes a move on the board, given a move.
