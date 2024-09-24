@@ -4,7 +4,6 @@
 
 mod ordering;
 
-use std::thread::current;
 use crate::board::Board;
 use crate::evaluation::{DRAW, evaluate};
 use crate::move_generator::{Move, MoveList};
@@ -211,7 +210,7 @@ impl Engine {
     /// Uses the given move list to generate moves in-place and analyze the board situation.
     /// Alpha - minimum score the current player is assured of (we found a move of at least this value earlier at this depth)
     /// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
-    #[inline(never)]
+    // #[inline(never)]
     fn quiescence_search(&mut self, move_list: &mut MoveList, mut alpha: i32, beta: i32) -> i32 {
         // println!("Is repetition table empty?: {}", self.repetition_table.is_empty());
         // println!("Visits to this position before: {}", self.repetition_table.get_repetition(move_list.get_board().zobrist));
@@ -608,7 +607,7 @@ mod tests {
     //     let mut engine = Engine::new();
     //
     //     let now = Instant::now();
-    //     println!("{}", engine.search(&mut move_list, 7));
+    //     println!("{}", engine.search(&mut move_list, 8));
     //     let duration = now.elapsed();
     //     println!("search lasted for: {:?}", duration);
     //     println!("Best moves: {:?}", engine.transposition_table.get_from_position(&board).clone().unwrap().best_moves);

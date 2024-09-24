@@ -8,7 +8,6 @@ use crate::board::{Board, CASTLE_BLACK_KINGSIDE_FLAGS, CASTLE_BLACK_KINGSIDE_MAS
 use crate::piece::Colour::{BLACK, WHITE};
 use crate::piece::Piece::{BISHOP, KING, KNIGHT, PAWN, QUEEN, ROOK};
 use crate::magic_hasher::{magic_hash_bishop, magic_hash_rook, MAGIC_MASK_BISHOP, MAGIC_MASK_ROOK};
-use crate::transposition_table::TranspositionTable;
 use crate::zobrist::{zobrist_castling_rights, ZOBRIST_TABLE};
 
 type OrderTable = HashMap<Move, i32>;
@@ -3913,7 +3912,6 @@ mod tests {
         move_list.make_capture(48, target, BLACK as usize, &mut should_reset_fifty_moves);
         move_list.unmake_capture(48, 1 << 48, BLACK as usize);
 
-        let index = PAWN as u8 + 6 * BLACK as u8;
         assert_eq!(None, move_list.capture_history.pop());
         assert_eq!(zobrist, move_list.get_board().zobrist);
         assert_eq!(main_bitboard, move_list.get_board().main_bitboard);
@@ -3945,7 +3943,6 @@ mod tests {
         move_list.make_capture(4, target, WHITE as usize, &mut should_reset_fifty_moves);
         move_list.unmake_capture(4, target, WHITE as usize);
 
-        let index = QUEEN as u8 + 6 * WHITE as u8;
         assert_eq!(None, move_list.capture_history.pop());
         assert_eq!(zobrist, move_list.get_board().zobrist);
         assert_eq!(main_bitboard, move_list.get_board().main_bitboard);
