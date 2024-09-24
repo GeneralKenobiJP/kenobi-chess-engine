@@ -14,6 +14,8 @@ use crate::perft::perft_log;
 use crate::search::Engine;
 use crate::string_builder::StringBuilder;
 
+const INFINITE_DEPTH: u32 = 256;
+
 pub struct Bot<'a> {
     engine: Engine,
     move_list: MoveList<'a>
@@ -137,6 +139,7 @@ impl<'a> Bot<'a> {
         match mode {
             "perft" => self.go_perft(scanner),
             "infinite" => self.go_infinite(),
+            "depth" => self.go_depth(scanner),
             _ => self.go_infinite()
         }
     }
@@ -159,17 +162,26 @@ impl<'a> Bot<'a> {
     /// Responds to a "go infinite" command.
     /// todo: TBD
     fn go_infinite(&mut self) -> String {
-        self.engine.search(&mut self.move_list, 1);
-        let best_move = self.engine.get_best_move(self.move_list.get_board());
-        let response = best_move.to_algebraic_notation();
+        self.engine.search(&mut self.move_list, INFINITE_DEPTH);
 
-        response
+        String::new()
+    }
+
+    /// Responds to a "go depth" command.
+    /// todo: TBD
+    fn go_depth(&mut self, scanner: &mut ScannerStr) -> String {
+        let depth = scanner.next().unwrap_or_default().unwrap_or_default().parse::<u32>().unwrap_or_default();
+        self.engine.search(&mut self.move_list, depth);
+
+        self.best_move()
     }
 
     /// Responds to a "stop command".
     /// Immediately ceases further position analysis.
     /// Responds with the best move
     fn stop(&mut self) -> String {
+        self.engine.set_stop_flag(true);
+
         self.best_move()
     }
 

@@ -28,7 +28,11 @@ fn main() {
 
         let response = bot.message(&message);
         match response {
-            Some(output) => println!("{}", output),
+            Some(output) => {
+                if !output.is_empty() {
+                    println!("{}", output);
+                }
+            },
             None => break
         }
     }

@@ -16,6 +16,7 @@ pub struct Engine {
     transposition_table: TranspositionTable,
     repetition_table: RepetitionTable,
     depth: u32,
+    stop_flag: bool,
     best_moves: [Option<Move>; 3]
 }
 
@@ -26,6 +27,7 @@ impl Engine {
             transposition_table: TranspositionTable::new(),
             repetition_table: RepetitionTable::new(),
             depth: 0,
+            stop_flag: false,
             best_moves: [None; 3]
         }
     }
@@ -35,6 +37,7 @@ impl Engine {
             transposition_table: TranspositionTable::with_capacity(capacity),
             repetition_table: RepetitionTable::new(),
             depth: 0,
+            stop_flag: false,
             best_moves: [None; 3]
         }
     }
@@ -46,6 +49,10 @@ impl Engine {
     pub fn get_best_moves(&self) -> &[Option<Move>; 3] {
         &self.best_moves
     }
+
+    pub fn set_stop_flag(&mut self, flag: bool) {
+        self.stop_flag = flag;
+    }
     
     /// Calls search algorithm to find the best possible moves in the current situation.
     /// Searches up to the given depth.
@@ -53,14 +60,15 @@ impl Engine {
     /// Calls the algorithm using alpha-beta prunning and quiescence search
     // #[inline(never)]
     pub fn search(&mut self, move_list: &mut MoveList, depth: u32) -> i32 {
-        for current_depth in 1..depth {
-            self.search_alpha_beta_prunning(move_list, current_depth, NEGATIVE_INFINITY, POSITIVE_INFINITY);
+        let mut value = 0;
+        for current_depth in 1..depth+1 {
+            value = self.search_alpha_beta_prunning(move_list, current_depth, NEGATIVE_INFINITY, POSITIVE_INFINITY);
             self.best_moves = self.transposition_table.get_from_zobrist(move_list.get_board().zobrist).clone().unwrap().best_moves;
             self.depth = current_depth;
+            if self.stop_flag {
+                return value;
+            }
         }
-        let value = self.search_alpha_beta_prunning(move_list, depth, NEGATIVE_INFINITY, POSITIVE_INFINITY);
-        self.best_moves = self.transposition_table.get_from_zobrist(move_list.get_board().zobrist).clone().unwrap().best_moves;
-        self.depth = depth;
 
         value
     }
