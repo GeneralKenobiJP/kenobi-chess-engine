@@ -16,7 +16,7 @@ use crate::bot::Bot;
 fn main() {
 
     let mut board = board::Board::new();
-    let mut bot = Bot::new(&mut board);
+    let mut bot = Bot::new(board);
 
     // Handling of UCI <=> the game loop
 

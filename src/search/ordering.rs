@@ -85,7 +85,7 @@ mod tests {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
 
-        let move_list = MoveList::from_board(&mut board);
+        let move_list = MoveList::from_board(board);
         let engine = Engine::with_capacity(256);
 
         let time = Instant::now();
@@ -104,7 +104,7 @@ mod tests {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
 
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
         move_list.generate_moves();
         let mut engine = Engine::with_capacity(256);
         engine.transposition_table.put_position(move_list.get_board(), 3, 200,
@@ -128,7 +128,7 @@ mod tests {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
 
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
         move_list.generate_moves();
         let mut engine = Engine::with_capacity(256);
         engine.transposition_table.put_position(move_list.get_board(), 3, 200,
@@ -151,7 +151,7 @@ mod tests {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
 
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
         move_list.generate_moves();
         let mut engine = Engine::with_capacity(256);
         engine.transposition_table.put_position(move_list.get_board(), 5, 200,

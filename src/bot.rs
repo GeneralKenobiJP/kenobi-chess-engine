@@ -16,13 +16,13 @@ use crate::string_builder::StringBuilder;
 
 const INFINITE_DEPTH: u32 = 256;
 
-pub struct Bot<'a> {
+pub struct Bot {
     engine: Engine,
-    move_list: MoveList<'a>
+    move_list: MoveList
 }
 
-impl<'a> Bot<'a> {
-    pub fn new(board: &'a mut Board) -> Self {
+impl Bot {
+    pub fn new(board: Board) -> Self {
         Bot {
             engine: Engine::new(),
             move_list: MoveList::from_board(board)
@@ -222,7 +222,7 @@ mod tests {
     #[test]
     fn check_bot_new() {
         let mut board = Board::new();
-        Bot::new(&mut board);
+        Bot::new(board);
     }
 
     #[test]
@@ -247,7 +247,7 @@ mod tests {
     fn check_new_game() {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
-        let mut bot = Bot::new(&mut board);
+        let mut bot = Bot::new(board);
         bot.engine.search(&mut bot.move_list, 1);
         bot.move_list.generate_moves();
         assert!(!bot.move_list.get_moves().is_empty());
@@ -268,12 +268,12 @@ mod tests {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
 
-        let mut bot = Bot::new(&mut board);
+        let mut bot = Bot::new(board);
         bot.input_moves(&mut ScannerStr::new(&"e2e4 e7e5"));
 
         let mut expected_board = Board::new();
         expected_board.read_fen(START_POSITION);
-        let mut expected_bot = Bot::new(&mut expected_board);
+        let mut expected_bot = Bot::new(expected_board);
         expected_bot.move_list.make_move(&Move{origin: 11, target: 27, promotion: 0, piece: PAWN});
         expected_bot.move_list.make_move(&Move{origin: 51, target: 35, promotion: 0, piece: PAWN});
 
@@ -283,7 +283,7 @@ mod tests {
     #[test]
     fn check_input_position_start_position() {
         let mut board = Board::new();
-        let mut bot = Bot::new(&mut board);
+        let mut bot = Bot::new(board);
 
         assert_eq!("", bot.input_position(&mut ScannerStr::new(&"startpos")));
 
@@ -296,7 +296,7 @@ mod tests {
     #[test]
     fn check_input_position_fen() {
         let mut board = Board::new();
-        let mut bot = Bot::new(&mut board);
+        let mut bot = Bot::new(board);
 
         assert_eq!("", bot.input_position(&mut ScannerStr::new(&"fen 8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1")));
 
@@ -315,13 +315,13 @@ mod tests {
     #[test]
     fn check_input_position_fen_moves() {
         let mut board = Board::new();
-        let mut bot = Bot::new(&mut board);
+        let mut bot = Bot::new(board);
 
         assert_eq!("", bot.input_position(&mut ScannerStr::new(&"fen 8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1 moves e2e4")));
 
         let mut expected_board = Board::new();
         expected_board.read_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
-        let mut expected_move_list = MoveList::from_board(&mut expected_board);
+        let mut expected_move_list = MoveList::from_board(expected_board);
         expected_move_list.make_move(&Move{origin: 11, target: 27, promotion: 0, piece: PAWN});
 
         assert_eq!(expected_move_list.get_board(), bot.move_list.get_board());
@@ -330,13 +330,13 @@ mod tests {
     #[test]
     fn check_input_position_startpos_moves() {
         let mut board = Board::new();
-        let mut bot = Bot::new(&mut board);
+        let mut bot = Bot::new(board);
 
         assert_eq!("", bot.input_position(&mut ScannerStr::new(&"startpos moves e2e4")));
 
         let mut expected_board = Board::new();
         expected_board.read_fen(START_POSITION);
-        let mut expected_move_list = MoveList::from_board(&mut expected_board);
+        let mut expected_move_list = MoveList::from_board(expected_board);
         expected_move_list.make_move(&Move{origin: 11, target: 27, promotion: 0, piece: PAWN});
 
         assert_eq!(expected_move_list.get_board(), bot.move_list.get_board());
@@ -346,7 +346,7 @@ mod tests {
     fn check_go_perft() {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
-        let mut bot = Bot::new(&mut board);
+        let mut bot = Bot::new(board);
 
         let expected_regex = Regex::new(r"^perft 1 searched \d+ nodes in (\d+.\d+|\d+)(ns|µs|ms|s)$").unwrap();
 
@@ -360,7 +360,7 @@ mod tests {
     fn check_go() {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
-        let mut bot = Bot::new(&mut board);
+        let mut bot = Bot::new(board);
 
         let expected_regex = Regex::new(r"^perft 1 searched \d+ nodes in (\d+.\d+|\d+)(ns|µs|ms|s)$").unwrap();
 
@@ -376,7 +376,7 @@ mod tests {
     fn check_stop() {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
-        let mut bot = Bot::new(&mut board);
+        let mut bot = Bot::new(board);
 
         bot.engine.search(&mut bot.move_list, 1);
 
@@ -391,7 +391,7 @@ mod tests {
     fn test_message() {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
-        let mut bot = Bot::new(&mut board);
+        let mut bot = Bot::new(board);
 
         assert_eq!(None, bot.message("quit"));
         assert_eq!(Option::from(
@@ -418,7 +418,7 @@ mod tests {
                    bot.message("position startpos moves e2e4 e7e5"));
         let mut expected_board = Board::new();
         expected_board.read_fen(START_POSITION);
-        let mut expected_bot = Bot::new(&mut expected_board);
+        let mut expected_bot = Bot::new(expected_board);
         expected_bot.move_list.make_move(&Move{origin: 11, target: 27, promotion: 0, piece: PAWN});
         expected_bot.move_list.make_move(&Move{origin: 51, target: 35, promotion: 0, piece: PAWN});
         assert_eq!(expected_bot.move_list.get_board(), bot.move_list.get_board());
