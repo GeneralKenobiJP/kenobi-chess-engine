@@ -14,9 +14,7 @@ use std::io;
 use crate::bot::Bot;
 
 fn main() {
-
-    let board = board::Board::new();
-    let mut bot = Bot::new(board);
+    let mut bot = Bot::new();
 
     // Handling of UCI <=> the game loop
 
