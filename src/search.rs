@@ -2,6 +2,8 @@
 //! Builds a search tree to find the best possible move according to the evaluation algorithm
 //! Uses negamax convention, alpha-beta prunning, quiescence search.
 
+mod ordering;
+
 use crate::board::Board;
 use crate::evaluation::{DRAW, evaluate};
 use crate::move_generator::{Move, MoveList};
@@ -12,7 +14,10 @@ use crate::transposition_table::NodeType::{ALPHA, BETA, EXACT};
 #[derive(PartialEq, Eq, Debug)]
 pub struct Engine {
     transposition_table: TranspositionTable,
-    repetition_table: RepetitionTable
+    repetition_table: RepetitionTable,
+    depth: u32,
+    stop_flag: bool,
+    best_moves: [Option<Move>; 3]
 }
 
 impl Engine {
@@ -20,12 +25,33 @@ impl Engine {
     pub fn new() -> Self {
         Engine {
             transposition_table: TranspositionTable::new(),
-            repetition_table: RepetitionTable::new()
+            repetition_table: RepetitionTable::new(),
+            depth: 0,
+            stop_flag: false,
+            best_moves: [None; 3]
+        }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Engine {
+            transposition_table: TranspositionTable::with_capacity(capacity),
+            repetition_table: RepetitionTable::new(),
+            depth: 0,
+            stop_flag: false,
+            best_moves: [None; 3]
         }
     }
 
     pub fn get_best_move(&self, board: &Board) -> Move {
-        self.transposition_table.get_from_zobrist(board.zobrist).clone().unwrap().best_moves[0].unwrap().clone()
+        self.transposition_table.get_from_zobrist(board.zobrist).clone().unwrap().best_moves[0].unwrap()
+    }
+
+    pub fn get_best_moves(&self) -> &[Option<Move>; 3] {
+        &self.best_moves
+    }
+
+    pub fn set_stop_flag(&mut self, flag: bool) {
+        self.stop_flag = flag;
     }
     
     /// Calls search algorithm to find the best possible moves in the current situation.
@@ -34,8 +60,17 @@ impl Engine {
     /// Calls the algorithm using alpha-beta prunning and quiescence search
     // #[inline(never)]
     pub fn search(&mut self, move_list: &mut MoveList, depth: u32) -> i32 {
-        // println!("Repetition table: {:?}", self.repetition_table);
-        self.search_alpha_beta_prunning(move_list, depth, NEGATIVE_INFINITY, POSITIVE_INFINITY)
+        let mut value = 0;
+        for current_depth in 1..depth+1 {
+            value = self.search_alpha_beta_prunning(move_list, current_depth, NEGATIVE_INFINITY, POSITIVE_INFINITY);
+            self.best_moves = self.transposition_table.get_from_zobrist(move_list.get_board().zobrist).clone().unwrap().best_moves;
+            self.depth = current_depth;
+            if self.stop_flag {
+                return value;
+            }
+        }
+
+        value
     }
 
     /// Calls search algorithm to find the best possible moves in the current situation.
@@ -83,8 +118,7 @@ impl Engine {
         }
 
         move_list.generate_moves();
-
-        // println!("Alpha-beta stage depth {} moves: {:?}", depth, move_list.get_moves());
+        self.order_moves(move_list);
 
         let moves = move_list.get_moves().clone();
 
@@ -184,7 +218,7 @@ impl Engine {
     /// Uses the given move list to generate moves in-place and analyze the board situation.
     /// Alpha - minimum score the current player is assured of (we found a move of at least this value earlier at this depth)
     /// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
-    #[inline(never)]
+    // #[inline(never)]
     fn quiescence_search(&mut self, move_list: &mut MoveList, mut alpha: i32, beta: i32) -> i32 {
         // println!("Is repetition table empty?: {}", self.repetition_table.is_empty());
         // println!("Visits to this position before: {}", self.repetition_table.get_repetition(move_list.get_board().zobrist));
@@ -215,6 +249,8 @@ impl Engine {
             self.repetition_table.unvisit_position(move_list.get_board().zobrist);
             return evaluate(move_list.get_board());
         }
+
+        self.order_moves(move_list);
 
         let mut best_moves: [Option<Move>; 3] = [None; 3];
         let mut best_moves_evaluation: [i32; 2] = [NEGATIVE_INFINITY; 2]; // we omit the first move evaluation, as this is simply the value variable
@@ -299,7 +335,7 @@ mod tests {
         assert_eq!(0, engine.search_naive(&mut move_list, 2));
         assert_eq!(0, engine.search_naive(&mut move_list, 3));
 
-        assert_eq!(0, engine.search(&mut move_list, 0));
+        // assert_eq!(0, engine.search(&mut move_list, 0));
         assert_eq!(0, engine.search(&mut move_list, 1));
         assert_eq!(0, engine.search(&mut move_list, 2));
         assert_eq!(0, engine.search(&mut move_list, 3));

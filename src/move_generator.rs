@@ -2,12 +2,15 @@
 //! Generates a vector of pseudo-legal moves based on the input board position
 //! Involves bitboards, magic bitboards.
 
+use std::collections::HashMap;
 use crate::piece::Piece;
-use crate::board::{Board, CASTLE_BLACK_KINGSIDE_FLAGS, CASTLE_BLACK_KINGSIDE_MASK, CASTLE_BLACK_QUEENSIDE_FLAGS, CASTLE_BLACK_QUEENSIDE_MASK, CASTLE_KING_POSITION_MASK, CASTLE_ROOK_POSITION_MASK, CASTLE_WHITE_KINGSIDE_FLAGS, CASTLE_WHITE_KINGSIDE_MASK, CASTLE_WHITE_QUEENSIDE_FLAGS, CASTLE_WHITE_QUEENSIDE_MASK, FILE_1_MASK, FILE_8_MASK, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_MASK, UNCASTLE_BLACK_KINGSIDE_FLAGS, UNCASTLE_BLACK_QUEENSIDE_FLAGS, UNCASTLE_WHITE_KINGSIDE_FLAGS, UNCASTLE_WHITE_QUEENSIDE_FLAGS, UPPER_RANK_LOWEST_TILE};
+use crate::board::{Board, CASTLE_BLACK_KINGSIDE_FLAGS, CASTLE_BLACK_KINGSIDE_MASK, CASTLE_BLACK_QUEENSIDE_FLAGS, CASTLE_BLACK_QUEENSIDE_MASK, CASTLE_WHITE_KINGSIDE_FLAGS, CASTLE_WHITE_KINGSIDE_MASK, CASTLE_WHITE_QUEENSIDE_FLAGS, CASTLE_WHITE_QUEENSIDE_MASK, FILE_1_MASK, FILE_8_MASK, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_MASK, UNCASTLE_BLACK_KINGSIDE_FLAGS, UNCASTLE_BLACK_QUEENSIDE_FLAGS, UNCASTLE_WHITE_KINGSIDE_FLAGS, UNCASTLE_WHITE_QUEENSIDE_FLAGS, UPPER_RANK_LOWEST_TILE};
 use crate::piece::Colour::{BLACK, WHITE};
 use crate::piece::Piece::{BISHOP, KING, KNIGHT, PAWN, QUEEN, ROOK};
 use crate::magic_hasher::{magic_hash_bishop, magic_hash_rook, MAGIC_MASK_BISHOP, MAGIC_MASK_ROOK};
 use crate::zobrist::{zobrist_castling_rights, ZOBRIST_TABLE};
+
+type OrderTable = HashMap<Move, i32>;
 
 const KNIGHT_SHIFTS: [i8; 8] = [17, 10, -6, -15, -17, -10, 6, 15]; // Beginning on NW, counter-clockwise
 const INITIAL_STACK_CAPACITY: usize = 30; // used by MoveList constructor
@@ -160,6 +163,19 @@ impl<'a> MoveList<'a> {
     /// Mutable getter for the board
     pub fn get_mutable_board(&mut self) -> &mut Board {
         self.board
+    }
+
+    /// Orders the move list in-place based on the supplied OrderTable.
+    /// OrderTable is a hashmap of Move as a key, and i32 as a priority value.
+    /// The higher the priority value, the higher the move should be.
+    /// The first move after ordering is the one with the highest priority.
+    pub fn order_moves(&mut self, order_table: &OrderTable) {
+        self.moves.sort_by(|move_a, move_b| {
+            let priority_a = order_table.get(move_a).unwrap();
+            let priority_b = order_table.get(move_b).unwrap();
+
+            priority_b.cmp(priority_a)  // Sort in descending order (higher priority first)
+        });
     }
     
     /// Makes a move on the board, given a move.
@@ -1594,7 +1610,7 @@ mod tests {
     use std::collections::HashSet;
     use std::time::Instant;
     use crate::board::{Board, START_POSITION};
-    use crate::piece::Piece::{PAWN};
+    use crate::piece::Piece::PAWN;
     use super::*;
 
     fn compare_vecs<Move: PartialEq + Eq + std::hash::Hash + Clone>
@@ -3896,7 +3912,6 @@ mod tests {
         move_list.make_capture(48, target, BLACK as usize, &mut should_reset_fifty_moves);
         move_list.unmake_capture(48, 1 << 48, BLACK as usize);
 
-        let index = PAWN as u8 + 6 * BLACK as u8;
         assert_eq!(None, move_list.capture_history.pop());
         assert_eq!(zobrist, move_list.get_board().zobrist);
         assert_eq!(main_bitboard, move_list.get_board().main_bitboard);
@@ -3928,7 +3943,6 @@ mod tests {
         move_list.make_capture(4, target, WHITE as usize, &mut should_reset_fifty_moves);
         move_list.unmake_capture(4, target, WHITE as usize);
 
-        let index = QUEEN as u8 + 6 * WHITE as u8;
         assert_eq!(None, move_list.capture_history.pop());
         assert_eq!(zobrist, move_list.get_board().zobrist);
         assert_eq!(main_bitboard, move_list.get_board().main_bitboard);
@@ -3958,5 +3972,31 @@ mod tests {
                     ^ ZOBRIST_TABLE.castling_rights[0b00001111]
                     ^ ZOBRIST_TABLE.en_passant[4],
                    move_list.get_board().zobrist);
+    }
+
+    #[test]
+    fn test_order_moves() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+
+        let mut move_list = MoveList::from_board(&mut board);
+        move_list.generate_moves();
+
+        let mut order_table = OrderTable::with_capacity(20);
+        for piece_move in move_list.get_moves() {
+            order_table.insert(*piece_move, 0);
+        }
+
+        order_table.insert(Move::new(8, 16, 0, PAWN), 4);
+        order_table.insert(Move::new(1, 18, 0, KNIGHT), 64);
+        order_table.insert(Move::new(11, 27, 0, PAWN), 32);
+        order_table.insert(Move::new(12, 28, 0, PAWN), 32);
+
+        move_list.order_moves(&order_table);
+
+        assert_eq!(Move::new(1, 18, 0, KNIGHT), move_list.moves[0]);
+        assert_eq!(Move::new(11, 27, 0, PAWN), move_list.moves[1]);
+        assert_eq!(Move::new(12, 28, 0, PAWN), move_list.moves[2]);
+        assert_eq!(Move::new(8, 16, 0, PAWN), move_list.moves[3]);
     }
 }

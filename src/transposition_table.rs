@@ -65,12 +65,18 @@ impl TranspositionTable {
         }
     }
 
+    pub fn with_capacity(capacity: usize) -> Self {
+        TranspositionTable {
+            table: vec![None; capacity]
+        }
+    }
+
     /// Hashes the key by implementing linear probing
     /// Should be called for a zobrist-hashed key
     fn hash(&self, key: u64) -> usize {
-        let mut hash = key as usize % INITIAL_CAPACITY;
+        let mut hash = key as usize % self.table.len();
 
-        while hash != (hash + HASH_SET_SEARCH_LIMIT) % INITIAL_CAPACITY {
+        while hash != (hash + HASH_SET_SEARCH_LIMIT) % self.table.len() {
             let entry = &self.table[hash];
 
             match entry {
@@ -79,7 +85,7 @@ impl TranspositionTable {
                     if transposition.zobrist == key {
                         return hash;
                     }
-                    hash = ( hash + 1 ) % INITIAL_CAPACITY;
+                    hash = ( hash + 1 ) % self.table.len();
                 }
             }
         }
