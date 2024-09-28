@@ -3165,6 +3165,8 @@ mod tests {
 
         move_list.make_move(&piece_move);
 
+        let board = move_list.get_board();
+
         assert_eq!(main_bitboard - origin + target - rook_origin + rook_target, board.main_bitboard);
         assert_eq!(colour_bitboards[0] - origin + target - rook_origin + rook_target, board.colour_bitboards[0]);
         assert_eq!(colour_bitboards[1], board.colour_bitboards[1]);
@@ -3207,6 +3209,8 @@ mod tests {
         let rook_target: u64 = 1 << 58;
 
         move_list.make_move(&piece_move);
+
+        let board = move_list.get_board();
 
         assert_eq!(main_bitboard - origin + target - rook_origin + rook_target, move_list.board.main_bitboard);
         assert_eq!(colour_bitboards[1] - origin + target - rook_origin + rook_target, move_list.board.colour_bitboards[1]);
@@ -3267,6 +3271,8 @@ mod tests {
         let rook_target: u64 = 1 << 60;
 
         move_list.make_move(&piece_move);
+
+        let board = move_list.get_board();
 
         assert_eq!(main_bitboard - origin + target - rook_origin + rook_target, board.main_bitboard);
         assert_eq!(colour_bitboards[1] - origin + target - rook_origin + rook_target, board.colour_bitboards[1]);
