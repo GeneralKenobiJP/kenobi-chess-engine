@@ -139,6 +139,21 @@ impl MoveList {
         }
     }
 
+    pub fn from_fen(fen: &str) -> Self {
+        MoveList {
+            board: Board::from_fen(fen),
+            moves: Vec::new(),
+            capture_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
+            en_passant_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
+            castling_rights_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
+            halfmoves_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
+            king_lookup_table: Self::setup_king_lookup_table(),
+            knight_lookup_table: Self::setup_knight_lookup_table(),
+            rook_magic_bitboard: Self::setup_rook_magic_bitboard(),
+            bishop_magic_bitboard: Self::setup_bishop_magic_bitboard()
+        }
+    }
+
     pub fn new() -> Self {
         MoveList {
             board: Board::new(),
@@ -3210,8 +3225,6 @@ mod tests {
 
         move_list.make_move(&piece_move);
 
-        let board = move_list.get_board();
-
         assert_eq!(main_bitboard - origin + target - rook_origin + rook_target, move_list.board.main_bitboard);
         assert_eq!(colour_bitboards[1] - origin + target - rook_origin + rook_target, move_list.board.colour_bitboards[1]);
         assert_eq!(colour_bitboards[0], move_list.board.colour_bitboards[0]);
@@ -3743,7 +3756,7 @@ mod tests {
         board.read_fen("rnbqkbnr/ppp1pppp/8/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 1");
 
         let mut move_list = MoveList::from_board(board);
-        
+
         let piece_move = Move::new(0,1,0,PAWN);
         move_list.handle_castling_rights(&piece_move);
         assert_eq!(0b00000111, move_list.get_board().castling_rights);

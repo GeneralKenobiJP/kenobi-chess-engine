@@ -221,7 +221,7 @@ mod tests {
 
     #[test]
     fn check_bot_new() {
-        let mut board = Board::new();
+        let board = Board::new();
         Bot::new(board);
     }
 
@@ -282,7 +282,7 @@ mod tests {
 
     #[test]
     fn check_input_position_start_position() {
-        let mut board = Board::new();
+        let board = Board::new();
         let mut bot = Bot::new(board);
 
         assert_eq!("", bot.input_position(&mut ScannerStr::new(&"startpos")));
@@ -295,7 +295,7 @@ mod tests {
 
     #[test]
     fn check_input_position_fen() {
-        let mut board = Board::new();
+        let board = Board::new();
         let mut bot = Bot::new(board);
 
         assert_eq!("", bot.input_position(&mut ScannerStr::new(&"fen 8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1")));
@@ -314,7 +314,7 @@ mod tests {
 
     #[test]
     fn check_input_position_fen_moves() {
-        let mut board = Board::new();
+        let board = Board::new();
         let mut bot = Bot::new(board);
 
         assert_eq!("", bot.input_position(&mut ScannerStr::new(&"fen 8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1 moves e2e4")));
@@ -329,7 +329,7 @@ mod tests {
 
     #[test]
     fn check_input_position_startpos_moves() {
-        let mut board = Board::new();
+        let board = Board::new();
         let mut bot = Bot::new(board);
 
         assert_eq!("", bot.input_position(&mut ScannerStr::new(&"startpos moves e2e4")));
