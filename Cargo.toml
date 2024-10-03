@@ -21,3 +21,7 @@ lto = "fat"
 [profile.bench]
 opt-level = 3
 lto = "fat"
+
+[profile.test]
+opt-level = 1
+lto = false

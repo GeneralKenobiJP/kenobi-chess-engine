@@ -4,6 +4,7 @@
 
 mod ordering;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use crate::board::Board;
 use crate::evaluation::{DRAW, evaluate};
 use crate::move_generator::{Move, MoveList};
@@ -11,14 +12,32 @@ use crate::evaluation::{POSITIVE_INFINITY, NEGATIVE_INFINITY};
 use crate::transposition_table::{RepetitionTable, Transposition, TranspositionTable};
 use crate::transposition_table::NodeType::{ALPHA, BETA, EXACT};
 
-#[derive(PartialEq, Eq, Debug)]
+static STOP_FLAG: AtomicBool = AtomicBool::new(false);
+
+#[derive(Debug, Eq, PartialEq)]
 pub struct Engine {
     transposition_table: TranspositionTable,
     repetition_table: RepetitionTable,
     depth: u32,
-    stop_flag: bool,
     best_moves: [Option<Move>; 3]
 }
+
+// impl PartialEq for Engine {
+//     fn eq(&self, other: &Self) -> bool {
+//         return self.transposition_table == other.transposition_table
+//         && self.repetition_table == other.repetition_table
+//         && self.depth == other.depth
+//         && self.best_moves == other.best_moves
+//     }
+//
+//     fn ne(&self, other: &Self) -> bool {
+//         return self.transposition_table != other.transposition_table
+//         || self.repetition_table != other.repetition_table
+//         || self.depth != other.depth
+//         || self.best_moves != other.best_moves
+//     }
+// }
+// impl Eq for Engine {}
 
 impl Engine {
     
@@ -27,7 +46,6 @@ impl Engine {
             transposition_table: TranspositionTable::new(),
             repetition_table: RepetitionTable::new(),
             depth: 0,
-            stop_flag: false,
             best_moves: [None; 3]
         }
     }
@@ -37,7 +55,6 @@ impl Engine {
             transposition_table: TranspositionTable::with_capacity(capacity),
             repetition_table: RepetitionTable::new(),
             depth: 0,
-            stop_flag: false,
             best_moves: [None; 3]
         }
     }
@@ -50,8 +67,8 @@ impl Engine {
         &self.best_moves
     }
 
-    pub fn set_stop_flag(&mut self, flag: bool) {
-        self.stop_flag = flag;
+    pub fn set_stop_flag(flag: bool) {
+        STOP_FLAG.store(flag, Ordering::SeqCst);
     }
     
     /// Calls search algorithm to find the best possible moves in the current situation.
@@ -65,7 +82,7 @@ impl Engine {
             value = self.search_alpha_beta_prunning(move_list, current_depth, NEGATIVE_INFINITY, POSITIVE_INFINITY);
             self.best_moves = self.transposition_table.get_from_zobrist(move_list.get_board().zobrist).clone().unwrap().best_moves;
             self.depth = current_depth;
-            if self.stop_flag {
+            if STOP_FLAG.load(Ordering::SeqCst) {
                 return value;
             }
         }
@@ -140,6 +157,10 @@ impl Engine {
             // println!("alpha: {}", alpha);
             // println!("beta: {}", beta);
             if alpha >= beta { break; }
+
+            if STOP_FLAG.load(Ordering::SeqCst) {
+                break;
+            }
         }
 
         if best_moves[0] == None {
@@ -269,6 +290,9 @@ impl Engine {
 
             alpha = alpha.max(value);
             if alpha >= beta { break; }
+            if STOP_FLAG.load(Ordering::SeqCst) {
+                break;
+            }
         }
 
         if best_moves[0] == None {
