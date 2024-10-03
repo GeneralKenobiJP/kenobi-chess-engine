@@ -1,3 +1,9 @@
+//! Move ordering before the search tree traversal.
+//! Implements move ordering heuristics to sort the moves
+//! in such way that the likely best moves are evaluated as soon as possible,
+//! to maximize the number of branches prunned in the alpha-beta prunning,
+//! thus making the search algorithm faster
+
 use std::collections::HashMap;
 
 use crate::move_generator::{Move, MoveList};
