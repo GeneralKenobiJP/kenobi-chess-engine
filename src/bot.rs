@@ -156,7 +156,6 @@ impl Bot {
     fn go(&mut self, command_line: String) -> String {
         Engine::set_stop_flag(false);
 
-        // let command_line_clone = command_line.clone();
         let move_list_arc = self.move_list.clone();
         let engine_arc = self.engine.clone();
 
@@ -182,13 +181,14 @@ impl Bot {
     /// and the number of nodes from each immediate response
     fn go_perft(move_list: &mut MoveList, scanner: &mut ScannerStr) -> String {
         let depth = scanner.next().unwrap_or_default().unwrap_or_default().parse::<u32>().unwrap_or_default();
-        println!("{}", depth);
+        println!("depth: {depth}");
 
         let start = Instant::now();
         let nodes = perft_log(move_list, depth);
         let duration = start.elapsed();
 
         let response = format!("perft {} searched {} nodes in {:?}", depth, nodes, duration);
+        println!("response: {response}");
         response
     }
 
@@ -206,7 +206,7 @@ impl Bot {
         let depth = scanner.next().unwrap_or_default().unwrap_or_default().parse::<u32>().unwrap_or_default();
         engine.search(move_list, depth);
 
-        String::new()
+        Self::best_move(engine, move_list)
     }
 
     /// Responds to a "stop command".
@@ -215,14 +215,15 @@ impl Bot {
     fn stop(&mut self) -> String {
         Engine::set_stop_flag(true);
 
-        self.best_move()
+        Bot::best_move(&mut self.engine.lock().unwrap(), &mut self.move_list.lock().unwrap())
     }
 
     /// Implements the "best_move" UCI command.
-    /// Retrieves what the engine currently deems the best move
-    fn best_move(&mut self) -> String {
+    /// Retrieves what the engine currently deems the best move.
+    /// Should not be used before doing any search.
+    fn best_move(engine: &mut Engine, move_list: &mut MoveList) -> String {
         let mut response = String::from("bestmove ");
-        response.push_str(&*self.engine.lock().unwrap().get_best_move(self.move_list.lock().unwrap().get_board()).to_algebraic_notation());
+        response.push_str(&*engine.get_best_move(move_list.get_board()).to_algebraic_notation());
 
         response
     }
@@ -248,6 +249,8 @@ impl Bot {
 mod tests {
     use std::fmt::Debug;
     use std::ops::Deref;
+    use std::thread;
+    use std::time::Duration;
     use regex::Regex;
 
     use crate::piece::Piece::PAWN;
@@ -372,19 +375,77 @@ mod tests {
         assert!(expected_regex.is_match(&*response));
     }
 
-    // #[test]
-    // fn check_go() {
-    //     let mut bot = Bot::with_position(START_POSITION);
-    //
-    //     let expected_regex = Regex::new(r"^perft 1 searched \d+ nodes in (\d+.\d+|\d+)(ns|µs|ms|s)$").unwrap();
-    //
-    //     let response = bot.go(&mut ScannerStr::new(&"perft 1"));
-    //     println!("response: {}", response);
-    //
-    //     assert!(expected_regex.is_match(&*response));
-    //
-    //     // todo: test the infinite option once it's properly implemented
-    // }
+    #[test]
+    fn check_go_depth() {
+        let mut bot = Bot::with_position(START_POSITION);
+
+        let expected_regex = Regex::new(r"^bestmove [a-h][1-8][a-h][1-8]$").unwrap();
+
+        let response = Bot::go_depth(&mut bot.engine.lock().unwrap(), &mut bot.move_list.lock().unwrap(), &mut ScannerStr::new(&"2"));
+        println!("{}", response);
+
+        assert!(expected_regex.is_match(&*response));
+    }
+
+    #[test]
+    fn check_go_infinite() {
+        let mut bot = Bot::with_position(START_POSITION);
+
+        let expected_regex = Regex::new(r"^bestmove [a-h][1-8][a-h][1-8]$").unwrap();
+
+        let mut engine = bot.engine.clone();
+        let mut move_list = bot.move_list.clone();
+
+        spawn(move || {
+            let response = Bot::go_infinite(&mut engine.lock().unwrap(), &mut move_list.lock().unwrap());
+            println!("{}", response);
+            assert!(response.is_empty());
+        });
+
+        thread::sleep(Duration::from_secs(2));
+        let response = bot.stop();
+
+        assert!(expected_regex.is_match(&*response));
+    }
+
+    #[test]
+    fn check_go() {
+        let mut bot = Bot::with_position(START_POSITION);
+
+        // go perft
+
+        // currently it is impossible to test the output of perft from the go() perspective,
+        // it can only be tested directly at go_perft(),
+        // as the answer is printed in the "left_over" thread of go()
+        let response = bot.go(String::from("perft 1"));
+        assert!(response.is_empty());
+
+        // go depth
+
+        let expected_regex = Regex::new(r"^bestmove [a-h][1-8][a-h][1-8]$").unwrap();
+
+        // currently it is impossible to test the output of depth from the go() perspective,
+        // it can only be tested directly at go_depth(),
+        // as the answer is printed in the "left_over" thread of go()
+        let response = bot.go(String::from("depth 2"));
+        assert!(response.is_empty());
+
+        thread::sleep(Duration::from_secs(1));
+        let response = Bot::best_move(&mut bot.engine.lock().unwrap(), &mut bot.move_list.lock().unwrap());
+        assert!(expected_regex.is_match(&*response));
+
+        // go infinite
+
+        bot.new_game();
+
+        let response = bot.go(String::from("infinite"));
+        assert!(response.is_empty());
+
+        thread::sleep(Duration::from_secs(1));
+        bot.stop();
+        let response = Bot::best_move(&mut bot.engine.lock().unwrap(), &mut bot.move_list.lock().unwrap());
+        assert!(expected_regex.is_match(&*response));
+    }
 
     #[test]
     fn check_stop() {
@@ -396,7 +457,18 @@ mod tests {
 
         let response = bot.stop();
         assert!(expected_regex.is_match(&*response));
+    }
 
+    #[test]
+    fn check_best_move() {
+        let mut bot = Bot::with_position(START_POSITION);
+
+        bot.engine.lock().unwrap().search(&mut bot.move_list.lock().unwrap(), 1);
+
+        let expected_regex = Regex::new(r"^bestmove [a-h][1-8][a-h][1-8]$").unwrap();
+
+        let response = Bot::best_move(&mut bot.engine.lock().unwrap(), &mut bot.move_list.lock().unwrap());
+        assert!(expected_regex.is_match(&*response));
     }
 
     #[test]
@@ -431,14 +503,24 @@ mod tests {
         expected_bot.move_list.lock().unwrap().make_move(&Move{origin: 51, target: 35, promotion: 0, piece: PAWN});
         assert_eq!(expected_bot.move_list.lock().unwrap().get_board(), bot.move_list.lock().unwrap().get_board());
 
-        let expected_regex = Regex::new(r"^perft 1 searched \d+ nodes in (\d+.\d+|\d+)(ns|µs|ms|s)$").unwrap();
         let response = bot.message("go perft 1").unwrap_or_default();
-        assert!(expected_regex.is_match(&*response));
+        assert!(response.is_empty());
 
         let expected_regex = Regex::new(r"^bestmove [a-h][1-8][a-h][1-8]$").unwrap();
-        bot.engine.lock().unwrap().search(&mut bot.move_list.lock().unwrap(), 1);
+        let response = bot.message("go depth 2").unwrap_or_default();
+        assert!(response.is_empty());
+        thread::sleep(Duration::from_secs(1));
+        let response = Bot::best_move(&mut bot.engine.lock().unwrap(), &mut bot.move_list.lock().unwrap());
+        assert!(expected_regex.is_match(&*response));
+
+        let response = bot.message("go infinite").unwrap_or_default();
+        assert!(response.is_empty());
+        thread::sleep(Duration::from_secs(2));
         let response = bot.stop();
         assert!(expected_regex.is_match(&*response));
+
+        let response = bot.message("quit");
+        assert!(response.is_none());
     }
 
 }

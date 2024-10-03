@@ -22,23 +22,6 @@ pub struct Engine {
     best_moves: [Option<Move>; 3]
 }
 
-// impl PartialEq for Engine {
-//     fn eq(&self, other: &Self) -> bool {
-//         return self.transposition_table == other.transposition_table
-//         && self.repetition_table == other.repetition_table
-//         && self.depth == other.depth
-//         && self.best_moves == other.best_moves
-//     }
-//
-//     fn ne(&self, other: &Self) -> bool {
-//         return self.transposition_table != other.transposition_table
-//         || self.repetition_table != other.repetition_table
-//         || self.depth != other.depth
-//         || self.best_moves != other.best_moves
-//     }
-// }
-// impl Eq for Engine {}
-
 impl Engine {
     
     pub fn new() -> Self {
