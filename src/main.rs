@@ -10,17 +10,18 @@ mod transposition_table;
 mod bot;
 mod string_builder;
 
-use std::io;
+use std::{io, thread};
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use crate::bot::Bot;
 
 fn main() {
-
-    let mut board = board::Board::new();
-    let mut bot = Bot::new(&mut board);
+    let mut bot = Bot::new();
+    let loop_flag = Arc::new(AtomicBool::new(true));
 
     // Handling of UCI <=> the game loop
 
-    loop {
+    while loop_flag.load(Ordering::SeqCst) {
         let mut message = String::new();
 
         io::stdin().read_line(&mut message)
@@ -33,7 +34,9 @@ fn main() {
                     println!("{}", output);
                 }
             },
-            None => break
+            None => { loop_flag.store(false, Ordering::SeqCst); }
         }
     }
+
+    // drop(bot);
 }

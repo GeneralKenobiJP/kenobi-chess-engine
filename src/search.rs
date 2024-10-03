@@ -4,6 +4,7 @@
 
 mod ordering;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use crate::board::Board;
 use crate::evaluation::{DRAW, evaluate};
 use crate::move_generator::{Move, MoveList};
@@ -11,12 +12,13 @@ use crate::evaluation::{POSITIVE_INFINITY, NEGATIVE_INFINITY};
 use crate::transposition_table::{RepetitionTable, Transposition, TranspositionTable};
 use crate::transposition_table::NodeType::{ALPHA, BETA, EXACT};
 
-#[derive(PartialEq, Eq, Debug)]
+static STOP_FLAG: AtomicBool = AtomicBool::new(false);
+
+#[derive(Debug, Eq, PartialEq)]
 pub struct Engine {
     transposition_table: TranspositionTable,
     repetition_table: RepetitionTable,
     depth: u32,
-    stop_flag: bool,
     best_moves: [Option<Move>; 3]
 }
 
@@ -27,7 +29,6 @@ impl Engine {
             transposition_table: TranspositionTable::new(),
             repetition_table: RepetitionTable::new(),
             depth: 0,
-            stop_flag: false,
             best_moves: [None; 3]
         }
     }
@@ -37,7 +38,6 @@ impl Engine {
             transposition_table: TranspositionTable::with_capacity(capacity),
             repetition_table: RepetitionTable::new(),
             depth: 0,
-            stop_flag: false,
             best_moves: [None; 3]
         }
     }
@@ -50,8 +50,12 @@ impl Engine {
         &self.best_moves
     }
 
-    pub fn set_stop_flag(&mut self, flag: bool) {
-        self.stop_flag = flag;
+    pub fn set_stop_flag(flag: bool) {
+        STOP_FLAG.store(flag, Ordering::SeqCst);
+    }
+
+    pub fn get_stop_flag() -> bool {
+        STOP_FLAG.load(Ordering::SeqCst)
     }
     
     /// Calls search algorithm to find the best possible moves in the current situation.
@@ -65,7 +69,7 @@ impl Engine {
             value = self.search_alpha_beta_prunning(move_list, current_depth, NEGATIVE_INFINITY, POSITIVE_INFINITY);
             self.best_moves = self.transposition_table.get_from_zobrist(move_list.get_board().zobrist).clone().unwrap().best_moves;
             self.depth = current_depth;
-            if self.stop_flag {
+            if STOP_FLAG.load(Ordering::SeqCst) {
                 return value;
             }
         }
@@ -140,6 +144,10 @@ impl Engine {
             // println!("alpha: {}", alpha);
             // println!("beta: {}", beta);
             if alpha >= beta { break; }
+
+            if STOP_FLAG.load(Ordering::SeqCst) {
+                break;
+            }
         }
 
         if best_moves[0] == None {
@@ -269,6 +277,9 @@ impl Engine {
 
             alpha = alpha.max(value);
             if alpha >= beta { break; }
+            if STOP_FLAG.load(Ordering::SeqCst) {
+                break;
+            }
         }
 
         if best_moves[0] == None {
@@ -326,7 +337,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
         
         let mut engine = Engine::new();
 
@@ -346,7 +357,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "4k3/5r2/8/8/8/5R2/8/4K3 w - - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
         
         let mut engine = Engine::new();
 
@@ -369,7 +380,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "4k3/8/8/8/8/5PP1/1q6/P3K3 w - - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
 
         let mut engine = Engine::new();
 
@@ -382,7 +393,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "4k3/8/6q1/7P/8/8/PP6/4K3 w - - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
 
         let mut engine = Engine::new();
 
@@ -395,7 +406,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "8/8/8/R7/6k1/4Q3/8/4K2R b K - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
 
         let mut engine = Engine::new();
 
@@ -409,7 +420,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "7k/6QQ/8/8/8/8/8/4K3 b - - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
 
         let mut engine = Engine::new();
 
@@ -419,7 +430,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "7k/6QQ/8/8/8/8/8/4K3 w - - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
 
         let mut engine = Engine::new();
 
@@ -432,7 +443,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "8/3pk3/3p4/2P5/8/8/8/4K3 w - - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
 
         let mut engine = Engine::new();
 
@@ -446,7 +457,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "4k3/8/4pp2/4p3/3P4/3P4/8/4K3 w - - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
 
         let mut engine = Engine::new();
 
@@ -460,7 +471,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "8/3pk3/3p3P/2P5/8/8/8/4K3 w - - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
 
         let mut engine = Engine::new();
 
@@ -494,7 +505,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "4k3/4p3/8/8/8/8/8/4K3 w - - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
 
         let mut engine = Engine::new();
 
@@ -528,7 +539,7 @@ mod tests {
         let mut board = Board::new();
         let fen = "4k3/4p3/8/8/8/8/8/4K3 w - - 0 1";
         board.read_fen(fen);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
 
         let mut engine = Engine::new();
 
@@ -610,7 +621,7 @@ mod tests {
     //     let mut board = Board::new();
     //     let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     //     board.read_fen(fen);
-    //     let mut move_list = MoveList::from_board(&mut board);
+    //     let mut move_list = MoveList::from_board(board);;
     //
     //     let mut engine = Engine::new();
     //
@@ -626,7 +637,7 @@ mod tests {
     //     let mut board = Board::new();
     //     let fen = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
     //     board.read_fen(fen);
-    //     let mut move_list = MoveList::from_board(&mut board);
+    //     let mut move_list = MoveList::from_board(board);;
     //
     //     let mut engine = Engine::new();
     //

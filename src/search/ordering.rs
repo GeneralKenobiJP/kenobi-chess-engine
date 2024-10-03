@@ -1,3 +1,9 @@
+//! Move ordering before the search tree traversal.
+//! Implements move ordering heuristics to sort the moves
+//! in such way that the likely best moves are evaluated as soon as possible,
+//! to maximize the number of branches prunned in the alpha-beta prunning,
+//! thus making the search algorithm faster
+
 use std::collections::HashMap;
 
 use crate::move_generator::{Move, MoveList};
@@ -85,7 +91,7 @@ mod tests {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
 
-        let move_list = MoveList::from_board(&mut board);
+        let move_list = MoveList::from_board(board);
         let engine = Engine::with_capacity(256);
 
         let time = Instant::now();
@@ -104,7 +110,7 @@ mod tests {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
 
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
         move_list.generate_moves();
         let mut engine = Engine::with_capacity(256);
         engine.transposition_table.put_position(move_list.get_board(), 3, 200,
@@ -128,7 +134,7 @@ mod tests {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
 
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
         move_list.generate_moves();
         let mut engine = Engine::with_capacity(256);
         engine.transposition_table.put_position(move_list.get_board(), 3, 200,
@@ -151,7 +157,7 @@ mod tests {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
 
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
         move_list.generate_moves();
         let mut engine = Engine::with_capacity(256);
         engine.transposition_table.put_position(move_list.get_board(), 5, 200,

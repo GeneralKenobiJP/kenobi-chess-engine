@@ -71,6 +71,25 @@ impl Board {
         }
     }
 
+    pub fn from_fen(fen: &str) -> Self {
+        let mut board = Board {
+            main_bitboard: 0,
+            empty_bitboard: u64::MAX,
+            colour_bitboards: [0; 2],
+            piece_bitboards: [0; 12],
+            active_player: WHITE,
+            inactive_player: BLACK,
+            castling_rights: 0,
+            en_passant_possibility: 64,
+            half_moves: 0,
+            full_moves: 1,
+            zobrist: 0
+        };
+
+        board.read_fen(fen);
+        board
+    }
+
     /// Register a piece on corresponding bitboards, given information about the desired piece
     /// Parameters:
     ///     - piece - piece type

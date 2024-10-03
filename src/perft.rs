@@ -75,7 +75,7 @@ mod tests {
     // fn bench_perft() {
     //     let mut board = Board::new();
     //     board.read_fen(START_POSITION);
-    //     let mut move_list = MoveList::from_board(&mut board);
+    //     let mut move_list = MoveList::from_board(board);;
     //
     //     let depth = 7;
     //
@@ -90,7 +90,7 @@ mod tests {
     fn perft_test() {
         let mut board = Board::new();
         board.read_fen("rnbqkbnr/ppppppp1/7p/8/8/P7/1PPPPPPP/RNBQKBNR w KQkq - 0 2");
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
 
         let depth = 1;
 
@@ -102,7 +102,7 @@ mod tests {
     fn perft_checkmate() {
         let mut board = Board::new();
         board.read_fen("rnbqkbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 0 1");
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
 
         let depth = 1;
 
@@ -115,7 +115,7 @@ mod tests {
     fn perft_position_1() {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
 
         let expected_nodes = vec![20, 400, 8902, 197281, 4865609];
 
@@ -130,7 +130,7 @@ mod tests {
     fn perft_position_2() {
         let mut board = Board::new();
         board.read_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
 
         let expected_nodes = vec![48, 2039, 97862, 4085603];
 
@@ -145,7 +145,7 @@ mod tests {
     fn perft_position_3() {
         let mut board = Board::new();
         board.read_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
 
         let expected_nodes = vec![14, 191, 2812, 43238, 674624, 11030083];
 
@@ -160,7 +160,7 @@ mod tests {
     fn perft_position_4() {
         let mut board = Board::new();
         board.read_fen("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1");
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
 
         let expected_nodes = vec![6, 264, 9467, 422333, 15833292];
 
@@ -175,7 +175,7 @@ mod tests {
     fn perft_position_5() {
         let mut board = Board::new();
         board.read_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8");
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
 
         let expected_nodes = vec![44, 1486, 62379, 2103487];
 
@@ -190,7 +190,7 @@ mod tests {
     fn perft_position_6() {
         let mut board = Board::new();
         board.read_fen("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10");
-        let mut move_list = MoveList::from_board(&mut board);
+        let mut move_list = MoveList::from_board(board);
 
         let expected_nodes = vec![46, 2079, 89890, 3894594];
 
