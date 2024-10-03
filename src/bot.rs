@@ -193,7 +193,6 @@ impl Bot {
         let duration = start.elapsed();
 
         let response = format!("perft {} searched {} nodes in {:?}", depth, nodes, duration);
-        println!("response: {response}");
         response
     }
 

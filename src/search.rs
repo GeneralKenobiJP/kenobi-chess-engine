@@ -54,8 +54,8 @@ impl Engine {
         STOP_FLAG.store(flag, Ordering::SeqCst);
     }
 
-    pub fn get_stop_flag() {
-        STOP_FLAG.load(Ordering::SeqCst);
+    pub fn get_stop_flag() -> bool {
+        STOP_FLAG.load(Ordering::SeqCst)
     }
     
     /// Calls search algorithm to find the best possible moves in the current situation.
