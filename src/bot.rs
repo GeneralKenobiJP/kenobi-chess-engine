@@ -93,7 +93,6 @@ impl Bot {
     /// Responds to a "position" command.
     /// Reads in the fen or the "startpos" attribute and adjusts the board accordingly.
     /// Makes moves on the board if there are moves specified with the "moves" attribute
-    // #[inline(never)]
     fn input_position(&mut self, scanner: &mut ScannerStr) -> String {
         let response = String::new();
         let mode = scanner.next().unwrap_or_default().unwrap_or_default();
@@ -123,8 +122,8 @@ impl Bot {
         response
     }
 
-    /// Extracts fen from a string scanner
-    // #[inline(never)]
+    /// Extracts fen from a string scanner.
+    /// The source string of the scanner should begin with the fen.
     fn extract_fen(scanner: &mut ScannerStr) -> String {
         let mut fen = String::new();
 
@@ -139,7 +138,6 @@ impl Bot {
 
     /// Inputs moves after a "moves" subcommand within the "position" command.
     /// Makes moves, one by one, on the board until the moves are exhausted
-    // #[inline(never)]
     fn input_moves(&mut self, scanner: &mut ScannerStr) {
         while let Some(input) = scanner.next().unwrap_or_default() {
             let mut move_list_binding = self.move_list.lock().unwrap();
@@ -153,6 +151,11 @@ impl Bot {
     ///     "perft" - calls perft_log, outputting the number of nodes searched, the duration time,
     /// and the number of nodes from each immediate response
     ///     "infinite" - starts an infinite search, which can conclude with the "stop" command
+    ///     "depth" - starts a search up to a given depth
+    /// The calls are done on a separate thread, so the CLI can resume its work without
+    /// waiting for the time-consuming computations.
+    /// It responds with an empty string, as it returns before the computing threads conclude their work.
+    /// Prints directly the responses of the computation thread.
     fn go(&mut self, command_line: String) -> String {
         Engine::set_stop_flag(false);
 
@@ -170,7 +173,9 @@ impl Bot {
                 _ => Self::go_infinite(&mut *engine_arc.lock().unwrap(), &mut *move_list_arc.lock().unwrap())
             };
 
-            println!("{}", response);
+            if !response.is_empty() {
+                println!("{}", response);
+            }
         });
 
         String::new()
@@ -193,7 +198,10 @@ impl Bot {
     }
 
     /// Responds to a "go infinite" command.
-    /// todo: TBD
+    /// Orders the engine to search indefinitely until the "stop" command is received.
+    /// (We limit the depth with an actual finite constant,
+    /// though it will not be reached in practice).
+    /// Responds with an empty string.
     fn go_infinite(engine: &mut Engine, move_list: &mut MoveList) -> String {
         engine.search(move_list, INFINITE_DEPTH);
 
@@ -201,12 +209,16 @@ impl Bot {
     }
 
     /// Responds to a "go depth" command.
-    /// todo: TBD
+    /// Orders the engine to search up to the given depth.
+    /// If uninterrupted, responds with the "best_move" communicate,
+    /// otherwise, returns an empty string
     fn go_depth(engine: &mut Engine, move_list: &mut MoveList, scanner: &mut ScannerStr) -> String {
         let depth = scanner.next().unwrap_or_default().unwrap_or_default().parse::<u32>().unwrap_or_default();
         engine.search(move_list, depth);
 
-        Self::best_move(engine, move_list)
+        return if !Engine::get_stop_flag() {
+            Self::best_move(engine, move_list)
+        } else { String::new() }
     }
 
     /// Responds to a "stop command".
