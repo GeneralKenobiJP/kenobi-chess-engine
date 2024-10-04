@@ -63,7 +63,15 @@ impl Engine {
                     match entry {
                         None => { return; }
                         Some(piece_move) => {
-                            let old_value = order_table.get(&piece_move).unwrap();
+                            let order_table_entry = order_table.get(&piece_move);
+
+                            // The order table entry MAY BE NONE
+                            // in the quiescence search phase if we fetch a quiet move.
+                            // In such a case, it should simply be ignored.
+                            if order_table_entry.is_none() {
+                                continue;
+                            }
+                            let old_value = order_table_entry.unwrap();
                             order_table.insert(piece_move, old_value + HASH_MOVE_PRIORITY[index] + pv_node);
 
                             pv_node = 0;
