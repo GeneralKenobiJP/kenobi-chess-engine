@@ -228,7 +228,11 @@ impl MoveList {
             self.board.switch_active_player();
             return;
         }
-        let final_piece = if promotion == 0 {piece} else { promotion as usize };
+        let final_piece = if promotion == 0 {piece} else {
+            self.board.piece_counter[6 * active_player + piece] -=1 ;
+            self.board.piece_counter[6 * active_player + promotion as usize] += 1;
+            promotion as usize
+        };
 
         self.move_piece(piece_move.origin, piece_move.target, target, piece, final_piece, active_player);
 
@@ -239,6 +243,7 @@ impl MoveList {
 
             if piece_move.target == self.board.en_passant_possibility {
                 self.handle_en_passant(target, inactive_player);
+                self.board.piece_counter[6 * inactive_player + piece] -= 1;
                 self.capture_history.push(NO_CAPTURE);
                 self.board.en_passant_possibility = NO_PASSANT;
                 self.board.switch_active_player();
@@ -351,6 +356,7 @@ impl MoveList {
                 self.board.zobrist ^= ZOBRIST_TABLE.pieces[index][target as usize];
                 self.capture_history.push(index as u8);
                 *should_reset_fifty_moves = true;
+                self.board.piece_counter[index] -= 1;
             },
             None => self.capture_history.push(NO_CAPTURE)
         }
@@ -375,6 +381,7 @@ impl MoveList {
                 let captured_piece = captured_piece as usize;
                 self.board.piece_bitboards[captured_piece] |= target_tile;
                 self.board.zobrist ^= ZOBRIST_TABLE.pieces[captured_piece][target as usize];
+                self.board.piece_counter[captured_piece] += 1;
             },
             None => ()
         }
@@ -435,12 +442,17 @@ impl MoveList {
             self.board.switch_active_player();
             return;
         }
-        let target_piece = if promotion == 0 {piece} else { promotion as usize };
+        let target_piece = if promotion == 0 {piece} else {
+            self.board.piece_counter[6 * inactive_player + piece] += 1;
+            self.board.piece_counter[6 * inactive_player + promotion as usize] -= 1;
+            promotion as usize
+        };
 
         self.move_piece(piece_move.target, piece_move.origin, origin, target_piece, piece, inactive_player);
 
         if piece_move.piece == PAWN && piece_move.target == self.board.en_passant_possibility {
             self.handle_en_passant(target, active_player);
+            self.board.piece_counter[6 * active_player + piece] += 1;
 
             self.capture_history.pop();
 
@@ -2702,6 +2714,7 @@ mod tests {
         assert_eq!(1, move_list.castling_rights_history[0]);
         assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
         assert_eq!(0, move_list.get_board().half_moves);
+        assert_eq!([1, 6, 1, 2, 1, 1,  1, 3, 1, 2, 1, 0], move_list.get_board().piece_counter);
 
         // UNMAKE MOVE
 
@@ -2717,6 +2730,7 @@ mod tests {
         assert_eq!(castling_rights, move_list.board.castling_rights);
         assert_eq!(1, move_list.get_board().half_moves);
         assert_eq!(zobrist, move_list.get_board().zobrist);
+        assert_eq!([1, 6, 1, 2, 1, 1,  1, 3, 1, 2, 1, 0], move_list.get_board().piece_counter);
     }
 
     #[test]
@@ -2760,6 +2774,7 @@ mod tests {
         assert_eq!(1, move_list.castling_rights_history[0]);
         assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
         assert_eq!(2, move_list.get_board().half_moves);
+        assert_eq!([1, 6, 1, 2, 1, 1,  1, 3, 1, 2, 1, 0], move_list.get_board().piece_counter);
 
         // UNMAKE MOVE
 
@@ -2775,6 +2790,7 @@ mod tests {
         assert_eq!(castling_rights, move_list.board.castling_rights);
         assert_eq!(1, move_list.get_board().half_moves);
         assert_eq!(zobrist, move_list.get_board().zobrist);
+        assert_eq!([1, 6, 1, 2, 1, 1,  1, 3, 1, 2, 1, 0], move_list.get_board().piece_counter);
     }
 
     #[test]
@@ -2817,6 +2833,7 @@ mod tests {
         assert_eq!(1, move_list.castling_rights_history[0]);
         assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
         assert_eq!(2, move_list.get_board().half_moves);
+        assert_eq!([1, 6, 1, 2, 1, 1,  1, 3, 1, 2, 1, 0], move_list.get_board().piece_counter);
 
         // UNMAKE MOVE
 
@@ -2832,6 +2849,7 @@ mod tests {
         assert_eq!(castling_rights, move_list.board.castling_rights);
         assert_eq!(1, move_list.get_board().half_moves);
         assert_eq!(zobrist, move_list.get_board().zobrist);
+        assert_eq!([1, 6, 1, 2, 1, 1,  1, 3, 1, 2, 1, 0], move_list.get_board().piece_counter);
     }
 
     #[test]
@@ -2874,6 +2892,7 @@ mod tests {
         assert_eq!(8, move_list.castling_rights_history[0]);
         assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
         assert_eq!(0, move_list.get_board().half_moves);
+        assert_eq!([1, 8, 1, 2, 2, 2,  1, 8, 1, 2, 2, 2], move_list.get_board().piece_counter);
 
         // UNMAKE MOVE
 
@@ -2889,6 +2908,7 @@ mod tests {
         assert_eq!(castling_rights, move_list.board.castling_rights);
         assert_eq!(1, move_list.get_board().half_moves);
         assert_eq!(zobrist, move_list.get_board().zobrist);
+        assert_eq!([1, 8, 1, 2, 2, 2,  1, 8, 1, 2, 2, 2], move_list.get_board().piece_counter);
     }
 
     #[test]
@@ -2934,6 +2954,7 @@ mod tests {
         assert_eq!(8, move_list.castling_rights_history[0]);
         assert_eq!(47, move_list.board.en_passant_possibility);
         assert_eq!(0, move_list.get_board().half_moves);
+        assert_eq!([1, 8, 1, 2, 2, 2,  1, 8, 1, 2, 2, 2], move_list.get_board().piece_counter);
 
         // UNMAKE MOVE
 
@@ -2949,6 +2970,7 @@ mod tests {
         assert_eq!(castling_rights, move_list.board.castling_rights);
         assert_eq!(1, move_list.get_board().half_moves);
         assert_eq!(zobrist, move_list.get_board().zobrist);
+        assert_eq!([1, 8, 1, 2, 2, 2,  1, 8, 1, 2, 2, 2], move_list.get_board().piece_counter);
     }
 
     #[test]
@@ -2998,6 +3020,7 @@ mod tests {
         assert_eq!(44, move_list.en_passant_history[0]);
         assert_eq!(1, move_list.castling_rights_history[0]);
         assert_eq!(0, move_list.get_board().half_moves);
+        assert_eq!([1, 6, 1, 2, 1, 1,  1, 2, 1, 2, 1, 0], move_list.get_board().piece_counter);
 
         // UNMAKE MOVE
 
@@ -3013,6 +3036,73 @@ mod tests {
         assert_eq!(castling_rights, move_list.board.castling_rights);
         assert_eq!(1, move_list.get_board().half_moves);
         assert_eq!(zobrist, move_list.get_board().zobrist);
+        assert_eq!([1, 6, 1, 2, 1, 1,  1, 3, 1, 2, 1, 0], move_list.get_board().piece_counter);
+    }
+
+    #[test]
+    fn en_passant() {
+        let mut board = Board::new();
+        board.read_fen("rnbqkbnr/ppp1pppp/8/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 1");
+        let board_copy = board.clone();
+        let mut move_list = MoveList::from_board(board);
+
+        let main_bitboard = board_copy.main_bitboard;
+        let colour_bitboards = board_copy.colour_bitboards.clone();
+        let piece_bitboards = board_copy.piece_bitboards.clone();
+        let en_passant = board_copy.en_passant_possibility.clone();
+        let castling_rights = board_copy.castling_rights.clone();
+        let zobrist = board_copy.zobrist.clone();
+
+        let piece_move = Move { origin: 35, target: 44, promotion: 0, piece: PAWN };
+
+        let origin: u64 = 1 << 35;
+        let target: u64 = 1 << 44;
+        let capture: u64 = 1 << 36;
+
+        let now = Instant::now();
+        move_list.make_move(&piece_move);
+        let duration = now.elapsed();
+        println!("make_move lasted for: {:?}", duration);
+
+        assert_eq!(main_bitboard - origin - capture | target, move_list.board.main_bitboard);
+        assert_eq!(colour_bitboards[0] - origin | target, move_list.board.colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1] - capture, move_list.board.colour_bitboards[1]);
+        for i in 0..12 {
+            if i == PAWN as usize
+            {
+                assert_eq!(piece_bitboards[i] - origin + target, move_list.board.piece_bitboards[i]);
+                continue;
+            }
+            if i == PAWN as usize + 6
+            {
+                assert_eq!(piece_bitboards[i] - capture, move_list.board.piece_bitboards[i]);
+                continue;
+            }
+
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
+        }
+
+        assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
+        assert_eq!(44, move_list.en_passant_history[0]);
+        assert_eq!(15, move_list.castling_rights_history[0]);
+        assert_eq!(0, move_list.get_board().half_moves);
+        assert_eq!([1, 8, 1, 2, 2, 2,  1, 7, 1, 2, 2, 2], move_list.get_board().piece_counter);
+
+        // UNMAKE MOVE
+
+        move_list.unmake_move(&piece_move);
+
+        assert_eq!(main_bitboard, move_list.board.main_bitboard);
+        assert_eq!(colour_bitboards[0], move_list.board.colour_bitboards[0]);
+        assert_eq!(colour_bitboards[1], move_list.board.colour_bitboards[1]);
+        for i in 0..12 {
+            assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
+        }
+        assert_eq!(en_passant, move_list.board.en_passant_possibility);
+        assert_eq!(castling_rights, move_list.board.castling_rights);
+        assert_eq!(0, move_list.get_board().half_moves);
+        assert_eq!(zobrist, move_list.get_board().zobrist);
+        assert_eq!([1, 8, 1, 2, 2, 2,  1, 8, 1, 2, 2, 2], move_list.get_board().piece_counter);
     }
 
     #[test]
@@ -3067,6 +3157,7 @@ mod tests {
         assert_eq!(44, move_list.en_passant_history[0]);
         assert_eq!(1, move_list.castling_rights_history[0]);
         assert_eq!(0, move_list.get_board().half_moves);
+        assert_eq!([1, 5, 2, 2, 1, 1,  1, 3, 1, 1, 1, 0], move_list.get_board().piece_counter);
 
         // UNMAKE MOVE
 
@@ -3085,6 +3176,7 @@ mod tests {
         assert_eq!(castling_rights, move_list.board.castling_rights);
         assert_eq!(1, move_list.get_board().half_moves);
         assert_eq!(zobrist, move_list.get_board().zobrist);
+        assert_eq!([1, 6, 1, 2, 1, 1,  1, 3, 1, 2, 1, 0], move_list.get_board().piece_counter);
     }
 
     #[test]
@@ -3139,6 +3231,7 @@ mod tests {
         assert_eq!(15, move_list.castling_rights_history[0]);
         assert_eq!(3, move_list.board.castling_rights);
         assert_eq!(2, move_list.get_board().half_moves);
+        assert_eq!([1, 0, 0, 2, 0, 0,  1, 0, 0, 2, 0, 0], move_list.get_board().piece_counter);
 
         // UNMAKE MOVE
 
@@ -3157,6 +3250,7 @@ mod tests {
         println!("old zobrist: {}", zobrist);
         println!("new zobrist: {}", move_list.get_board().zobrist);
         assert_eq!(zobrist, move_list.get_board().zobrist);
+        assert_eq!([1, 0, 0, 2, 0, 0,  1, 0, 0, 2, 0, 0], move_list.get_board().piece_counter);
     }
 
     #[test]
@@ -3199,6 +3293,7 @@ mod tests {
 
             assert_eq!(piece_bitboards[i], board.piece_bitboards[i]);
         }
+        assert_eq!([1, 0, 0, 2, 0, 0,  1, 0, 0, 2, 0, 0], move_list.get_board().piece_counter);
     }
 
     #[test]
@@ -3247,6 +3342,7 @@ mod tests {
         assert_eq!(15, move_list.castling_rights_history[0]);
         assert_eq!(12, move_list.board.castling_rights);
         assert_eq!(2, move_list.get_board().half_moves);
+        assert_eq!([1, 0, 0, 2, 0, 0,  1, 0, 0, 2, 0, 0], move_list.get_board().piece_counter);
 
         // UNMAKE MOVE
 
@@ -3262,6 +3358,7 @@ mod tests {
         assert_eq!(castling_rights, move_list.board.castling_rights);
         assert_eq!(1, move_list.get_board().half_moves);
         assert_eq!(zobrist, move_list.get_board().zobrist);
+        assert_eq!([1, 0, 0, 2, 0, 0,  1, 0, 0, 2, 0, 0], move_list.get_board().piece_counter);
     }
 
     #[test]
@@ -3275,6 +3372,7 @@ mod tests {
         let main_bitboard = board_copy.main_bitboard;
         let colour_bitboards = board_copy.colour_bitboards;
         let piece_bitboards = board_copy.piece_bitboards;
+        let piece_counter = board_copy.piece_counter;
 
         let piece_move = Move { origin: 59, target: 61, promotion: 1, piece: KING };
 
@@ -3304,6 +3402,7 @@ mod tests {
 
             assert_eq!(piece_bitboards[i], board.piece_bitboards[i]);
         }
+        assert_eq!(piece_counter, move_list.get_board().piece_counter);
     }
 
     #[test]
@@ -3825,6 +3924,7 @@ mod tests {
         assert_eq!(colour_bitboards, move_list.get_board().colour_bitboards);
         assert_eq!(piece_bitboards, move_list.get_board().piece_bitboards);
         assert!(!should_reset_fifty_moves);
+        assert_eq!([1, 8, 1, 2, 2, 2,  1, 8, 1, 2, 2, 2], move_list.get_board().piece_counter);
     }
 
     #[test]
@@ -3861,6 +3961,7 @@ mod tests {
             assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
         }
         assert!(should_reset_fifty_moves);
+        assert_eq!([1, 8, 1, 2, 2, 2,  1, 7, 1, 2, 2, 2], move_list.get_board().piece_counter);
     }
 
     #[test]
@@ -3898,6 +3999,7 @@ mod tests {
             assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
         }
         assert!(should_reset_fifty_moves);
+        assert_eq!([1, 8, 0, 2, 2, 2,  1, 8, 1, 2, 2, 2], move_list.get_board().piece_counter);
     }
 
     #[test]
@@ -3923,6 +4025,7 @@ mod tests {
         assert_eq!(empty_bitboard, move_list.get_board().empty_bitboard);
         assert_eq!(colour_bitboards, move_list.get_board().colour_bitboards);
         assert_eq!(piece_bitboards, move_list.get_board().piece_bitboards);
+        assert_eq!([1, 8, 1, 2, 2, 2,  1, 8, 1, 2, 2, 2], move_list.get_board().piece_counter);
     }
 
     #[test]
@@ -3953,6 +4056,7 @@ mod tests {
         assert_eq!(colour_bitboards[1], move_list.get_board().colour_bitboards[1]);
         assert_eq!(colour_bitboards[0], move_list.get_board().colour_bitboards[0]);
         assert_eq!(piece_bitboards, move_list.get_board().piece_bitboards);
+        assert_eq!([1, 8, 1, 2, 2, 2,  1, 8, 1, 2, 2, 2], move_list.get_board().piece_counter);
     }
 
     #[test]
@@ -3983,6 +4087,7 @@ mod tests {
         assert_eq!(empty_bitboard, move_list.get_board().empty_bitboard);
         assert_eq!(colour_bitboards, move_list.get_board().colour_bitboards);
         assert_eq!(piece_bitboards, move_list.get_board().piece_bitboards);
+        assert_eq!([1, 8, 1, 2, 2, 2,  1, 8, 1, 2, 2, 2], move_list.get_board().piece_counter);
     }
 
     #[test]

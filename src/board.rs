@@ -51,7 +51,8 @@ pub struct Board {
     pub half_moves: u32, // The halfmove clock specifies a decimal number of half moves with respect to the 50 move draw rule.
     // It is reset to zero after a capture or a pawn move and incremented otherwise.
     pub full_moves: u32,
-    pub zobrist: u64
+    pub zobrist: u64,
+    pub piece_counter: [u8; 12]
 }
 
 impl Board {
@@ -67,7 +68,8 @@ impl Board {
             en_passant_possibility: 64,
             half_moves: 0,
             full_moves: 1,
-            zobrist: 0
+            zobrist: 0,
+            piece_counter: [0;12]
         }
     }
 
@@ -83,7 +85,8 @@ impl Board {
             en_passant_possibility: 64,
             half_moves: 0,
             full_moves: 1,
-            zobrist: 0
+            zobrist: 0,
+            piece_counter: [0; 12]
         };
 
         board.read_fen(fen);
@@ -103,18 +106,7 @@ impl Board {
         let index = piece as usize + 6 * colour as usize;
         self.piece_bitboards[index] |= bit;
         self.zobrist ^= ZOBRIST_TABLE.pieces[index][tile as usize];
-    }
-
-    /// Prints debug information about the board
-    pub fn print_board(&self) {
-        println!("{}", self.main_bitboard);
-        println!("{:?}", self.colour_bitboards);
-        println!("{:?}", self.piece_bitboards);
-        println!("{:?}", self.active_player);
-        println!("{}", self.castling_rights);
-        println!("{}", self.en_passant_possibility);
-        println!("{}", self.half_moves);
-        println!("{}", self.full_moves);
+        self.piece_counter[index] += 1;
     }
 
     /// Switches active player to inactive and inactive one to active
@@ -302,6 +294,18 @@ mod tests {
         assert_eq!(board.half_moves, 0);
         assert_eq!(board.full_moves, 1);
         assert_eq!(board.zobrist, zobrist_hash(&board));
+        assert_eq!(board.piece_counter[0], 1);
+        assert_eq!(board.piece_counter[1], 8);
+        assert_eq!(board.piece_counter[2], 1);
+        assert_eq!(board.piece_counter[3], 2);
+        assert_eq!(board.piece_counter[4], 2);
+        assert_eq!(board.piece_counter[5], 2);
+        assert_eq!(board.piece_counter[6], 1);
+        assert_eq!(board.piece_counter[7], 8);
+        assert_eq!(board.piece_counter[8], 1);
+        assert_eq!(board.piece_counter[9], 2);
+        assert_eq!(board.piece_counter[10], 2);
+        assert_eq!(board.piece_counter[11], 2);
     }
 
     #[test]
@@ -359,6 +363,18 @@ mod tests {
         assert_eq!(board.half_moves, 0);
         assert_eq!(board.full_moves, 1);
         assert_eq!(board.zobrist, zobrist_hash(&board));
+        assert_eq!(board.piece_counter[0], 1);
+        assert_eq!(board.piece_counter[1], 8);
+        assert_eq!(board.piece_counter[2], 1);
+        assert_eq!(board.piece_counter[3], 2);
+        assert_eq!(board.piece_counter[4], 2);
+        assert_eq!(board.piece_counter[5], 2);
+        assert_eq!(board.piece_counter[6], 1);
+        assert_eq!(board.piece_counter[7], 8);
+        assert_eq!(board.piece_counter[8], 1);
+        assert_eq!(board.piece_counter[9], 2);
+        assert_eq!(board.piece_counter[10], 2);
+        assert_eq!(board.piece_counter[11], 2);
     }
 
     #[test]
@@ -389,6 +405,18 @@ mod tests {
         assert_eq!(board.half_moves, 1);
         assert_eq!(board.full_moves, 2);
         assert_eq!(board.zobrist, zobrist_hash(&board));
+        assert_eq!(board.piece_counter[0], 1);
+        assert_eq!(board.piece_counter[1], 8);
+        assert_eq!(board.piece_counter[2], 1);
+        assert_eq!(board.piece_counter[3], 2);
+        assert_eq!(board.piece_counter[4], 2);
+        assert_eq!(board.piece_counter[5], 2);
+        assert_eq!(board.piece_counter[6], 1);
+        assert_eq!(board.piece_counter[7], 8);
+        assert_eq!(board.piece_counter[8], 1);
+        assert_eq!(board.piece_counter[9], 2);
+        assert_eq!(board.piece_counter[10], 2);
+        assert_eq!(board.piece_counter[11], 2);
     }
 
     #[test]
