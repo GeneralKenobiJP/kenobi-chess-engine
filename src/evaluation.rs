@@ -14,7 +14,8 @@ pub const DRAW: i32 = 0;
 const TOTAL_START_VALUE: i32 = 2 * (8 * PIECE_WORTH[0] + 1 * PIECE_WORTH[1] + 2 * PIECE_WORTH[2] + 2 * PIECE_WORTH[3] + 2 * PIECE_WORTH[4]);
 
 // Piece-square tables
-// They are written from the white's perspective and reversed for black
+// They are written from the white's perspective, but with reversed indexing.
+// Therefore, they need to be reversed for the white, and re-reversed for the black (that is as they are here).
 const MIDGAME_PAWN_SQUARES: [i32; 64] = [
     0,  0,  0,  0,  0,  0,  0,  0,  // 8
     100,100,100,100,100,100,100,100,// 7
@@ -148,33 +149,33 @@ const ENDGAME_KING_SQUARES: [i32; 64] = [
 ];
 
 const MIDGAME_PIECE_SQUARES: [[i32; 64]; 12] = [
-    MIDGAME_KING_SQUARES,
-    MIDGAME_PAWN_SQUARES,
-    MIDGAME_QUEEN_SQUARES,
-    MIDGAME_ROOK_SQUARES,
-    MIDGAME_BISHOP_SQUARES,
-    MIDGAME_KNIGHT_SQUARES,
     reverse_array(MIDGAME_KING_SQUARES),
     reverse_array(MIDGAME_PAWN_SQUARES),
     reverse_array(MIDGAME_QUEEN_SQUARES),
     reverse_array(MIDGAME_ROOK_SQUARES),
     reverse_array(MIDGAME_BISHOP_SQUARES),
-    reverse_array(MIDGAME_KNIGHT_SQUARES)
+    reverse_array(MIDGAME_KNIGHT_SQUARES),
+    MIDGAME_KING_SQUARES,
+    MIDGAME_PAWN_SQUARES,
+    MIDGAME_QUEEN_SQUARES,
+    MIDGAME_ROOK_SQUARES,
+    MIDGAME_BISHOP_SQUARES,
+    MIDGAME_KNIGHT_SQUARES
 ];
 
 const ENDGAME_PIECE_SQUARES: [[i32; 64]; 12] = [
-    ENDGAME_KING_SQUARES,
-    ENDGAME_PAWN_SQUARES,
-    ENDGAME_QUEEN_SQUARES,
-    ENDGAME_ROOK_SQUARES,
-    ENDGAME_BISHOP_SQUARES,
-    ENDGAME_KNIGHT_SQUARES,
     reverse_array(ENDGAME_KING_SQUARES),
     reverse_array(ENDGAME_PAWN_SQUARES),
     reverse_array(ENDGAME_QUEEN_SQUARES),
     reverse_array(ENDGAME_ROOK_SQUARES),
     reverse_array(ENDGAME_BISHOP_SQUARES),
-    reverse_array(ENDGAME_KNIGHT_SQUARES)
+    reverse_array(ENDGAME_KNIGHT_SQUARES),
+    ENDGAME_KING_SQUARES,
+    ENDGAME_PAWN_SQUARES,
+    ENDGAME_QUEEN_SQUARES,
+    ENDGAME_ROOK_SQUARES,
+    ENDGAME_BISHOP_SQUARES,
+    ENDGAME_KNIGHT_SQUARES
 ];
 
 const fn reverse_array(mut array: [i32; 64]) -> [i32;64] {
@@ -219,12 +220,12 @@ fn count_material(board: &Board) -> i32 {
     let active_player_piece_index = 6 * board.active_player as usize;
     let inactive_player_piece_index = 6 * board.inactive_player as usize;
 
-    if board.piece_bitboards[active_player_piece_index] == 0 { return NEGATIVE_INFINITY; }
-    if board.piece_bitboards[inactive_player_piece_index] == 0 { return POSITIVE_INFINITY; }
+    if board.piece_counter[active_player_piece_index] == 0 { return NEGATIVE_INFINITY; }
+    if board.piece_counter[inactive_player_piece_index] == 0 { return POSITIVE_INFINITY; }
 
     for piece in 1..6 {
-        material += count_pieces(PIECE_WORTH[piece - 1], board.piece_counter[active_player_piece_index + piece - 1]);
-        material -= count_pieces(PIECE_WORTH[piece - 1], board.piece_counter[inactive_player_piece_index + piece - 1]);
+        material += count_pieces(PIECE_WORTH[piece - 1], board.piece_counter[active_player_piece_index + piece]);
+        material -= count_pieces(PIECE_WORTH[piece - 1], board.piece_counter[inactive_player_piece_index + piece]);
     }
 
     material
@@ -262,7 +263,7 @@ fn evaluate_structure(board: &Board, phase_factor: i32) -> i32 {
 
 fn evaluate_piece_position(tile: u64, piece_index: usize, phase_factor: i32) -> i32 {
     let index = tile.checked_ilog2().unwrap_or_default() as usize;
-    let mut value = MIDGAME_PIECE_SQUARES[piece_index][index] * phase_factor + ENDGAME_PIECE_SQUARES[piece_index][index] * (1-phase_factor);
+    let mut value = MIDGAME_PIECE_SQUARES[piece_index][index] * phase_factor + ENDGAME_PIECE_SQUARES[piece_index][index] * (100-phase_factor);
     value /= 100;
 
     value
@@ -282,14 +283,15 @@ fn compute_game_phase_factor(piece_count: &[u8; 12]) -> i32 {
 
 #[cfg(test)]
 mod tests {
+    use crate::board::START_POSITION;
     use super::*;
 
-    // #[test]
-    // fn test_count_pieces() {
-    //     assert_eq!(800, count_pieces(0x000000000000FF00, 100));
-    //     assert_eq!(900, count_pieces(0x1003000000000000, 300));
-    //     assert_eq!(900, count_pieces(0x0000000001000000, 900));
-    // }
+    #[test]
+    fn test_count_pieces() {
+        assert_eq!(800, count_pieces(100, 8));
+        assert_eq!(900, count_pieces(300, 3));
+        assert_eq!(900, count_pieces(900, 1));
+    }
 
     #[test]
     fn count_material_start_position() {
@@ -343,6 +345,57 @@ mod tests {
         board.read_fen(fen);
 
         assert_eq!(POSITIVE_INFINITY, count_material(&board));
+    }
+
+    #[test]
+    fn test_compute_game_phase_factor_start_position() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+
+        assert_eq!(100, compute_game_phase_factor(&board.piece_counter));
+    }
+
+    #[test]
+    fn test_compute_game_phase_factor_empty_board() {
+        let mut board = Board::new();
+        let fen = "4k3/8/8/8/8/8/8/4K3 b - - 1 1";
+        board.read_fen(fen);
+
+        assert_eq!(0, compute_game_phase_factor(&board.piece_counter));
+    }
+
+    #[test]
+    fn test_compute_game_phase_factor_midgame() {
+        let mut board = Board::new();
+        let fen = "r3k3/2n3n1/1p6/8/8/8/5PPP/3QKB2 w q - 0 1";
+        board.read_fen(fen);
+
+        assert_eq!((1*PIECE_WORTH[1] + 1*PIECE_WORTH[3] + 1*PIECE_WORTH[2] + 4*PIECE_WORTH[0] + 2*PIECE_WORTH[4]) * 100 / TOTAL_START_VALUE,
+                   compute_game_phase_factor(&board.piece_counter));
+        println!("{}", compute_game_phase_factor(&board.piece_counter));
+    }
+
+    #[test]
+    fn check_evaluate_piece_position() {
+        // White pawn on rank 7
+        assert_eq!(100, evaluate_piece_position(0x0010000000000000, 1, 100));
+        assert_eq!(200, evaluate_piece_position(0x0010000000000000, 1, 0));
+        assert_eq!(180, evaluate_piece_position(0x0010000000000000, 1, 20));
+
+        // Black pawn on e7
+        assert_eq!(-20, evaluate_piece_position(0x0010000000000000, 7, 100));
+        assert_eq!(10, evaluate_piece_position(0x0010000000000000, 7, 0));
+        assert_eq!(4, evaluate_piece_position(0x0010000000000000, 7, 20));
+
+        // White rook on b8
+        assert_eq!(0, evaluate_piece_position(0x4000000000000000, 3, 100));
+        assert_eq!(20, evaluate_piece_position(0x4000000000000000, 3, 0));
+        assert_eq!(16, evaluate_piece_position(0x4000000000000000, 3, 20));
+
+        // Black king on g8
+        assert_eq!(50, evaluate_piece_position(0x0200000000000000, 6, 100));
+        assert_eq!(-30, evaluate_piece_position(0x0200000000000000, 6, 0));
+        assert_eq!(-14, evaluate_piece_position(0x0200000000000000, 6, 20));
     }
 
     #[test]
