@@ -112,7 +112,7 @@ const MIDGAME_QUEEN_SQUARES: [i32; 64] = [
 	0,    0,  5,  5,  5,  5,  0, -5, // 4
 	-10,  5,  5,  5,  5,  5,  0,-10, // 3
 	-10,  0,  5,  5,  5,  0,  0,-10, // 2
-	-20,-10,-10,  0, -5,-10,-10,-20, // 1
+	-20,-10,-10,  0, 0,-10,-10,-20, // 1
 ];
 
 const ENDGAME_QUEEN_SQUARES: [i32; 64] = [
@@ -247,17 +247,25 @@ fn evaluate_structure(board: &Board, phase_factor: i32) -> i32 {
     let inactive_player_piece_index = 6 * board.inactive_player as usize;
 
     for index in 0..6 {
-        let mut bitboard = board.piece_bitboards[index];
-
-        while bitboard > 0 {
-            let tile = bitboard & bitboard.wrapping_neg();
-            bitboard -= tile;
-
-            structure += evaluate_piece_position(tile, active_player_piece_index + index, phase_factor);
-            structure -= evaluate_piece_position(tile, inactive_player_piece_index + index, phase_factor);
-        }
+        structure += evaluate_player_piece_structure(board, active_player_piece_index + index, phase_factor);
+        println!("{}", structure);
+        structure -= evaluate_player_piece_structure(board, inactive_player_piece_index + index, phase_factor);
+        println!("{}", structure);
     }
 
+    structure
+}
+
+fn evaluate_player_piece_structure(board: &Board, piece_index: usize, phase_factor: i32) -> i32 {
+    let mut structure = 0;
+    let mut bitboard = board.piece_bitboards[piece_index];
+
+    while bitboard > 0 {
+        let tile = bitboard & bitboard.wrapping_neg();
+        bitboard -= tile;
+
+        structure += evaluate_piece_position(tile, piece_index, phase_factor);
+    }
     structure
 }
 
@@ -397,6 +405,63 @@ mod tests {
         assert_eq!(-30, evaluate_piece_position(0x0200000000000000, 6, 0));
         assert_eq!(-14, evaluate_piece_position(0x0200000000000000, 6, 20));
     }
+
+    #[test]
+    fn check_evaluate_structure_e2e4() {
+        let mut board = Board::new();
+        let fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1";
+        board.read_fen(fen);
+
+        assert_eq!(45, evaluate_structure(&board, 100));
+    }
+
+    #[test]
+    fn check_evaluate_structure_e2e4_endgame_phase() {
+        let mut board = Board::new();
+        let fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1";
+        board.read_fen(fen);
+
+        assert_eq!(25, evaluate_structure(&board, 0));
+    }
+
+    #[test]
+    fn check_evaluate_structure_bongcloud() {
+        let mut board = Board::new();
+        let fen = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPPKPPP/RNBQ1BNR w kq - 0 1";
+        board.read_fen(fen);
+
+        assert_eq!(-5, evaluate_structure(&board, 100));
+    }
+
+    #[test]
+    fn check_evaluate_structure_a2a3_e7e5() {
+        let mut board = Board::new();
+        let fen = "rnbqkbnr/pppp1ppp/8/4p3/8/P7/1PPPPPPP/RNBQKBNR w KQkq - 0 1";
+        board.read_fen(fen);
+
+        assert_eq!(-30, evaluate_structure(&board, 100));
+    }
+
+    // #[test]
+    // fn check_evaluate_structure_endgame() {
+    //     let mut board = Board::new();
+    //     let fen = "r7/pp6/8/8/8/4k3/PP1pP3/R5NK w - - 0 1";
+    //     board.read_fen(fen);
+    //
+    //     let phase_factor = compute_game_phase_factor(&board.piece_counter);
+    //     println!("{}", phase_factor);
+    //
+    //     let expected_midgame = MIDGAME_KNIGHT_SQUARES[63-1] + MIDGAME_PAWN_SQUARES[63-11] + MIDGAME_KING_SQUARES[63-0]
+    //         + MIDGAME_ROOK_SQUARES[63-7] + MIDGAME_PAWN_SQUARES[63-14] + MIDGAME_PAWN_SQUARES[63-15]
+    //         - (MIDGAME_PAWN_SQUARES[12] + MIDGAME_KING_SQUARES[19] + MIDGAME_ROOK_SQUARES[63] + MIDGAME_PAWN_SQUARES[55] + MIDGAME_PAWN_SQUARES[54]);
+    //     let expected_endgame = ENDGAME_KNIGHT_SQUARES[63-1] + ENDGAME_PAWN_SQUARES[63-11] + ENDGAME_KING_SQUARES[63-0]
+    //         + ENDGAME_ROOK_SQUARES[63-7] + ENDGAME_PAWN_SQUARES[63-14] + ENDGAME_PAWN_SQUARES[63-15]
+    //         - (ENDGAME_PAWN_SQUARES[12] + ENDGAME_KING_SQUARES[19] + ENDGAME_ROOK_SQUARES[63] + ENDGAME_PAWN_SQUARES[55] + ENDGAME_PAWN_SQUARES[54]);
+    //     let mut expected = phase_factor * expected_midgame + (100 - phase_factor) * expected_endgame;
+    //     expected /= 100;
+    //
+    //     assert_eq!(expected, evaluate_structure(&board, phase_factor));
+    // }
 
     #[test]
     fn test_evaluation_start_position() {
