@@ -204,6 +204,9 @@ pub fn evaluate(board: &Board) -> i32 {
     let phase_factor = compute_game_phase_factor(&board.piece_counter);
 
     value += count_material(board);
+    if value == NEGATIVE_INFINITY || value == POSITIVE_INFINITY {
+        return value;
+    }
     value += evaluate_structure(board, phase_factor);
 
     value
@@ -502,7 +505,30 @@ mod tests {
         let fen = "r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/2R2N2/P7/RK6 w q d6 1 25";
         board.read_fen(fen);
 
-        assert_eq!(600, evaluate(&board));
+        let phase_factor = compute_game_phase_factor(&board.piece_counter);
+
+        let expected_structure = -evaluate_piece_position(1 << 63, 6*1 + 3, phase_factor) -
+            evaluate_piece_position(1 << 59, 6*1 + 0, phase_factor) +
+            evaluate_piece_position(1 << 54, 6*0 + 1, phase_factor) -
+            evaluate_piece_position(1 << 53, 6*1 + 3, phase_factor) -
+            evaluate_piece_position(1 << 42, 6*1 + 1, phase_factor) -
+            evaluate_piece_position(1 << 41, 6*1 + 1, phase_factor) -
+            evaluate_piece_position(1 << 36, 6*1 + 1, phase_factor) +
+            evaluate_piece_position(1 << 35, 6*0 + 1, phase_factor) +
+            evaluate_piece_position(1 << 34, 6*0 + 4, phase_factor) +
+            evaluate_piece_position(1 << 33, 6*0 + 1, phase_factor) +
+            evaluate_piece_position(1 << 32, 6*0 + 1, phase_factor) -
+            evaluate_piece_position(1 << 30, 6*1 + 4, phase_factor) +
+            evaluate_piece_position(1 << 28, 6*0 + 1, phase_factor) +
+            evaluate_piece_position(1 << 25, 6*0 + 2, phase_factor) -
+            evaluate_piece_position(1 << 24, 6*1 + 2, phase_factor) +
+            evaluate_piece_position(1 << 21, 6*0 + 3, phase_factor) +
+            evaluate_piece_position(1 << 18, 6*0 + 5, phase_factor) +
+            evaluate_piece_position(1 << 15, 6*0 + 1, phase_factor) +
+            evaluate_piece_position(1 << 7, 6*0 + 3, phase_factor) +
+            evaluate_piece_position(1 << 6, 6*0 + 0, phase_factor);
+
+        assert_eq!(600 + expected_structure, evaluate(&board));
     }
 
     #[test]
