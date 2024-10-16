@@ -248,9 +248,7 @@ fn evaluate_structure(board: &Board, phase_factor: i32) -> i32 {
 
     for index in 0..6 {
         structure += evaluate_player_piece_structure(board, active_player_piece_index + index, phase_factor);
-        println!("{}", structure);
         structure -= evaluate_player_piece_structure(board, inactive_player_piece_index + index, phase_factor);
-        println!("{}", structure);
     }
 
     structure
@@ -302,7 +300,7 @@ mod tests {
     }
 
     #[test]
-    fn count_material_start_position() {
+    fn check_count_material_start_position() {
         let mut board = Board::new();
         let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
         board.read_fen(fen);
@@ -311,7 +309,7 @@ mod tests {
     }
 
     #[test]
-    fn count_material_position_4() {
+    fn check_count_material_position_4() {
         let mut board = Board::new();
         let fen = "r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/2R2N2/P7/RK6 w q d6 1 25";
         board.read_fen(fen);
@@ -320,7 +318,7 @@ mod tests {
     }
 
     #[test]
-    fn count_material_checkmate_white_loss() {
+    fn check_count_material_checkmate_white_loss() {
         let mut board = Board::new();
         let fen = "rnbqkbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQ1BNR w KQkq - 0 1";
         board.read_fen(fen);
@@ -329,7 +327,7 @@ mod tests {
     }
 
     #[test]
-    fn count_material_checkmate_black_victory() {
+    fn check_count_material_checkmate_black_victory() {
         let mut board = Board::new();
         let fen = "rnbqkbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQ1BNR b KQkq - 0 1";
         board.read_fen(fen);
@@ -338,7 +336,7 @@ mod tests {
     }
 
     #[test]
-    fn count_material_checkmate_black_loss() {
+    fn check_count_material_checkmate_black_loss() {
         let mut board = Board::new();
         let fen = "rnbq1bnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR b KQkq - 0 1";
         board.read_fen(fen);
@@ -347,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn count_material_checkmate_white_victory() {
+    fn check_count_material_checkmate_white_victory() {
         let mut board = Board::new();
         let fen = "rnbq1bnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 0 1";
         board.read_fen(fen);
@@ -356,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn test_compute_game_phase_factor_start_position() {
+    fn check_compute_game_phase_factor_start_position() {
         let mut board = Board::new();
         board.read_fen(START_POSITION);
 
@@ -364,7 +362,7 @@ mod tests {
     }
 
     #[test]
-    fn test_compute_game_phase_factor_empty_board() {
+    fn check_compute_game_phase_factor_empty_board() {
         let mut board = Board::new();
         let fen = "4k3/8/8/8/8/8/8/4K3 b - - 1 1";
         board.read_fen(fen);
@@ -373,7 +371,7 @@ mod tests {
     }
 
     #[test]
-    fn test_compute_game_phase_factor_midgame() {
+    fn check_compute_game_phase_factor_midgame() {
         let mut board = Board::new();
         let fen = "r3k3/2n3n1/1p6/8/8/8/5PPP/3QKB2 w q - 0 1";
         board.read_fen(fen);
@@ -384,7 +382,7 @@ mod tests {
     }
 
     #[test]
-    fn check_evaluate_piece_position() {
+    fn test_evaluate_piece_position() {
         // White pawn on rank 7
         assert_eq!(100, evaluate_piece_position(0x0010000000000000, 1, 100));
         assert_eq!(200, evaluate_piece_position(0x0010000000000000, 1, 0));
@@ -404,6 +402,29 @@ mod tests {
         assert_eq!(50, evaluate_piece_position(0x0200000000000000, 6, 100));
         assert_eq!(-30, evaluate_piece_position(0x0200000000000000, 6, 0));
         assert_eq!(-14, evaluate_piece_position(0x0200000000000000, 6, 20));
+    }
+
+    #[test]
+    fn test_evaluate_player_piece_structure() {
+        let board = Board::from_fen(START_POSITION);
+        let phase_factor = compute_game_phase_factor(&board.piece_counter);
+
+        assert_eq!(0, evaluate_player_piece_structure(&board, 0, phase_factor));
+        assert_eq!(0, evaluate_player_piece_structure(&board, 6, phase_factor));
+        assert_eq!(-50, evaluate_player_piece_structure(&board, 1, phase_factor));
+        assert_eq!(-50, evaluate_player_piece_structure(&board, 7, phase_factor));
+        assert_eq!(0, evaluate_player_piece_structure(&board, 2, phase_factor));
+        assert_eq!(0, evaluate_player_piece_structure(&board, 8, phase_factor));
+        assert_eq!(-40, evaluate_player_piece_structure(&board, 3, phase_factor));
+        assert_eq!(-40, evaluate_player_piece_structure(&board, 9, phase_factor));
+        assert_eq!(-20, evaluate_player_piece_structure(&board, 4, phase_factor));
+        assert_eq!(-20, evaluate_player_piece_structure(&board, 10, phase_factor));
+        assert_eq!(-80, evaluate_player_piece_structure(&board, 5, phase_factor));
+        assert_eq!(-80, evaluate_player_piece_structure(&board, 11, phase_factor));
+
+        let board = Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBN1 w KQkq - 0 1");
+        assert_eq!(-20, evaluate_player_piece_structure(&board, 3, phase_factor));
+        assert_eq!(-40, evaluate_player_piece_structure(&board, 9, phase_factor));
     }
 
     #[test]
@@ -442,26 +463,29 @@ mod tests {
         assert_eq!(-30, evaluate_structure(&board, 100));
     }
 
-    // #[test]
-    // fn check_evaluate_structure_endgame() {
-    //     let mut board = Board::new();
-    //     let fen = "r7/pp6/8/8/8/4k3/PP1pP3/R5NK w - - 0 1";
-    //     board.read_fen(fen);
-    //
-    //     let phase_factor = compute_game_phase_factor(&board.piece_counter);
-    //     println!("{}", phase_factor);
-    //
-    //     let expected_midgame = MIDGAME_KNIGHT_SQUARES[63-1] + MIDGAME_PAWN_SQUARES[63-11] + MIDGAME_KING_SQUARES[63-0]
-    //         + MIDGAME_ROOK_SQUARES[63-7] + MIDGAME_PAWN_SQUARES[63-14] + MIDGAME_PAWN_SQUARES[63-15]
-    //         - (MIDGAME_PAWN_SQUARES[12] + MIDGAME_KING_SQUARES[19] + MIDGAME_ROOK_SQUARES[63] + MIDGAME_PAWN_SQUARES[55] + MIDGAME_PAWN_SQUARES[54]);
-    //     let expected_endgame = ENDGAME_KNIGHT_SQUARES[63-1] + ENDGAME_PAWN_SQUARES[63-11] + ENDGAME_KING_SQUARES[63-0]
-    //         + ENDGAME_ROOK_SQUARES[63-7] + ENDGAME_PAWN_SQUARES[63-14] + ENDGAME_PAWN_SQUARES[63-15]
-    //         - (ENDGAME_PAWN_SQUARES[12] + ENDGAME_KING_SQUARES[19] + ENDGAME_ROOK_SQUARES[63] + ENDGAME_PAWN_SQUARES[55] + ENDGAME_PAWN_SQUARES[54]);
-    //     let mut expected = phase_factor * expected_midgame + (100 - phase_factor) * expected_endgame;
-    //     expected /= 100;
-    //
-    //     assert_eq!(expected, evaluate_structure(&board, phase_factor));
-    // }
+    #[test]
+    fn check_evaluate_structure_endgame() {
+        let mut board = Board::new();
+        let fen = "r7/pp6/8/8/8/4k3/PP1pP3/R5NK w - - 0 1";
+        board.read_fen(fen);
+
+        let phase_factor = compute_game_phase_factor(&board.piece_counter);
+        println!("{}", phase_factor);
+
+        let expected = evaluate_piece_position(1 << 1, 6*0 + 5, phase_factor) +
+            evaluate_piece_position(1 << 11, 6*0 + 1, phase_factor) +
+            evaluate_piece_position(1 << 0, 6*0 + 0, phase_factor) +
+            evaluate_piece_position(1 << 7, 6*0 + 3, phase_factor) +
+            evaluate_piece_position(1 << 14, 6*0 + 1, phase_factor) +
+            evaluate_piece_position(1 << 15, 6*0 + 1, phase_factor) -
+            evaluate_piece_position(1 << 12, 6*1 + 1, phase_factor) -
+            evaluate_piece_position(1 << 19, 6*1 + 0, phase_factor) -
+            evaluate_piece_position(1 << 63, 6*1 + 3, phase_factor) -
+            evaluate_piece_position(1 << 55, 6*1 + 1, phase_factor) -
+            evaluate_piece_position(1 << 54, 6*1 + 1, phase_factor);
+
+        assert_eq!(expected, evaluate_structure(&board, phase_factor));
+    }
 
     #[test]
     fn test_evaluation_start_position() {
