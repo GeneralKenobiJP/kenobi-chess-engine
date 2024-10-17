@@ -70,6 +70,8 @@ impl Move {
 
         let mut promotion = 0;
 
+        let piece = board.get_piece_from_square(origin).unwrap();
+
         if let Some(promotion_piece) = chars.next() {
             match promotion_piece {
                 'q' => promotion = 2,
@@ -79,8 +81,14 @@ impl Move {
                 _ => promotion = 0
             }
         }
-
-        let piece = board.get_piece_from_square(origin).unwrap();
+        else {
+            if piece == KING && Board::distance(origin, target) > 1 {
+                promotion = 1;
+            }
+            else {
+                promotion = 0;
+            }
+        }
 
         Move {
             origin,

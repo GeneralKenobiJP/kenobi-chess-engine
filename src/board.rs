@@ -135,6 +135,8 @@ impl Board {
     ///     board - Board object we are considering
     ///     fen - FEN string holding board position
     pub fn read_fen(&mut self, fen: &str) {
+        self.piece_counter = [0;12];
+
         let fen = if fen == "" { START_POSITION } else { fen };
         // println!("Received fen: {}", fen);
 
