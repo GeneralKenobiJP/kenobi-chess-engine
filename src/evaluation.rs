@@ -3,6 +3,7 @@
 //! Currently considers material advantage.
 //! Value is measured in centipanws, i.e. 1 pawn = 100 centipawns
 
+use std::fmt::Debug;
 use num_traits::WrappingNeg;
 use crate::board::Board;
 
@@ -191,25 +192,50 @@ const fn reverse_array(mut array: [i32; 64]) -> [i32;64] {
     array
 }
 
-/// Evaluates the current board situation and outputs the evaluation.
-/// Uses the negamax convention.
-/// Considers material advantage, 50-move rule.
-/// Checkmate (i.e. lack of king) is evaluated as i32::MAX / i32::MIN
-/// (roughly equivalent to +- inf)
-pub fn evaluate(board: &Board) -> i32 {
-    let mut value = 0;
+pub trait Evaluator: Debug + Eq + PartialEq {
+    fn evaluate(board: &Board) -> i32;
+}
 
-    if board.half_moves == 100 { return DRAW; }
+#[derive(Debug, Eq, PartialEq)]
+pub struct MainEvaluator;
 
-    let phase_factor = compute_game_phase_factor(&board.piece_counter);
+impl Evaluator for MainEvaluator {
 
-    value += count_material(board);
-    if value == NEGATIVE_INFINITY || value == POSITIVE_INFINITY {
-        return value;
+    /// Evaluates the current board situation and outputs the evaluation.
+    /// Uses the negamax convention.
+    /// Considers material advantage, 50-move rule.
+    /// Checkmate (i.e. lack of king) is evaluated as i32::MAX / i32::MIN
+    /// (roughly equivalent to +- inf)
+    fn evaluate(board: &Board) -> i32 {
+        let mut value = 0;
+
+        if board.half_moves == 100 { return DRAW; }
+
+        let phase_factor = compute_game_phase_factor(&board.piece_counter);
+
+        value += count_material(board);
+        if value == NEGATIVE_INFINITY || value == POSITIVE_INFINITY {
+            return value;
+        }
+        value += evaluate_structure(board, phase_factor);
+
+        value
     }
-    value += evaluate_structure(board, phase_factor);
+}
 
-    value
+#[derive(Debug, Eq, PartialEq)]
+struct MockMaterialEvaluator;
+
+impl Evaluator for MockMaterialEvaluator {
+    fn evaluate(board: &Board) -> i32 {
+        let mut value = 0;
+
+        if board.half_moves == 100 { return DRAW; }
+
+        value += count_material(board);
+
+        value
+    }
 }
 
 /// Counts the naive material difference on the board with consideration of naive position evaluation.
@@ -496,7 +522,7 @@ mod tests {
         let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
         board.read_fen(fen);
 
-        assert_eq!(0, evaluate(&board));
+        assert_eq!(0, MainEvaluator::evaluate(&board));
     }
 
     #[test]
@@ -528,7 +554,7 @@ mod tests {
             evaluate_piece_position(1 << 7, 6*0 + 3, phase_factor) +
             evaluate_piece_position(1 << 6, 6*0 + 0, phase_factor);
 
-        assert_eq!(600 + expected_structure, evaluate(&board));
+        assert_eq!(600 + expected_structure, MainEvaluator::evaluate(&board));
     }
 
     #[test]
@@ -537,7 +563,7 @@ mod tests {
         let fen = "rnbqkbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQ1BNR w KQkq - 0 1";
         board.read_fen(fen);
 
-        assert_eq!(NEGATIVE_INFINITY, evaluate(&board));
+        assert_eq!(NEGATIVE_INFINITY, MainEvaluator::evaluate(&board));
     }
 
     #[test]
@@ -546,6 +572,6 @@ mod tests {
         let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 100 1";
         board.read_fen(fen);
 
-        assert_eq!(DRAW, evaluate(&board));
+        assert_eq!(DRAW, MainEvaluator::evaluate(&board));
     }
 }

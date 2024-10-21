@@ -5,7 +5,7 @@
 //! thus making the search algorithm faster
 
 use std::collections::HashMap;
-
+use crate::evaluation::Evaluator;
 use crate::move_generator::{Move, MoveList};
 use crate::search::Engine;
 use crate::transposition_table::NodeType::EXACT;
@@ -15,7 +15,7 @@ type OrderTable = HashMap<Move, i32>;
 const HASH_MOVE_PRIORITY: [i32; 3] = [256, 128, 32];
 const PV_NODE_PRIORITY: i32 = 64;
 
-impl Engine {
+impl<T: Evaluator> Engine<T> {
     /// Orders moves in-place using order heuristics, given a move list.
     pub fn order_moves(&self, move_list: &mut MoveList) {
         let mut order_table = self.construct_order_table(move_list);

@@ -12,6 +12,7 @@ use std::time::Instant;
 use scanner_rust::ScannerStr;
 
 use crate::board::{Board, START_POSITION};
+use crate::evaluation::{Evaluator, MainEvaluator};
 use crate::move_generator::{Move, MoveList};
 use crate::perft::perft_log;
 use crate::search::Engine;
@@ -19,12 +20,12 @@ use crate::string_builder::StringBuilder;
 
 const INFINITE_DEPTH: u32 = 256;
 
-pub struct Bot {
-    engine: Arc<Mutex<Engine>>,
+pub struct Bot<T: Evaluator = MainEvaluator> {
+    engine: Arc<Mutex<Engine<T>>>,
     move_list: Arc<Mutex<MoveList>>,
 }
 
-impl Bot {
+impl Bot<MainEvaluator> {
     pub fn new() -> Self {
         Bot {
             engine: Arc::new(Mutex::new(Engine::new())),
@@ -33,8 +34,9 @@ impl Bot {
     }
 
     pub fn with_position(fen: &str) -> Self {
+        let evaluator = MainEvaluator {};
         Bot {
-            engine: Arc::new(Mutex::new(Engine::new())),
+            engine: Arc::new(Mutex::new(Engine::with_evaluator(evaluator))),
             move_list: Arc::new(Mutex::new(MoveList::from_fen(fen))),
         }
     }
@@ -52,7 +54,7 @@ impl Bot {
 
         let command = scanner.next().unwrap_or_default().unwrap_or_default();
         let response = match command {
-            "uci" => Bot::uci(),
+            "uci" =>  Bot::uci(),
             "ucinewgame" => self.new_game(),
             "isready" => Self::readyok(),
             "position" => self.input_position(&mut scanner),
@@ -226,7 +228,7 @@ impl Bot {
     fn stop(&mut self) -> String {
         Engine::set_stop_flag(true);
 
-        Bot::best_move(&mut self.engine.lock().unwrap(), &mut self.move_list.lock().unwrap())
+         Bot::best_move(&mut self.engine.lock().unwrap(), &mut self.move_list.lock().unwrap())
     }
 
     /// Implements the "best_move" UCI command.
@@ -271,19 +273,19 @@ mod tests {
     #[test]
     fn check_id() {
         let expected = format!("id name Kenobi {}\nid author Jakub Pietrzak", env!("CARGO_PKG_VERSION"));
-        assert_eq!(expected, Bot::id());
+        assert_eq!(expected,  Bot::id());
     }
 
     #[test]
     fn check_option() {
         let expected = "";
-        assert_eq!(expected, Bot::option());
+        assert_eq!(expected,  Bot::option());
     }
 
     #[test]
     fn check_uci() {
         let expected = format!("id name Kenobi {}\nid author Jakub Pietrzak\nuciok", env!("CARGO_PKG_VERSION"));
-        assert_eq!(expected, Bot::uci());
+        assert_eq!(expected,  Bot::uci());
     }
 
     #[test]
@@ -301,7 +303,7 @@ mod tests {
 
     #[test]
     fn check_readyok() {
-        assert_eq!("readyok", Bot::readyok());
+        assert_eq!("readyok",  Bot::readyok());
     }
 
     #[test]
@@ -343,7 +345,7 @@ mod tests {
     #[test]
     fn check_extract_fen() {
         let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 blabla yadayada";
-        assert_eq!(START_POSITION, Bot::extract_fen(&mut ScannerStr::new(&fen)));
+        assert_eq!(START_POSITION,  Bot::extract_fen(&mut ScannerStr::new(&fen)));
     }
 
     #[test]

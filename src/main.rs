@@ -14,6 +14,7 @@ use std::{io, thread};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::bot::Bot;
+use crate::evaluation::MainEvaluator;
 
 fn main() {
     let mut bot = Bot::new();
