@@ -179,6 +179,7 @@ const ENDGAME_PIECE_SQUARES: [[i32; 64]; 12] = [
     ENDGAME_KNIGHT_SQUARES
 ];
 
+/// Reverses a deep copy of an array and returns it.
 const fn reverse_array(mut array: [i32; 64]) -> [i32;64] {
     let mut index = 0;
 
@@ -203,7 +204,7 @@ impl Evaluator for MainEvaluator {
 
     /// Evaluates the current board situation and outputs the evaluation.
     /// Uses the negamax convention.
-    /// Considers material advantage, 50-move rule.
+    /// Considers material advantage, 50-move rule, structural advantage.
     /// Checkmate (i.e. lack of king) is evaluated as i32::MAX / i32::MIN
     /// (roughly equivalent to +- inf)
     fn evaluate(board: &Board) -> i32 {
@@ -227,6 +228,12 @@ impl Evaluator for MainEvaluator {
 pub struct MockMaterialEvaluator;
 
 impl Evaluator for MockMaterialEvaluator {
+    /// Evaluates the current board situation and outputs the evaluation.
+    /// Uses the negamax convention.
+    /// Considers material advantage, 50-move rule only
+    /// (Mock used for testing purposes)
+    /// Checkmate (i.e. lack of king) is evaluated as i32::MAX / i32::MIN
+    /// (roughly equivalent to +- inf)
     fn evaluate(board: &Board) -> i32 {
         let mut value = 0;
 
@@ -269,6 +276,10 @@ fn count_pieces(piece_value: i32, piece_count: u8) -> i32 {
     material
 }
 
+/// Evaluates structural advantage
+/// Takes in phase_factor, which is an integer in [0,100],
+/// where 0 means endgame, 100 means midgame.
+/// Returns a negamax difference between players' structures
 fn evaluate_structure(board: &Board, phase_factor: i32) -> i32 {
     let mut structure = 0;
 
@@ -283,6 +294,11 @@ fn evaluate_structure(board: &Board, phase_factor: i32) -> i32 {
     structure
 }
 
+/// Evaluates the piece structure of a given piece type, of a given player.
+/// Takes in phase_factor, which is an integer in [0,100],
+/// where 0 means endgame, 100 means midgame.
+/// Takes in piece_index indicating type and colour (in [0,11]).
+/// Returns the evaluation of the structure of the given pieces.
 fn evaluate_player_piece_structure(board: &Board, piece_index: usize, phase_factor: i32) -> i32 {
     let mut structure = 0;
     let mut bitboard = board.piece_bitboards[piece_index];
@@ -296,6 +312,12 @@ fn evaluate_player_piece_structure(board: &Board, piece_index: usize, phase_fact
     structure
 }
 
+/// Evaluates position of a given piece on a given tile, considering a given phase factor.
+/// Takes in phase_factor, which is an integer in [0,100],
+/// where 0 means endgame, 100 means midgame.
+/// Takes in piece_index indicating type and colour (in [0,11]).
+/// Takes in a 64-bit representation of the tile
+/// Returns the evaluation of the structure of the given piece.
 fn evaluate_piece_position(tile: u64, piece_index: usize, phase_factor: i32) -> i32 {
     let index = tile.checked_ilog2().unwrap_or_default() as usize;
     let mut value = MIDGAME_PIECE_SQUARES[piece_index][index] * phase_factor + ENDGAME_PIECE_SQUARES[piece_index][index] * (100-phase_factor);
@@ -304,6 +326,10 @@ fn evaluate_piece_position(tile: u64, piece_index: usize, phase_factor: i32) -> 
     value
 }
 
+/// Computes the game phase factor for the current board situation.
+/// Game phase factor is an integer in [0,100],
+/// 0 means endgame, 100 means midgame.
+/// Takes in a pointer to the piece counter array of a Board object.
 fn compute_game_phase_factor(piece_count: &[u8; 12]) -> i32 {
     let mut factor: i32 = 0;
     for color in 0..2 {

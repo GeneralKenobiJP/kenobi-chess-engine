@@ -24,6 +24,7 @@ pub struct Engine<T: Evaluator = MainEvaluator> {
 }
 
 impl Engine<MainEvaluator> {
+    /// Constructs a new Engine<MainEvaluator> with standard initial capacity of a transposition table.
     pub fn new() -> Self {
         Engine {
             evaluator: MainEvaluator {},
@@ -46,10 +47,16 @@ impl Engine<MainEvaluator> {
 }
 
 impl Engine {
+    /// Sets stop flag to a given boolean.
+    /// Stop flag is used by engine to
+    /// indicate whether further search should be aborted or not.
     pub fn set_stop_flag(flag: bool) {
         STOP_FLAG.store(flag, Ordering::SeqCst);
     }
 
+    /// Gets stop flag.
+    /// Stop flag is used by engine to
+    /// indicate whether further search should be aborted or not.
     pub fn get_stop_flag() -> bool {
         STOP_FLAG.load(Ordering::SeqCst)
     }
@@ -77,6 +84,7 @@ impl Engine {
 }
 
 impl<T: Evaluator> Engine<T> {
+    /// Constructs a new Engine<T> with a given Evaluator implementing object.
     pub fn with_evaluator(evaluator: T) -> Self {
         Engine {
             evaluator,
@@ -97,10 +105,13 @@ impl<T: Evaluator> Engine<T> {
         }
     }
 
+    /// Retrieves what the engine thinks the best move for a given board situation is,
+    /// as stored in the transposition table.
     pub fn get_best_move(&self, board: &Board) -> Move {
         self.transposition_table.get_from_zobrist(board.zobrist).clone().unwrap().best_moves[0].unwrap()
     }
 
+    /// Retrieves what the engine thinks the best moves for the most recent board situation is.
     pub fn get_best_moves(&self) -> &[Option<Move>; 3] {
         &self.best_moves
     }
