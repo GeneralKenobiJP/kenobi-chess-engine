@@ -104,9 +104,9 @@ impl Bot<MainEvaluator> {
         let mut board = move_list_binding.get_mutable_board();
 
         match mode {
-            "startpos" => board.read_fen(START_POSITION),
+            "startpos" => *board = Board::from_fen(START_POSITION),
             "fen" => {let fen = Self::extract_fen(scanner);
-                board.read_fen(&fen);},
+                *board = Board::from_fen(&fen);},
             _ => return response
         }
 
