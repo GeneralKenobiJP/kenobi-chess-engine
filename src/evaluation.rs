@@ -224,7 +224,7 @@ impl Evaluator for MainEvaluator {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-struct MockMaterialEvaluator;
+pub struct MockMaterialEvaluator;
 
 impl Evaluator for MockMaterialEvaluator {
     fn evaluate(board: &Board) -> i32 {

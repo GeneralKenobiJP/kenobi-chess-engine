@@ -219,7 +219,7 @@ impl<T: Evaluator> Engine<T> {
     /// NOTE: Does NOT use quiescence search and therefore is inferior to the search_alpha_beta_prunning() function
     ///     Should be used mainly for testing.
     fn search_alpha_beta_prunning_naive(&mut self, move_list: &mut MoveList, depth: u32, mut alpha: i32, beta: i32) -> i32 {
-        let mut value: i32 = MainEvaluator::evaluate(move_list.get_board());
+        let mut value: i32 = T::evaluate(move_list.get_board());
 
         if depth == 0 {
             return value;
@@ -281,7 +281,7 @@ impl<T: Evaluator> Engine<T> {
 
         if move_list.get_moves().len() == 0 {
             self.repetition_table.unvisit_position(move_list.get_board().zobrist);
-            return MainEvaluator::evaluate(move_list.get_board());
+            return T::evaluate(move_list.get_board());
         }
 
         self.order_moves(move_list);
@@ -328,7 +328,7 @@ impl<T: Evaluator> Engine<T> {
     /// NOTE: Uses NEITHER quiescence search NOR alpha-beta prunning
     ///     Should be used only for testing.
     fn search_naive(&mut self, move_list: &mut MoveList, depth: u32) -> i32 {
-        let mut value: i32 = MainEvaluator::evaluate(move_list.get_board());
+        let mut value: i32 = T::evaluate(move_list.get_board());
 
         if depth == 0 {
             return value;
@@ -357,6 +357,7 @@ mod tests {
     use std::time::Instant;
     use crate::piece::Piece::{KING, PAWN, QUEEN};
     use super::*;
+    use crate::evaluation::MockMaterialEvaluator;
 
     #[test]
     fn search_initial_position() {
@@ -365,17 +366,17 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::from_board(board);
         
-        let mut engine = Engine::new();
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
         assert_eq!(0, engine.search_naive(&mut move_list, 0));
-        assert_eq!(50, engine.search_naive(&mut move_list, 1));
+        assert_eq!(0, engine.search_naive(&mut move_list, 1));
         assert_eq!(0, engine.search_naive(&mut move_list, 2));
-        assert_eq!(50, engine.search_naive(&mut move_list, 3));
+        assert_eq!(0, engine.search_naive(&mut move_list, 3));
 
         // assert_eq!(0, engine.search(&mut move_list, 0));
-        assert_eq!(50, engine.search(&mut move_list, 1));
+        assert_eq!(0, engine.search(&mut move_list, 1));
         assert_eq!(0, engine.search(&mut move_list, 2));
-        assert_eq!(50, engine.search(&mut move_list, 3));
+        assert_eq!(0, engine.search(&mut move_list, 3));
     }
 
     #[test]
@@ -385,13 +386,13 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::from_board(board);
         
-        let mut engine = Engine::new();
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
         assert_eq!(0, engine.search_naive(&mut move_list, 0));
         assert_eq!(500, engine.search_naive(&mut move_list, 1));
         assert_eq!(0, engine.search_naive(&mut move_list, 2));
 
-        engine = Engine::new();
+        engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
         println!("depth 0");
         assert_eq!(0, engine.search(&mut move_list, 0));
@@ -408,7 +409,7 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::from_board(board);
 
-        let mut engine = Engine::new();
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
         assert_eq!(-600, engine.search_no_quiescence(&mut move_list, 0));
         assert_eq!(300, engine.search_no_quiescence(&mut move_list, 1));
@@ -421,7 +422,7 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::from_board(board);
 
-        let mut engine = Engine::new();
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
         assert_eq!(-600, engine.search_no_quiescence(&mut move_list, 0));
         assert_eq!(300, engine.search_no_quiescence(&mut move_list, 1));
@@ -434,7 +435,7 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::from_board(board);
 
-        let mut engine = Engine::new();
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
         assert_eq!(DRAW, engine.search_alpha_beta_prunning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY));
         assert!(engine.repetition_table.is_empty());
@@ -448,7 +449,7 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::from_board(board);
 
-        let mut engine = Engine::new();
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
         assert_eq!(NEGATIVE_INFINITY, engine.search_alpha_beta_prunning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY));
         assert!(engine.repetition_table.is_empty());
@@ -471,7 +472,7 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::from_board(board);
 
-        let mut engine = Engine::new();
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
         assert_eq!(0, engine.search_naive(&mut move_list, 1));
         assert_eq!(-100, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
@@ -485,7 +486,7 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::from_board(board);
 
-        let mut engine = Engine::new();
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
         assert_eq!(0, engine.search_naive(&mut move_list, 1));
         assert_eq!(-100, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
@@ -499,7 +500,7 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::from_board(board);
 
-        let mut engine = Engine::new();
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
         assert_eq!(100, engine.search_naive(&mut move_list, 1));
 
@@ -533,21 +534,21 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::from_board(board);
 
-        let mut engine = Engine::new();
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
         assert_ne!(DRAW, engine.search_alpha_beta_prunning(&mut move_list, 0, NEGATIVE_INFINITY, POSITIVE_INFINITY));
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
         assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
 
-        engine = Engine::new();
+        engine = Engine::with_evaluator(MockMaterialEvaluator{});
         engine.repetition_table.visit_position(move_list.get_board().zobrist);
 
         assert_ne!(DRAW, engine.search_alpha_beta_prunning(&mut move_list, 0, NEGATIVE_INFINITY, POSITIVE_INFINITY));
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
         assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
 
-        engine = Engine::new();
+        engine = Engine::with_evaluator(MockMaterialEvaluator{});
         engine.repetition_table.visit_position(move_list.get_board().zobrist);
         engine.repetition_table.visit_position(move_list.get_board().zobrist);
 
@@ -567,21 +568,21 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::from_board(board);
 
-        let mut engine = Engine::new();
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
         assert_ne!(DRAW, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
         assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
 
-        engine = Engine::new();
+        engine = Engine::with_evaluator(MockMaterialEvaluator {});
         engine.repetition_table.visit_position(move_list.get_board().zobrist);
 
         assert_ne!(DRAW, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
         assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
 
-        engine = Engine::new();
+        engine = Engine::with_evaluator(MockMaterialEvaluator {});
         engine.repetition_table.visit_position(move_list.get_board().zobrist);
         engine.repetition_table.visit_position(move_list.get_board().zobrist);
 
