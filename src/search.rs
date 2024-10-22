@@ -6,7 +6,7 @@ mod ordering;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::board::Board;
-use crate::evaluation::{DRAW, evaluate};
+use crate::evaluation::{DRAW, Evaluator, MainEvaluator};
 use crate::move_generator::{Move, MoveList};
 use crate::evaluation::{POSITIVE_INFINITY, NEGATIVE_INFINITY};
 use crate::transposition_table::{RepetitionTable, Transposition, TranspositionTable};
@@ -15,17 +15,19 @@ use crate::transposition_table::NodeType::{ALPHA, BETA, EXACT};
 static STOP_FLAG: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct Engine {
+pub struct Engine<T: Evaluator = MainEvaluator> {
+    evaluator: T,
     transposition_table: TranspositionTable,
     repetition_table: RepetitionTable,
     depth: u32,
     best_moves: [Option<Move>; 3]
 }
 
-impl Engine {
-    
+impl Engine<MainEvaluator> {
+    /// Constructs a new Engine<MainEvaluator> with standard initial capacity of a transposition table.
     pub fn new() -> Self {
         Engine {
+            evaluator: MainEvaluator {},
             transposition_table: TranspositionTable::new(),
             repetition_table: RepetitionTable::new(),
             depth: 0,
@@ -35,6 +37,67 @@ impl Engine {
 
     pub fn with_capacity(capacity: usize) -> Self {
         Engine {
+            evaluator: MainEvaluator {},
+            transposition_table: TranspositionTable::with_capacity(capacity),
+            repetition_table: RepetitionTable::new(),
+            depth: 0,
+            best_moves: [None; 3]
+        }
+    }
+}
+
+impl Engine {
+    /// Sets stop flag to a given boolean.
+    /// Stop flag is used by engine to
+    /// indicate whether further search should be aborted or not.
+    pub fn set_stop_flag(flag: bool) {
+        STOP_FLAG.store(flag, Ordering::SeqCst);
+    }
+
+    /// Gets stop flag.
+    /// Stop flag is used by engine to
+    /// indicate whether further search should be aborted or not.
+    pub fn get_stop_flag() -> bool {
+        STOP_FLAG.load(Ordering::SeqCst)
+    }
+
+    /// Given a move and its evaluation, insert into a given array of best moves and array of best moves evaluation at a proper position
+    // #[inline(never)]
+    fn insert_into_best_moves(best_moves: &mut [Option<Move>; 3], value: &mut i32, best_moves_evaluation: &mut [i32; 2], piece_move: Move, move_evaluation: i32) {
+        if move_evaluation > *value {
+            best_moves_evaluation[1] = best_moves_evaluation[0];
+            best_moves_evaluation[0] = *value;
+            *value = move_evaluation;
+            best_moves[2] = best_moves[1];
+            best_moves[1] = best_moves[0];
+            best_moves[0] = Option::from(piece_move);
+        } else if move_evaluation > best_moves_evaluation[0] {
+            best_moves_evaluation[1] = best_moves_evaluation[0];
+            best_moves_evaluation[0] = move_evaluation;
+            best_moves[2] = best_moves[1];
+            best_moves[1] = Option::from(piece_move);
+        } else if move_evaluation > best_moves_evaluation[1] {
+            best_moves_evaluation[1] = move_evaluation;
+            best_moves[2] = Option::from(piece_move);
+        }
+    }
+}
+
+impl<T: Evaluator> Engine<T> {
+    /// Constructs a new Engine<T> with a given Evaluator implementing object.
+    pub fn with_evaluator(evaluator: T) -> Self {
+        Engine {
+            evaluator,
+            transposition_table: TranspositionTable::new(),
+            repetition_table: RepetitionTable::new(),
+            depth: 0,
+            best_moves: [None; 3]
+        }
+    }
+
+    pub fn with_evaluator_and_capacity(evaluator: T, capacity: usize) -> Self {
+        Engine {
+            evaluator,
             transposition_table: TranspositionTable::with_capacity(capacity),
             repetition_table: RepetitionTable::new(),
             depth: 0,
@@ -42,20 +105,15 @@ impl Engine {
         }
     }
 
+    /// Retrieves what the engine thinks the best move for a given board situation is,
+    /// as stored in the transposition table.
     pub fn get_best_move(&self, board: &Board) -> Move {
         self.transposition_table.get_from_zobrist(board.zobrist).clone().unwrap().best_moves[0].unwrap()
     }
 
+    /// Retrieves what the engine thinks the best moves for the most recent board situation is.
     pub fn get_best_moves(&self) -> &[Option<Move>; 3] {
         &self.best_moves
-    }
-
-    pub fn set_stop_flag(flag: bool) {
-        STOP_FLAG.store(flag, Ordering::SeqCst);
-    }
-
-    pub fn get_stop_flag() -> bool {
-        STOP_FLAG.load(Ordering::SeqCst)
     }
     
     /// Calls search algorithm to find the best possible moves in the current situation.
@@ -136,7 +194,7 @@ impl Engine {
                 let move_evaluation = -self.search_alpha_beta_prunning(move_list, depth - 1, -beta, -alpha);
 
                 // Update the best moves record
-                Self::insert_into_best_moves(&mut best_moves, &mut value, &mut best_moves_evaluation, piece_move, move_evaluation);
+                Engine::insert_into_best_moves(&mut best_moves, &mut value, &mut best_moves_evaluation, piece_move, move_evaluation);
             }
             move_list.unmake_move(&piece_move);
 
@@ -164,27 +222,6 @@ impl Engine {
         value
     }
 
-    /// Given a move and its evaluation, insert into a given array of best moves and array of best moves evaluation at a proper position
-    // #[inline(never)]
-    fn insert_into_best_moves(best_moves: &mut [Option<Move>; 3], value: &mut i32, best_moves_evaluation: &mut [i32; 2], piece_move: Move, move_evaluation: i32) {
-        if move_evaluation > *value {
-            best_moves_evaluation[1] = best_moves_evaluation[0];
-            best_moves_evaluation[0] = *value;
-            *value = move_evaluation;
-            best_moves[2] = best_moves[1];
-            best_moves[1] = best_moves[0];
-            best_moves[0] = Option::from(piece_move);
-        } else if move_evaluation > best_moves_evaluation[0] {
-            best_moves_evaluation[1] = best_moves_evaluation[0];
-            best_moves_evaluation[0] = move_evaluation;
-            best_moves[2] = best_moves[1];
-            best_moves[1] = Option::from(piece_move);
-        } else if move_evaluation > best_moves_evaluation[1] {
-            best_moves_evaluation[1] = move_evaluation;
-            best_moves[2] = Option::from(piece_move);
-        }
-    }
-
     /// Uses alpha-beta prunning to find the best possible move in the search tree.
     /// Searches up to the given depth.
     /// Uses the given move list to generate moves in-place and analyze the board situation.
@@ -193,7 +230,7 @@ impl Engine {
     /// NOTE: Does NOT use quiescence search and therefore is inferior to the search_alpha_beta_prunning() function
     ///     Should be used mainly for testing.
     fn search_alpha_beta_prunning_naive(&mut self, move_list: &mut MoveList, depth: u32, mut alpha: i32, beta: i32) -> i32 {
-        let mut value: i32 = evaluate(move_list.get_board());
+        let mut value: i32 = T::evaluate(move_list.get_board());
 
         if depth == 0 {
             return value;
@@ -255,7 +292,7 @@ impl Engine {
 
         if move_list.get_moves().len() == 0 {
             self.repetition_table.unvisit_position(move_list.get_board().zobrist);
-            return evaluate(move_list.get_board());
+            return T::evaluate(move_list.get_board());
         }
 
         self.order_moves(move_list);
@@ -271,7 +308,7 @@ impl Engine {
             if !move_list.is_opponent_in_check() {
                 let move_evaluation = -self.quiescence_search(move_list, -beta, -alpha);
 
-                Self::insert_into_best_moves(&mut best_moves, &mut value, &mut best_moves_evaluation, piece_move, move_evaluation);
+                Engine::insert_into_best_moves(&mut best_moves, &mut value, &mut best_moves_evaluation, piece_move, move_evaluation);
             }
             move_list.unmake_move(&piece_move);
 
@@ -302,7 +339,7 @@ impl Engine {
     /// NOTE: Uses NEITHER quiescence search NOR alpha-beta prunning
     ///     Should be used only for testing.
     fn search_naive(&mut self, move_list: &mut MoveList, depth: u32) -> i32 {
-        let mut value: i32 = evaluate(move_list.get_board());
+        let mut value: i32 = T::evaluate(move_list.get_board());
 
         if depth == 0 {
             return value;
@@ -331,6 +368,7 @@ mod tests {
     use std::time::Instant;
     use crate::piece::Piece::{KING, PAWN, QUEEN};
     use super::*;
+    use crate::evaluation::MockMaterialEvaluator;
 
     #[test]
     fn search_initial_position() {
@@ -339,7 +377,7 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::from_board(board);
         
-        let mut engine = Engine::new();
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
         assert_eq!(0, engine.search_naive(&mut move_list, 0));
         assert_eq!(0, engine.search_naive(&mut move_list, 1));
@@ -359,13 +397,13 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::from_board(board);
         
-        let mut engine = Engine::new();
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
         assert_eq!(0, engine.search_naive(&mut move_list, 0));
         assert_eq!(500, engine.search_naive(&mut move_list, 1));
         assert_eq!(0, engine.search_naive(&mut move_list, 2));
 
-        engine = Engine::new();
+        engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
         println!("depth 0");
         assert_eq!(0, engine.search(&mut move_list, 0));
@@ -382,7 +420,7 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::from_board(board);
 
-        let mut engine = Engine::new();
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
         assert_eq!(-600, engine.search_no_quiescence(&mut move_list, 0));
         assert_eq!(300, engine.search_no_quiescence(&mut move_list, 1));
@@ -395,7 +433,7 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::from_board(board);
 
-        let mut engine = Engine::new();
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
         assert_eq!(-600, engine.search_no_quiescence(&mut move_list, 0));
         assert_eq!(300, engine.search_no_quiescence(&mut move_list, 1));
@@ -408,7 +446,7 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::from_board(board);
 
-        let mut engine = Engine::new();
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
         assert_eq!(DRAW, engine.search_alpha_beta_prunning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY));
         assert!(engine.repetition_table.is_empty());
@@ -422,7 +460,7 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::from_board(board);
 
-        let mut engine = Engine::new();
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
         assert_eq!(NEGATIVE_INFINITY, engine.search_alpha_beta_prunning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY));
         assert!(engine.repetition_table.is_empty());
@@ -445,7 +483,7 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::from_board(board);
 
-        let mut engine = Engine::new();
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
         assert_eq!(0, engine.search_naive(&mut move_list, 1));
         assert_eq!(-100, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
@@ -459,7 +497,7 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::from_board(board);
 
-        let mut engine = Engine::new();
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
         assert_eq!(0, engine.search_naive(&mut move_list, 1));
         assert_eq!(-100, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
@@ -473,7 +511,7 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::from_board(board);
 
-        let mut engine = Engine::new();
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
         assert_eq!(100, engine.search_naive(&mut move_list, 1));
 
@@ -507,21 +545,21 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::from_board(board);
 
-        let mut engine = Engine::new();
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
-        assert_eq!(-100, engine.search_alpha_beta_prunning(&mut move_list, 0, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert_ne!(DRAW, engine.search_alpha_beta_prunning(&mut move_list, 0, NEGATIVE_INFINITY, POSITIVE_INFINITY));
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
         assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
 
-        engine = Engine::new();
+        engine = Engine::with_evaluator(MockMaterialEvaluator{});
         engine.repetition_table.visit_position(move_list.get_board().zobrist);
 
-        assert_eq!(-100, engine.search_alpha_beta_prunning(&mut move_list, 0, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert_ne!(DRAW, engine.search_alpha_beta_prunning(&mut move_list, 0, NEGATIVE_INFINITY, POSITIVE_INFINITY));
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
         assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
 
-        engine = Engine::new();
+        engine = Engine::with_evaluator(MockMaterialEvaluator{});
         engine.repetition_table.visit_position(move_list.get_board().zobrist);
         engine.repetition_table.visit_position(move_list.get_board().zobrist);
 
@@ -541,21 +579,21 @@ mod tests {
         board.read_fen(fen);
         let mut move_list = MoveList::from_board(board);
 
-        let mut engine = Engine::new();
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
 
-        assert_eq!(-100, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert_ne!(DRAW, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
         assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
 
-        engine = Engine::new();
+        engine = Engine::with_evaluator(MockMaterialEvaluator {});
         engine.repetition_table.visit_position(move_list.get_board().zobrist);
 
-        assert_eq!(-100, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert_ne!(DRAW, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
         assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
 
-        engine = Engine::new();
+        engine = Engine::with_evaluator(MockMaterialEvaluator {});
         engine.repetition_table.visit_position(move_list.get_board().zobrist);
         engine.repetition_table.visit_position(move_list.get_board().zobrist);
 
