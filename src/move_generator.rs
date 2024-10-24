@@ -14,7 +14,7 @@ type OrderTable = HashMap<Move, i32>;
 
 const KNIGHT_SHIFTS: [i8; 8] = [17, 10, -6, -15, -17, -10, 6, 15]; // Beginning on NW, counter-clockwise
 const INITIAL_STACK_CAPACITY: usize = 30; // used by MoveList constructor
-const NO_CAPTURE: u8 = 1 << 4;
+pub const NO_CAPTURE: u8 = 1 << 4;
 pub const NO_PASSANT: u8 = 64;
 const EN_PASSANT_MASK: u64 = 0x000000FFFF000000;
 
@@ -201,6 +201,10 @@ impl MoveList {
     /// Mutable getter for the board
     pub fn get_mutable_board(&mut self) -> &mut Board {
         &mut self.board
+    }
+
+    pub fn get_last_capture(&self) -> Option<&u8> {
+        self.capture_history.last()
     }
 
     /// Orders the move list in-place based on the supplied OrderTable.

@@ -6,14 +6,17 @@
 
 use std::collections::HashMap;
 use crate::evaluation::Evaluator;
-use crate::move_generator::{Move, MoveList};
+use crate::move_generator::{Move, MoveList, NO_CAPTURE};
 use crate::search::Engine;
 use crate::transposition_table::NodeType::EXACT;
 
 type OrderTable = HashMap<Move, i32>;
 
-const HASH_MOVE_PRIORITY: [i32; 3] = [256, 128, 32];
-const PV_NODE_PRIORITY: i32 = 64;
+const HASH_MOVE_PRIORITY: [i32; 3] = [512, 256, 128];
+const PV_NODE_PRIORITY: i32 = 192;
+const AGGRESSOR_PRIORITY: [i32; 6] = [0, 32, 4, 8, 16, 16];
+const VICTIM_PRIORITY: [i32; 6] = [4096, 16, 512, 128, 64, 64];
+const RECAPTURE_PRIORITY: i32 = 256;
 
 impl<T: Evaluator> Engine<T> {
     /// Orders moves in-place using order heuristics, given a move list.
@@ -22,8 +25,18 @@ impl<T: Evaluator> Engine<T> {
 
         self.apply_hash_move(&mut order_table, move_list);
 
+        let recapture = move_list.get_last_capture();
+        if recapture.is_none() || *recapture.unwrap() == NO_CAPTURE {
+            self.apply_mvv_lva(&mut order_table, move_list);
+        }
+        else {
+            self.apply_mvv_lva_with_recapture(&mut order_table, move_list, *recapture.unwrap());
+        }
+
         move_list.order_moves(&order_table);
     }
+
+    //todo: order_captures() for quiescence search
 
     /// Constructs an order table, given a MoveList.
     /// OrderTable is a hashmap of Move as a key, and i32 as a priority value.
@@ -63,16 +76,7 @@ impl<T: Evaluator> Engine<T> {
                     match entry {
                         None => { return; }
                         Some(piece_move) => {
-                            let order_table_entry = order_table.get(&piece_move);
-
-                            // The order table entry MAY BE NONE
-                            // in the quiescence search phase if we fetch a quiet move.
-                            // In such a case, it should simply be ignored.
-                            if order_table_entry.is_none() {
-                                continue;
-                            }
-                            let old_value = order_table_entry.unwrap();
-                            order_table.insert(piece_move, old_value + HASH_MOVE_PRIORITY[index] + pv_node);
+                            Self::update_move_priority(order_table, &piece_move, HASH_MOVE_PRIORITY[index] + pv_node);
 
                             pv_node = 0;
                             index += 1;
@@ -80,6 +84,55 @@ impl<T: Evaluator> Engine<T> {
                     }
                 }
             }
+        }
+    }
+
+    fn update_move_priority(order_table: &mut OrderTable, piece_move: &Move, added_priority: i32) {
+        let order_table_entry = order_table.get(&piece_move);
+
+        // The order table entry MAY BE NONE
+        // in the quiescence search phase if we fetch a quiet move or a zobrist collision happens.
+        // In such a case, it should simply be ignored.
+        if order_table_entry.is_none() {
+            return;
+        }
+        let old_value = order_table_entry.unwrap();
+        order_table.insert(*piece_move, old_value + added_priority);
+    }
+
+    fn apply_mvv_lva_with_recapture(&self, order_table: &mut OrderTable, move_list: &MoveList, recapture: u8) {
+        let board = move_list.get_board();
+        for piece_move in move_list.get_moves() {
+            // Efficient check for whether the target square is empty or not
+            if board.colour_bitboards[board.inactive_player as usize] & (1 << piece_move.target) == 0 {
+                break;
+            }
+
+            let target_piece = board.get_piece_from_square_by_player(piece_move.target, board.inactive_player as usize).unwrap() as usize;
+            let mut priority = VICTIM_PRIORITY[target_piece] + AGGRESSOR_PRIORITY[piece_move.piece as usize];
+
+            // Check for whether this is a recapture
+            // todo: fix this! Currently, it compares a target square to a captured piece type!
+            if piece_move.target == recapture {
+                priority += RECAPTURE_PRIORITY;
+            }
+
+            Self::update_move_priority(order_table, &piece_move, priority);
+        }
+    }
+
+    fn apply_mvv_lva(&self, order_table: &mut OrderTable, move_list: &MoveList) {
+        let board = move_list.get_board();
+        for piece_move in move_list.get_moves() {
+            // Efficient check for whether the target square is empty or not
+            if board.colour_bitboards[board.inactive_player as usize] & (1 << piece_move.target) == 0 {
+                break;
+            }
+
+            let target_piece = board.get_piece_from_square_by_player(piece_move.target, board.inactive_player as usize).unwrap() as usize;
+            let priority = VICTIM_PRIORITY[target_piece] + AGGRESSOR_PRIORITY[piece_move.piece as usize];
+
+            Self::update_move_priority(order_table, &piece_move, priority);
         }
     }
 }
