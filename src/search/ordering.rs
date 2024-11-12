@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 use crate::evaluation::Evaluator;
-use crate::move_generator::{Move, MoveList, NO_CAPTURE};
+use crate::move_generator::{CAPTURE_PIECE_MASK, CAPTURE_SQUARE_MASK, Move, MoveList, NO_CAPTURE};
 use crate::search::Engine;
 use crate::transposition_table::NodeType::EXACT;
 
@@ -30,7 +30,7 @@ impl<T: Evaluator> Engine<T> {
             self.apply_mvv_lva(&mut order_table, move_list);
         }
         else {
-            self.apply_mvv_lva_with_recapture(&mut order_table, move_list, *recapture.unwrap());
+            self.apply_mvv_lva_with_recapture(&mut order_table, move_list, (*recapture.unwrap() & CAPTURE_SQUARE_MASK) as u8);
         }
 
         move_list.order_moves(&order_table);
@@ -112,7 +112,6 @@ impl<T: Evaluator> Engine<T> {
             let mut priority = VICTIM_PRIORITY[target_piece] + AGGRESSOR_PRIORITY[piece_move.piece as usize];
 
             // Check for whether this is a recapture
-            // todo: fix this! Currently, it compares a target square to a captured piece type!
             if piece_move.target == recapture {
                 priority += RECAPTURE_PRIORITY;
             }

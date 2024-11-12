@@ -14,7 +14,9 @@ type OrderTable = HashMap<Move, i32>;
 
 const KNIGHT_SHIFTS: [i8; 8] = [17, 10, -6, -15, -17, -10, 6, 15]; // Beginning on NW, counter-clockwise
 const INITIAL_STACK_CAPACITY: usize = 30; // used by MoveList constructor
-pub const NO_CAPTURE: u8 = 1 << 4;
+pub const NO_CAPTURE: u16 = 1 << 4;
+pub const CAPTURE_PIECE_MASK: u16 = 0x00FF;
+pub const CAPTURE_SQUARE_MASK: u16 = 0xFF00;
 pub const NO_PASSANT: u8 = 64;
 const EN_PASSANT_MASK: u64 = 0x000000FFFF000000;
 
@@ -121,7 +123,7 @@ impl Move {
 pub struct MoveList {
     board: Board,
     moves: Vec<Move>,
-    capture_history: Vec<u8>, // used as stack, 16 == no capture
+    capture_history: Vec<u16>, // used as stack, 16 == no capture
     en_passant_history: Vec<u8>, // used as stack, 64 == no passant
     castling_rights_history: Vec<u8>, // used as stack
     halfmoves_history: Vec<u8>, // used as stack
@@ -203,7 +205,7 @@ impl MoveList {
         &mut self.board
     }
 
-    pub fn get_last_capture(&self) -> Option<&u8> {
+    pub fn get_last_capture(&self) -> Option<&u16> {
         self.capture_history.last()
     }
 
@@ -366,7 +368,7 @@ impl MoveList {
                 let index = 6 * inactive_player + captured_piece as usize;
                 self.board.piece_bitboards[index] ^= target_tile;
                 self.board.zobrist ^= ZOBRIST_TABLE.pieces[index][target as usize];
-                self.capture_history.push(index as u8);
+                self.capture_history.push(((target as u16) << 8) | index as u16);
                 *should_reset_fifty_moves = true;
                 self.board.piece_counter[index] -= 1;
             },
@@ -390,7 +392,7 @@ impl MoveList {
                 self.board.empty_bitboard ^= target_tile;
                 self.board.colour_bitboards[active_player] |= target_tile;
 
-                let captured_piece = captured_piece as usize;
+                let captured_piece = (CAPTURE_PIECE_MASK & captured_piece) as usize;
                 self.board.piece_bitboards[captured_piece] |= target_tile;
                 self.board.zobrist ^= ZOBRIST_TABLE.pieces[captured_piece][target as usize];
                 self.board.piece_counter[captured_piece] += 1;
@@ -3028,7 +3030,7 @@ mod tests {
             assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
         }
 
-        assert_eq!(7, move_list.capture_history[0]);
+        assert_eq!(41 << 8 | 7, move_list.capture_history[0]);
         assert_eq!(44, move_list.en_passant_history[0]);
         assert_eq!(1, move_list.castling_rights_history[0]);
         assert_eq!(0, move_list.get_board().half_moves);
@@ -3165,7 +3167,7 @@ mod tests {
             assert_eq!(piece_bitboards[i], move_list.board.piece_bitboards[i]);
         }
 
-        assert_eq!(9, move_list.capture_history[0]);
+        assert_eq!(63 << 8 | 9, move_list.capture_history[0]);
         assert_eq!(44, move_list.en_passant_history[0]);
         assert_eq!(1, move_list.castling_rights_history[0]);
         assert_eq!(0, move_list.get_board().half_moves);
@@ -3956,8 +3958,8 @@ mod tests {
         let target = 1 << 48;
         move_list.make_capture(48, target, BLACK as usize, &mut should_reset_fifty_moves);
 
-        let index = PAWN as u8 + 6 * BLACK as u8;
-        assert_eq!(index, move_list.capture_history.pop().unwrap_or_default());
+        let index = PAWN as u16 + 6 * BLACK as u16;
+        assert_eq!(48 << 8 | index, move_list.capture_history.pop().unwrap_or_default());
         assert_eq!(zobrist ^ ZOBRIST_TABLE.pieces[index as usize][48], move_list.get_board().zobrist);
         assert_eq!(main_bitboard, move_list.get_board().main_bitboard);
         assert_eq!(empty_bitboard, move_list.get_board().empty_bitboard);
@@ -3994,8 +3996,8 @@ mod tests {
         let target = 1 << 4;
         move_list.make_capture(4, target, WHITE as usize, &mut should_reset_fifty_moves);
 
-        let index = QUEEN as u8 + 6 * WHITE as u8;
-        assert_eq!(index, move_list.capture_history.pop().unwrap_or_default());
+        let index = QUEEN as u16 + 6 * WHITE as u16;
+        assert_eq!(4 << 8 | index, move_list.capture_history.pop().unwrap_or_default());
         assert_eq!(zobrist ^ ZOBRIST_TABLE.pieces[index as usize][4], move_list.get_board().zobrist);
         assert_eq!(main_bitboard, move_list.get_board().main_bitboard);
         assert_eq!(empty_bitboard, move_list.get_board().empty_bitboard);
