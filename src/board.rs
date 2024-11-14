@@ -48,9 +48,11 @@ pub struct Board {
     pub inactive_player: Colour,
     pub castling_rights: u8, // The bits are boolean and stand for: White: KQ, Black: kq
     pub en_passant_possibility: u8, // Tile, where en passant can be made. 64 if no such tile exists
-    pub half_moves: u32, // The halfmove clock specifies a decimal number of half moves with respect to the 50 move draw rule.
+
+    // The halfmove clock specifies a decimal number of half moves with respect to the 50 move draw rule.
     // It is reset to zero after a capture or a pawn move and incremented otherwise.
-    pub full_moves: u32,
+    pub half_moves: u32,
+    pub plies: u32,
     pub zobrist: u64,
     pub piece_counter: [u8; 12]
 }
@@ -67,7 +69,7 @@ impl Board {
             castling_rights: 0,
             en_passant_possibility: 64,
             half_moves: 0,
-            full_moves: 1,
+            plies: 0,
             zobrist: 0,
             piece_counter: [0;12]
         }
@@ -84,7 +86,7 @@ impl Board {
             castling_rights: 0,
             en_passant_possibility: 64,
             half_moves: 0,
-            full_moves: 1,
+            plies: 0,
             zobrist: 0,
             piece_counter: [0; 12]
         };
@@ -205,8 +207,11 @@ impl Board {
         let half_moves = scanner.next().unwrap_or_default().unwrap_or_default().parse().unwrap_or_default();
         self.half_moves = half_moves;
 
-        let full_moves = scanner.next().unwrap_or_default().unwrap_or_default().parse().unwrap_or_default();
-        self.full_moves = full_moves;
+        let full_moves: u32 = scanner.next().unwrap_or_default().unwrap_or_default().parse().unwrap_or_default();
+
+        // Ply counter is even if white is to move, odd if black is to move.
+        // plies = 0 before the start of the game, and 1 after the first move, and so on.
+        self.plies = {if full_moves == 0 {0} else {full_moves - 1}} * 2 + { if self.active_player == BLACK { 1 } else { 0 } };
 
         self.zobrist = zobrist_hash(&self);
 
@@ -294,7 +299,7 @@ mod tests {
         assert_eq!(board.castling_rights, 15);
         assert_eq!(board.en_passant_possibility, 64);
         assert_eq!(board.half_moves, 0);
-        assert_eq!(board.full_moves, 1);
+        assert_eq!(board.plies, 0);
         assert_eq!(board.zobrist, zobrist_hash(&board));
         assert_eq!(board.piece_counter[0], 1);
         assert_eq!(board.piece_counter[1], 8);
@@ -363,7 +368,7 @@ mod tests {
         assert_eq!(board.castling_rights, 15);
         assert_eq!(board.en_passant_possibility, 19);
         assert_eq!(board.half_moves, 0);
-        assert_eq!(board.full_moves, 1);
+        assert_eq!(board.plies, 1);
         assert_eq!(board.zobrist, zobrist_hash(&board));
         assert_eq!(board.piece_counter[0], 1);
         assert_eq!(board.piece_counter[1], 8);
@@ -405,7 +410,7 @@ mod tests {
         assert_eq!(board.castling_rights, 8);
         assert_eq!(board.en_passant_possibility, 64);
         assert_eq!(board.half_moves, 1);
-        assert_eq!(board.full_moves, 2);
+        assert_eq!(board.plies, 3);
         assert_eq!(board.zobrist, zobrist_hash(&board));
         assert_eq!(board.piece_counter[0], 1);
         assert_eq!(board.piece_counter[1], 8);
