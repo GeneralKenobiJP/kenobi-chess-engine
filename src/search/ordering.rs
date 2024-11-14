@@ -17,6 +17,7 @@ const PV_NODE_PRIORITY: i32 = 192;
 const AGGRESSOR_PRIORITY: [i32; 6] = [0, 32, 4, 8, 16, 16];
 const VICTIM_PRIORITY: [i32; 6] = [4096, 16, 512, 128, 64, 64];
 const RECAPTURE_PRIORITY: i32 = 256;
+const KILLER_MOVES_PRIORITY: [i32; 2] = [256, 224];
 
 impl<T: Evaluator> Engine<T> {
     /// Orders moves in-place using order heuristics, given a move list.
@@ -33,10 +34,10 @@ impl<T: Evaluator> Engine<T> {
             self.apply_mvv_lva_with_recapture(&mut order_table, move_list, (*recapture.unwrap() & CAPTURE_SQUARE_MASK) as u8);
         }
 
+        self.apply_killer_moves(&mut order_table);
+
         move_list.order_moves(&order_table);
     }
-
-    //todo: order_captures() for quiescence search
 
     /// Constructs an order table, given a MoveList.
     /// OrderTable is a hashmap of Move as a key, and i32 as a priority value.
@@ -146,6 +147,18 @@ impl<T: Evaluator> Engine<T> {
             let priority = VICTIM_PRIORITY[target_piece] + AGGRESSOR_PRIORITY[piece_move.piece as usize];
 
             Self::update_move_priority(order_table, &piece_move, priority);
+        }
+    }
+
+    fn apply_killer_moves(&self, order_table: &mut OrderTable) {
+        for i in 0..2 {
+            if self.killer_moves[self.depth][i].is_none() {
+                return;
+            }
+            if !order_table.contains_key(&self.killer_moves[self.depth][i]) {
+                return;
+            }
+            Self::update_move_priority(&order_table, &self.killer_moves[self.depth][i], KILLER_MOVES_PRIORITY[i]);
         }
     }
 }

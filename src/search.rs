@@ -12,6 +12,8 @@ use crate::evaluation::{POSITIVE_INFINITY, NEGATIVE_INFINITY};
 use crate::transposition_table::{RepetitionTable, Transposition, TranspositionTable};
 use crate::transposition_table::NodeType::{ALPHA, BETA, EXACT};
 
+const KILLER_MOVES_CAPACITY: usize = 1024;
+
 static STOP_FLAG: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Eq, PartialEq)]
@@ -19,6 +21,7 @@ pub struct Engine<T: Evaluator = MainEvaluator> {
     evaluator: T,
     transposition_table: TranspositionTable,
     repetition_table: RepetitionTable,
+    killer_moves: [[Option<Move>; 2]; KILLER_MOVES_CAPACITY],
     depth: u32,
     best_moves: [Option<Move>; 3]
 }
@@ -30,6 +33,7 @@ impl Engine<MainEvaluator> {
             evaluator: MainEvaluator {},
             transposition_table: TranspositionTable::new(),
             repetition_table: RepetitionTable::new(),
+            killer_moves: [[None; 2]; KILLER_MOVES_CAPACITY],
             depth: 0,
             best_moves: [None; 3]
         }
@@ -40,6 +44,7 @@ impl Engine<MainEvaluator> {
             evaluator: MainEvaluator {},
             transposition_table: TranspositionTable::with_capacity(capacity),
             repetition_table: RepetitionTable::new(),
+            killer_moves: [[None; 2]; KILLER_MOVES_CAPACITY],
             depth: 0,
             best_moves: [None; 3]
         }
@@ -90,6 +95,7 @@ impl<T: Evaluator> Engine<T> {
             evaluator,
             transposition_table: TranspositionTable::new(),
             repetition_table: RepetitionTable::new(),
+            killer_moves: [[None; 2]; KILLER_MOVES_CAPACITY],
             depth: 0,
             best_moves: [None; 3]
         }
@@ -100,6 +106,7 @@ impl<T: Evaluator> Engine<T> {
             evaluator,
             transposition_table: TranspositionTable::with_capacity(capacity),
             repetition_table: RepetitionTable::new(),
+            killer_moves: [[None; 2]; KILLER_MOVES_CAPACITY],
             depth: 0,
             best_moves: [None; 3]
         }
@@ -187,6 +194,8 @@ impl<T: Evaluator> Engine<T> {
         let mut best_moves: [Option<Move>; 3] = [None; 3];
         let mut best_moves_evaluation: [i32; 2] = [NEGATIVE_INFINITY; 2]; // we omit the first move evaluation, as this is simply the value variable
 
+        let mut cutoff_move = Move::empty();
+
         for piece_move in moves
         {
             move_list.make_move(&piece_move);
@@ -201,7 +210,7 @@ impl<T: Evaluator> Engine<T> {
             alpha = alpha.max(value);
             // println!("alpha: {}", alpha);
             // println!("beta: {}", beta);
-            if alpha >= beta { break; }
+            if alpha >= beta { cutoff_move = piece_move; break; }
 
             if STOP_FLAG.load(Ordering::SeqCst) {
                 break;
@@ -214,12 +223,23 @@ impl<T: Evaluator> Engine<T> {
         }
 
         // update the transposition table
-        let node_type = if value <= original_alpha { ALPHA } else if value >= beta { BETA } else { EXACT };
+        let node_type = if value <= original_alpha { ALPHA }
+            else if value >= beta { self.store_killer_move(&cutoff_move, (move_list.get_board().plies + self.depth) as usize); BETA } else { EXACT };
         self.transposition_table.put_transposition(&Transposition::from_zobrist(move_list.get_board().zobrist, depth, value, &best_moves, node_type));
 
         self.repetition_table.unvisit_position(move_list.get_board().zobrist);
 
         value
+    }
+
+    fn store_killer_move(&mut self, killer_move: &Move, ply: usize) {
+        if self.killer_moves[ply][0].is_none() {
+            self.killer_moves[ply][0] = Option::from(*killer_move);
+        }
+        else if self.killer_moves[ply][0].unwrap() != *killer_move {
+            self.killer_moves[ply][1] = self.killer_moves[ply][0];
+            self.killer_moves[ply][0] = Option::from(*killer_move);
+        }
     }
 
     /// Uses alpha-beta prunning to find the best possible move in the search tree.
