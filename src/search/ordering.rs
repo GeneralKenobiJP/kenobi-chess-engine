@@ -150,15 +150,31 @@ impl<T: Evaluator> Engine<T> {
         }
     }
 
+    /// Applies Killer moves heuristic.
+    /// If a search engine found a move that caused a Beta cutoff,
+    /// i.e. a strong move by the opponent that immediately refuted our last move,
+    /// this move is stored in the killer moves array at the ply depth of the move.
+    /// The assumption is as follows:
+    /// if a given move proved to be troublesome against one of our moves,
+    /// it is highly likely to prove troublesome again should we try another move.
+    /// For each depth we store 2 killer moves, since sometimes a move creates a sudden threat that
+    /// requires an urgent response - this response will get saved as a killer move
+    /// (thus overwriting the previous killer move), even though it
+    /// is not necessarily a universally good response if no such threat arises.
+    /// Therefore, we store the old killer move so that we can still refer to it, since it is
+    /// likely to stay a good response, thus preventing the engine from forgetting a good move
+    /// because of occasional noise.
     fn apply_killer_moves(&self, order_table: &mut OrderTable) {
+        let depth = self.depth as usize;
         for i in 0..2 {
-            if self.killer_moves[self.depth][i].is_none() {
+            if self.killer_moves[depth][i].is_none() {
                 return;
             }
-            if !order_table.contains_key(&self.killer_moves[self.depth][i]) {
+            let killer_move = &self.killer_moves[depth][i].unwrap();
+            if !order_table.contains_key(killer_move) {
                 return;
             }
-            Self::update_move_priority(&order_table, &self.killer_moves[self.depth][i], KILLER_MOVES_PRIORITY[i]);
+            Self::update_move_priority(order_table, killer_move, KILLER_MOVES_PRIORITY[i]);
         }
     }
 }
@@ -260,7 +276,7 @@ mod tests {
     }
 
     #[test]
-    fn check_apply_mvv_lva() {
+    fn test_apply_mvv_lva() {
         let board = Board::from_fen(&"r1bqkbnr/ppp2ppp/8/3p1n2/2BpP3/6N1/PPP2PPP/RNBQK2R w KQkq - 0 1");
 
         let mut move_list = MoveList::from_board(board);
@@ -286,7 +302,7 @@ mod tests {
     }
 
     #[test]
-    fn check_apply_mvv_lva_with_recapture() {
+    fn test_apply_mvv_lva_with_recapture() {
         let board = Board::from_fen(&"r1bqkbnr/ppp2ppp/8/3p1n2/2BpP3/6N1/PPP2PPP/RNBQK2R w KQkq - 0 1");
 
         let mut move_list = MoveList::from_board(board);
@@ -309,5 +325,32 @@ mod tests {
                    *order_table.get(&Move::new(27, 34, 0, PAWN)).unwrap());
         assert_eq!(VICTIM_PRIORITY[KNIGHT as usize] + AGGRESSOR_PRIORITY[KNIGHT as usize],
                    *order_table.get(&Move::new(17, 34, 0, KNIGHT)).unwrap());
+    }
+
+    #[test]
+    fn test_apply_killer_moves() {
+        let mut board = Board::new();
+        board.read_fen(START_POSITION);
+
+        let mut move_list = MoveList::from_board(board);
+        move_list.generate_moves();
+        let mut engine = Engine::with_capacity(256);
+        engine.transposition_table.put_position(move_list.get_board(), 3, 200,
+        &[Option::from(Move::new(1, 18, 0, KNIGHT)),
+            Option::from(Move::new(11, 27, 0, PAWN)),
+            None], BETA);
+        let mut order_table = engine.construct_order_table(&move_list);
+
+        let time = Instant::now();
+        engine.apply_hash_move(&mut order_table, &move_list);
+        let duration = time.elapsed();
+        println!("apply_hash_move lasted for: {:?}", duration);
+
+        assert_eq!(HASH_MOVE_PRIORITY[0], *order_table.get(&Move::new(1, 18, 0, KNIGHT)).unwrap());
+        assert_eq!(HASH_MOVE_PRIORITY[1], *order_table.get(&Move::new(11, 27, 0, PAWN)).unwrap());
+
+        for i in 8..16 {
+            assert_eq!(0, *order_table.get(&Move::new(i, i+8, 0, PAWN)).unwrap());
+        }
     }
 }

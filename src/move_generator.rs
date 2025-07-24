@@ -123,7 +123,7 @@ impl Move {
 pub struct MoveList {
     board: Board,
     moves: Vec<Move>,
-    capture_history: Vec<u16>, // used as stack, 16 == no capture
+    capture_history: Vec<u16>, // used as stack, 16 == no capture; 8 left bits encode square of capture, 8 right bits - captured piece
     en_passant_history: Vec<u8>, // used as stack, 64 == no passant
     castling_rights_history: Vec<u8>, // used as stack
     halfmoves_history: Vec<u8>, // used as stack
