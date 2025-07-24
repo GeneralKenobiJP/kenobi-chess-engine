@@ -781,6 +781,4 @@ mod tests {
         assert!(!engine.killer_moves[0][0].is_none());
         assert!(!engine.killer_moves[0][1].is_none());
     }
-
-    //TODO: check if the search calls store_killer_moves correctly
 }
