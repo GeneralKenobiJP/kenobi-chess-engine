@@ -12,6 +12,8 @@ use crate::evaluation::{POSITIVE_INFINITY, NEGATIVE_INFINITY};
 use crate::transposition_table::{RepetitionTable, Transposition, TranspositionTable};
 use crate::transposition_table::NodeType::{ALPHA, BETA, EXACT};
 
+const KILLER_MOVES_CAPACITY: usize = 1024;
+
 static STOP_FLAG: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Eq, PartialEq)]
@@ -19,6 +21,7 @@ pub struct Engine<T: Evaluator = MainEvaluator> {
     evaluator: T,
     transposition_table: TranspositionTable,
     repetition_table: RepetitionTable,
+    killer_moves: [[Option<Move>; 2]; KILLER_MOVES_CAPACITY],
     depth: u32,
     best_moves: [Option<Move>; 3]
 }
@@ -30,6 +33,7 @@ impl Engine<MainEvaluator> {
             evaluator: MainEvaluator {},
             transposition_table: TranspositionTable::new(),
             repetition_table: RepetitionTable::new(),
+            killer_moves: [[None; 2]; KILLER_MOVES_CAPACITY],
             depth: 0,
             best_moves: [None; 3]
         }
@@ -40,6 +44,7 @@ impl Engine<MainEvaluator> {
             evaluator: MainEvaluator {},
             transposition_table: TranspositionTable::with_capacity(capacity),
             repetition_table: RepetitionTable::new(),
+            killer_moves: [[None; 2]; KILLER_MOVES_CAPACITY],
             depth: 0,
             best_moves: [None; 3]
         }
@@ -90,6 +95,7 @@ impl<T: Evaluator> Engine<T> {
             evaluator,
             transposition_table: TranspositionTable::new(),
             repetition_table: RepetitionTable::new(),
+            killer_moves: [[None; 2]; KILLER_MOVES_CAPACITY],
             depth: 0,
             best_moves: [None; 3]
         }
@@ -100,6 +106,7 @@ impl<T: Evaluator> Engine<T> {
             evaluator,
             transposition_table: TranspositionTable::with_capacity(capacity),
             repetition_table: RepetitionTable::new(),
+            killer_moves: [[None; 2]; KILLER_MOVES_CAPACITY],
             depth: 0,
             best_moves: [None; 3]
         }
@@ -187,6 +194,8 @@ impl<T: Evaluator> Engine<T> {
         let mut best_moves: [Option<Move>; 3] = [None; 3];
         let mut best_moves_evaluation: [i32; 2] = [NEGATIVE_INFINITY; 2]; // we omit the first move evaluation, as this is simply the value variable
 
+        let mut cutoff_move = Move::empty();
+
         for piece_move in moves
         {
             move_list.make_move(&piece_move);
@@ -201,7 +210,7 @@ impl<T: Evaluator> Engine<T> {
             alpha = alpha.max(value);
             // println!("alpha: {}", alpha);
             // println!("beta: {}", beta);
-            if alpha >= beta { break; }
+            if alpha >= beta { cutoff_move = piece_move; break; }
 
             if STOP_FLAG.load(Ordering::SeqCst) {
                 break;
@@ -214,12 +223,31 @@ impl<T: Evaluator> Engine<T> {
         }
 
         // update the transposition table
-        let node_type = if value <= original_alpha { ALPHA } else if value >= beta { BETA } else { EXACT };
+        let node_type = if value <= original_alpha { ALPHA }
+            else if value >= beta { self.store_killer_move(&cutoff_move, (move_list.get_board().plies + self.depth) as usize); BETA } else { EXACT };
         self.transposition_table.put_transposition(&Transposition::from_zobrist(move_list.get_board().zobrist, depth, value, &best_moves, node_type));
 
         self.repetition_table.unvisit_position(move_list.get_board().zobrist);
 
         value
+    }
+
+    /// Stores a killer move in the killer moves array
+    /// (refer to ordering.rs on what killer moves are).
+    /// If there are no killer moves stored at the given depth - store at index 0.
+    /// If there is a killer move at index 0 - move the old killer move to index 1
+    /// and store the new move at index 0.
+    /// Parameters:
+    ///     - killer_move - a killer move that we want to store
+    ///     - ply - depth at which the move occurred
+    fn store_killer_move(&mut self, killer_move: &Move, ply: usize) {
+        if self.killer_moves[ply][0].is_none() {
+            self.killer_moves[ply][0] = Option::from(*killer_move);
+        }
+        else if self.killer_moves[ply][0].unwrap() != *killer_move {
+            self.killer_moves[ply][1] = self.killer_moves[ply][0];
+            self.killer_moves[ply][0] = Option::from(*killer_move);
+        }
     }
 
     /// Uses alpha-beta prunning to find the best possible move in the search tree.
@@ -366,7 +394,8 @@ impl<T: Evaluator> Engine<T> {
 #[cfg(test)]
 mod tests {
     use std::time::Instant;
-    use crate::piece::Piece::{KING, PAWN, QUEEN};
+    use crate::board::START_POSITION;
+    use crate::piece::Piece::{KING, PAWN, QUEEN, ROOK};
     use super::*;
     use crate::evaluation::MockMaterialEvaluator;
 
@@ -709,4 +738,47 @@ mod tests {
     //
     //     // r3k2r/p1ppq1b1/bn4p1/3n4/8/3P1QPp/P1PBBP1P/R3K2R w - - 0 1
     // }
+
+    #[test]
+    fn test_store_killer_moves() {
+        let mut engine = Engine::with_capacity(256);
+
+        assert_eq!(None, engine.killer_moves[3][0]);
+        assert_eq!(None, engine.killer_moves[3][1]);
+
+        let first_move = Move::new(0, 1, 0, ROOK);
+        let second_move = Move::new(8, 16, 0, PAWN);
+
+        engine.store_killer_move(&first_move, 3);
+
+        assert_eq!(first_move, engine.killer_moves[3][0].unwrap());
+        assert_eq!(None, engine.killer_moves[3][1]);
+
+        engine.store_killer_move(&second_move, 3);
+
+        assert_eq!(second_move, engine.killer_moves[3][0].unwrap());
+        assert_eq!(first_move, engine.killer_moves[3][1].unwrap());
+
+        engine.store_killer_move(&first_move, 2);
+
+        assert_eq!(second_move, engine.killer_moves[3][0].unwrap());
+        assert_eq!(first_move, engine.killer_moves[3][1].unwrap());
+        assert_eq!(first_move, engine.killer_moves[2][0].unwrap());
+        assert_eq!(None, engine.killer_moves[2][1]);
+    }
+
+    #[test]
+    fn check_killer_moves_after_search() {
+        let mut board = Board::new();
+        let fen = "4k3/4p3/8/8/5Q2/8/8/4K3 w - - 0 1";
+        board.read_fen(fen);
+        let mut move_list = MoveList::from_board(board);
+
+        let mut engine = Engine::with_evaluator_and_capacity(MockMaterialEvaluator {}, 1024);
+
+
+        engine.search_alpha_beta_prunning(&mut move_list, 2, NEGATIVE_INFINITY, POSITIVE_INFINITY);
+        assert!(!engine.killer_moves[0][0].is_none());
+        assert!(!engine.killer_moves[0][1].is_none());
+    }
 }
