@@ -160,29 +160,31 @@ impl<T: Evaluator> Engine<T> {
     /// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
     // #[inline(never)]
     fn search_alpha_beta_prunning(&mut self, move_list: &mut MoveList, depth: u32, mut alpha: i32, beta: i32) -> i32 {
-        if self.repetition_table.visit_position(move_list.get_board().zobrist) {
-            self.repetition_table.unvisit_position(move_list.get_board().zobrist);
+        let zobrist = move_list.get_board().zobrist;
+
+        if self.repetition_table.visit_position(zobrist) {
+            self.repetition_table.unvisit_position(zobrist);
             return DRAW;
         }
 
         let original_alpha=  alpha;
 
-        let transposition_entry = self.transposition_table.get_from_zobrist(move_list.get_board().zobrist);
+        let transposition_entry = self.transposition_table.get_from_zobrist(zobrist);
 
         // Check if we have a proper entry in the transposition table
         if let Some(transposition) = transposition_entry {
             if transposition.depth >= depth {
-                // println!("Transposition reached: {:?}", transposition);
-                if transposition.node_type == EXACT { self.repetition_table.unvisit_position(move_list.get_board().zobrist); return transposition.value; }
-                if transposition.node_type == ALPHA && transposition.value <= alpha { self.repetition_table.unvisit_position(move_list.get_board().zobrist); return transposition.value; } // Our alpha cut-off is even bigger than it was for the put operation
-                if /*transposition.node_type == BETA*/ transposition.value >= beta { self.repetition_table.unvisit_position(move_list.get_board().zobrist); return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
+                self.repetition_table.unvisit_position(zobrist);
+                if transposition.node_type == EXACT { return transposition.value; }
+                if transposition.node_type == ALPHA && transposition.value <= alpha { return transposition.value; } // Our alpha cut-off is even bigger than it was for the put operation
+                if /*transposition.node_type == BETA*/ transposition.value >= beta { return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
             }
         }
 
         let mut value: i32 = NEGATIVE_INFINITY;
 
         if depth == 0 {
-            self.repetition_table.unvisit_position(move_list.get_board().zobrist);
+            self.repetition_table.unvisit_position(zobrist);
             return self.quiescence_search(move_list, -beta, -alpha);
         }
 
@@ -208,8 +210,6 @@ impl<T: Evaluator> Engine<T> {
             move_list.unmake_move(&piece_move);
 
             alpha = alpha.max(value);
-            // println!("alpha: {}", alpha);
-            // println!("beta: {}", beta);
             if alpha >= beta { cutoff_move = piece_move; break; }
 
             if STOP_FLAG.load(Ordering::SeqCst) {
@@ -218,16 +218,16 @@ impl<T: Evaluator> Engine<T> {
         }
 
         if best_moves[0] == None {
-            self.repetition_table.unvisit_position(move_list.get_board().zobrist);
+            self.repetition_table.unvisit_position(zobrist);
             return if move_list.is_in_check() { NEGATIVE_INFINITY } else { DRAW }
         }
 
         // update the transposition table
         let node_type = if value <= original_alpha { ALPHA }
             else if value >= beta { self.store_killer_move(&cutoff_move, (move_list.get_board().plies + self.depth) as usize); BETA } else { EXACT };
-        self.transposition_table.put_transposition(&Transposition::from_zobrist(move_list.get_board().zobrist, depth, value, &best_moves, node_type));
+        self.transposition_table.put_transposition(&Transposition::from_zobrist(zobrist, depth, value, &best_moves, node_type));
 
-        self.repetition_table.unvisit_position(move_list.get_board().zobrist);
+        self.repetition_table.unvisit_position(zobrist);
 
         value
     }
