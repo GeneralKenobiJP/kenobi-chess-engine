@@ -13,7 +13,7 @@ use crate::zobrist::{zobrist_castling_rights, ZOBRIST_TABLE};
 type OrderTable = HashMap<Move, i32>;
 
 const KNIGHT_SHIFTS: [i8; 8] = [17, 10, -6, -15, -17, -10, 6, 15]; // Beginning on NW, counter-clockwise
-const INITIAL_STACK_CAPACITY: usize = 30; // used by MoveList constructor
+const INITIAL_STACK_CAPACITY: usize = 64; // used by MoveList constructor
 pub const NO_CAPTURE: u16 = 1 << 4;
 pub const CAPTURE_PIECE_MASK: u16 = 0x00FF;
 pub const CAPTURE_SQUARE_MASK: u16 = 0xFF00;
@@ -27,6 +27,8 @@ const CASTLING_FLAG_ARRAY: [[u64;2]; 13] = [CASTLE_WHITE_KINGSIDE_FLAGS, CASTLE_
 const UNCASTLING_FLAG_ARRAY: [[u64;2]; 13] = [UNCASTLE_WHITE_KINGSIDE_FLAGS, UNCASTLE_WHITE_QUEENSIDE_FLAGS, [0,0], [0,0], [0,0], [0,0], [0,0], [0,0], [0,0], [0,0], [0,0], UNCASTLE_BLACK_KINGSIDE_FLAGS, UNCASTLE_BLACK_QUEENSIDE_FLAGS];
 const ROOK_POSITION_ARRAY: [u8; 13] = [0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 56, 63];
 const ROOK_POSTPOSITION_ARRAY: [u8; 13] = [2, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 58, 60];
+
+const MAX_MOVES_IN_POSITION: usize = 218;
 
 #[derive(PartialEq, Eq, Hash, Clone, Debug, Copy)]
 pub struct Move {
@@ -137,7 +139,7 @@ impl MoveList {
     pub fn from_board(board: Board) -> Self {
         MoveList {
             board,
-            moves: Vec::new(),
+            moves: Vec::with_capacity(MAX_MOVES_IN_POSITION),
             capture_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
             en_passant_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
             castling_rights_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
@@ -152,7 +154,7 @@ impl MoveList {
     pub fn from_fen(fen: &str) -> Self {
         MoveList {
             board: Board::from_fen(fen),
-            moves: Vec::new(),
+            moves: Vec::with_capacity(MAX_MOVES_IN_POSITION),
             capture_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
             en_passant_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
             castling_rights_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
@@ -167,7 +169,7 @@ impl MoveList {
     pub fn new() -> Self {
         MoveList {
             board: Board::new(),
-            moves: Vec::new(),
+            moves: Vec::with_capacity(MAX_MOVES_IN_POSITION),
             capture_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
             en_passant_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
             castling_rights_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
@@ -548,7 +550,7 @@ impl MoveList {
 
     /// Generates moves and updates move list based on the situation on the board
     pub fn generate_moves(&mut self) {
-        self.moves = Vec::new();
+        self.moves.clear();
 
         if self.board.active_player == WHITE
         {
@@ -572,7 +574,7 @@ impl MoveList {
     /// Used for heuristics
     /// NOTE: currently does not consider checks, because of the need to optimize it
     pub fn generate_noisy_moves(&mut self) {
-        self.moves = Vec::new();
+        self.moves.clear();
 
         self.generate_captures();
         if self.board.active_player == WHITE {
