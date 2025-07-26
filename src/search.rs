@@ -13,6 +13,7 @@ use crate::transposition_table::{RepetitionTable, Transposition, TranspositionTa
 use crate::transposition_table::NodeType::{ALPHA, BETA, EXACT};
 
 const KILLER_MOVES_CAPACITY: usize = 1024;
+const DEPTH_LIMIT: usize = 128;
 
 static STOP_FLAG: AtomicBool = AtomicBool::new(false);
 
@@ -23,7 +24,9 @@ pub struct Engine<T: Evaluator = MainEvaluator> {
     repetition_table: RepetitionTable,
     killer_moves: [[Option<Move>; 2]; KILLER_MOVES_CAPACITY],
     depth: u32,
-    best_moves: [Option<Move>; 3]
+    current_ply: u32,
+    best_moves: [[Option<Move>; 3]; DEPTH_LIMIT],
+    best_moves_evaluation: [[i32; 3]; DEPTH_LIMIT]
 }
 
 impl Engine<MainEvaluator> {
@@ -35,7 +38,9 @@ impl Engine<MainEvaluator> {
             repetition_table: RepetitionTable::new(),
             killer_moves: [[None; 2]; KILLER_MOVES_CAPACITY],
             depth: 0,
-            best_moves: [None; 3]
+            current_ply: 0,
+            best_moves: [[None; 3]; DEPTH_LIMIT],
+            best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT]
         }
     }
 
@@ -46,7 +51,9 @@ impl Engine<MainEvaluator> {
             repetition_table: RepetitionTable::new(),
             killer_moves: [[None; 2]; KILLER_MOVES_CAPACITY],
             depth: 0,
-            best_moves: [None; 3]
+            current_ply: 0,
+            best_moves: [[None; 3]; DEPTH_LIMIT],
+            best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT]
         }
     }
 }
@@ -65,27 +72,6 @@ impl Engine {
     pub fn get_stop_flag() -> bool {
         STOP_FLAG.load(Ordering::SeqCst)
     }
-
-    /// Given a move and its evaluation, insert into a given array of best moves and array of best moves evaluation at a proper position
-    // #[inline(never)]
-    fn insert_into_best_moves(best_moves: &mut [Option<Move>; 3], value: &mut i32, best_moves_evaluation: &mut [i32; 2], piece_move: Move, move_evaluation: i32) {
-        if move_evaluation > *value {
-            best_moves_evaluation[1] = best_moves_evaluation[0];
-            best_moves_evaluation[0] = *value;
-            *value = move_evaluation;
-            best_moves[2] = best_moves[1];
-            best_moves[1] = best_moves[0];
-            best_moves[0] = Option::from(piece_move);
-        } else if move_evaluation > best_moves_evaluation[0] {
-            best_moves_evaluation[1] = best_moves_evaluation[0];
-            best_moves_evaluation[0] = move_evaluation;
-            best_moves[2] = best_moves[1];
-            best_moves[1] = Option::from(piece_move);
-        } else if move_evaluation > best_moves_evaluation[1] {
-            best_moves_evaluation[1] = move_evaluation;
-            best_moves[2] = Option::from(piece_move);
-        }
-    }
 }
 
 impl<T: Evaluator> Engine<T> {
@@ -97,7 +83,9 @@ impl<T: Evaluator> Engine<T> {
             repetition_table: RepetitionTable::new(),
             killer_moves: [[None; 2]; KILLER_MOVES_CAPACITY],
             depth: 0,
-            best_moves: [None; 3]
+            current_ply: 0,
+            best_moves: [[None; 3]; DEPTH_LIMIT],
+            best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT]
         }
     }
 
@@ -108,7 +96,30 @@ impl<T: Evaluator> Engine<T> {
             repetition_table: RepetitionTable::new(),
             killer_moves: [[None; 2]; KILLER_MOVES_CAPACITY],
             depth: 0,
-            best_moves: [None; 3]
+            current_ply: 0,
+            best_moves: [[None; 3]; DEPTH_LIMIT],
+            best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT]
+        }
+    }
+
+    /// Given a move and its evaluation, insert into a given array of best moves and array of best moves evaluation at a proper position
+    // #[inline(never)]
+    fn insert_into_best_moves(&mut self, piece_move: Move, move_evaluation: i32, depth: usize) {
+        if move_evaluation > self.best_moves_evaluation[depth][0] {
+            self.best_moves_evaluation[depth][2] = self.best_moves_evaluation[depth][1];
+            self.best_moves_evaluation[depth][1] = self.best_moves_evaluation[depth][0];
+            self.best_moves_evaluation[depth][0] = move_evaluation;
+            self.best_moves[depth][2] = self.best_moves[depth][1];
+            self.best_moves[depth][1] = self.best_moves[depth][0];
+            self.best_moves[depth][0] = Option::from(piece_move);
+        } else if move_evaluation > self.best_moves_evaluation[depth][1] {
+            self.best_moves_evaluation[depth][2] = self.best_moves_evaluation[depth][1];
+            self.best_moves_evaluation[depth][1] = move_evaluation;
+            self.best_moves[depth][2] = self.best_moves[depth][1];
+            self.best_moves[depth][1] = Option::from(piece_move);
+        } else if move_evaluation > self.best_moves_evaluation[depth][2] {
+            self.best_moves_evaluation[depth][2] = move_evaluation;
+            self.best_moves[depth][2] = Option::from(piece_move);
         }
     }
 
@@ -119,8 +130,8 @@ impl<T: Evaluator> Engine<T> {
     }
 
     /// Retrieves what the engine thinks the best moves for the most recent board situation is.
-    pub fn get_best_moves(&self) -> &[Option<Move>; 3] {
-        &self.best_moves
+    pub fn get_current_best_moves(&self) -> &[Option<Move>; 3] {
+        &self.best_moves[0]
     }
     
     /// Calls search algorithm to find the best possible moves in the current situation.
@@ -129,11 +140,13 @@ impl<T: Evaluator> Engine<T> {
     /// Calls the algorithm using alpha-beta prunning and quiescence search
     // #[inline(never)]
     pub fn search(&mut self, move_list: &mut MoveList, depth: u32) -> i32 {
+        self.current_ply = move_list.get_board().plies;
+
         let mut value = 0;
         for current_depth in 1..depth+1 {
-            value = self.search_alpha_beta_prunning(move_list, current_depth, NEGATIVE_INFINITY, POSITIVE_INFINITY);
-            self.best_moves = self.transposition_table.get_from_zobrist(move_list.get_board().zobrist).clone().unwrap().best_moves;
             self.depth = current_depth;
+            value = self.search_alpha_beta_prunning(move_list, current_depth, NEGATIVE_INFINITY, POSITIVE_INFINITY);
+            self.best_moves[0] = self.transposition_table.get_from_zobrist(move_list.get_board().zobrist).clone().unwrap().best_moves;
             if STOP_FLAG.load(Ordering::SeqCst) {
                 return value;
             }
@@ -174,14 +187,11 @@ impl<T: Evaluator> Engine<T> {
         // Check if we have a proper entry in the transposition table
         if let Some(transposition) = transposition_entry {
             if transposition.depth >= depth {
-                self.repetition_table.unvisit_position(zobrist);
-                if transposition.node_type == EXACT { return transposition.value; }
-                if transposition.node_type == ALPHA && transposition.value <= alpha { return transposition.value; } // Our alpha cut-off is even bigger than it was for the put operation
-                if /*transposition.node_type == BETA*/ transposition.value >= beta { return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
+                if transposition.node_type == EXACT { self.repetition_table.unvisit_position(zobrist); return transposition.value; }
+                if transposition.node_type == ALPHA && transposition.value <= alpha { self.repetition_table.unvisit_position(zobrist); return transposition.value; } // Our alpha cut-off is even bigger than it was for the put operation
+                if /*transposition.node_type == BETA*/ transposition.value >= beta { self.repetition_table.unvisit_position(zobrist); return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
             }
         }
-
-        let mut value: i32 = NEGATIVE_INFINITY;
 
         if depth == 0 {
             self.repetition_table.unvisit_position(zobrist);
@@ -193,10 +203,14 @@ impl<T: Evaluator> Engine<T> {
 
         let moves = move_list.get_moves().clone();
 
-        let mut best_moves: [Option<Move>; 3] = [None; 3];
-        let mut best_moves_evaluation: [i32; 2] = [NEGATIVE_INFINITY; 2]; // we omit the first move evaluation, as this is simply the value variable
-
         let mut cutoff_move = Move::empty();
+
+        // Index for the best moves buffer.
+        // self.depth - target depth that we want to reach with our current search
+        // depth - depth left to search
+        // When we start, we have depth = self.depth, so we fill in the first buffer space.
+        // When we end, we have depth = 1, so we fill the buffer space indexed self.depth - 1
+        let buffer_index = (self.depth - depth) as usize;
 
         for piece_move in moves
         {
@@ -205,11 +219,11 @@ impl<T: Evaluator> Engine<T> {
                 let move_evaluation = -self.search_alpha_beta_prunning(move_list, depth - 1, -beta, -alpha);
 
                 // Update the best moves record
-                Engine::insert_into_best_moves(&mut best_moves, &mut value, &mut best_moves_evaluation, piece_move, move_evaluation);
+                self.insert_into_best_moves(piece_move, move_evaluation, buffer_index);
             }
             move_list.unmake_move(&piece_move);
 
-            alpha = alpha.max(value);
+            alpha = alpha.max(self.best_moves_evaluation[buffer_index][0]);
             if alpha >= beta { cutoff_move = piece_move; break; }
 
             if STOP_FLAG.load(Ordering::SeqCst) {
@@ -217,19 +231,19 @@ impl<T: Evaluator> Engine<T> {
             }
         }
 
-        if best_moves[0] == None {
+        if self.best_moves[buffer_index][0] == None {
             self.repetition_table.unvisit_position(zobrist);
             return if move_list.is_in_check() { NEGATIVE_INFINITY } else { DRAW }
         }
 
         // update the transposition table
-        let node_type = if value <= original_alpha { ALPHA }
-            else if value >= beta { self.store_killer_move(&cutoff_move, (move_list.get_board().plies + self.depth) as usize); BETA } else { EXACT };
-        self.transposition_table.put_transposition(&Transposition::from_zobrist(zobrist, depth, value, &best_moves, node_type));
+        let node_type = if self.best_moves_evaluation[buffer_index][0] <= original_alpha { ALPHA }
+            else if self.best_moves_evaluation[buffer_index][0] >= beta { self.store_killer_move(&cutoff_move, move_list.get_board().plies as usize); BETA } else { EXACT };
+        self.transposition_table.put_transposition(&Transposition::from_zobrist(zobrist, depth, self.best_moves_evaluation[buffer_index][0], &self.best_moves[buffer_index], node_type));
 
         self.repetition_table.unvisit_position(zobrist);
 
-        value
+        self.best_moves_evaluation[buffer_index][0]
     }
 
     /// Stores a killer move in the killer moves array
@@ -313,8 +327,6 @@ impl<T: Evaluator> Engine<T> {
             if /*transposition.node_type == BETA*/ transposition.value >= beta { self.repetition_table.unvisit_position(move_list.get_board().zobrist); return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
         }
 
-        let mut value: i32 = NEGATIVE_INFINITY;
-
         move_list.generate_noisy_moves();
         // println!("Quiescence moves: {:?}", move_list.get_moves());
 
@@ -325,8 +337,9 @@ impl<T: Evaluator> Engine<T> {
 
         self.order_moves(move_list);
 
-        let mut best_moves: [Option<Move>; 3] = [None; 3];
-        let mut best_moves_evaluation: [i32; 2] = [NEGATIVE_INFINITY; 2]; // we omit the first move evaluation, as this is simply the value variable
+        // Index for the best moves buffer.
+        // We subtract the difference between the board's ply and the original ply.
+        let buffer_index = (move_list.get_board().plies - self.current_ply) as usize;
 
         let moves = move_list.get_moves().clone();
 
@@ -336,29 +349,29 @@ impl<T: Evaluator> Engine<T> {
             if !move_list.is_opponent_in_check() {
                 let move_evaluation = -self.quiescence_search(move_list, -beta, -alpha);
 
-                Engine::insert_into_best_moves(&mut best_moves, &mut value, &mut best_moves_evaluation, piece_move, move_evaluation);
+                self.insert_into_best_moves(piece_move, move_evaluation, buffer_index);
             }
             move_list.unmake_move(&piece_move);
 
-            alpha = alpha.max(value);
+            alpha = alpha.max(self.best_moves_evaluation[buffer_index][0]);
             if alpha >= beta { break; }
             if STOP_FLAG.load(Ordering::SeqCst) {
                 break;
             }
         }
 
-        if best_moves[0] == None {
+        if self.best_moves[buffer_index][0] == None {
             self.repetition_table.unvisit_position(move_list.get_board().zobrist);
             return if move_list.is_in_check() { NEGATIVE_INFINITY } else { DRAW }
         }
 
         // update the transposition table
-        let node_type = if value <= original_alpha { ALPHA } else if value >= beta { BETA } else { EXACT };
-        self.transposition_table.put_transposition(&Transposition::from_zobrist(move_list.get_board().zobrist, 0, value, &best_moves, node_type));
+        let node_type = if self.best_moves_evaluation[buffer_index][0] <= original_alpha { ALPHA } else if self.best_moves_evaluation[buffer_index][0] >= beta { BETA } else { EXACT };
+        self.transposition_table.put_transposition(&Transposition::from_zobrist(move_list.get_board().zobrist, 0, self.best_moves_evaluation[buffer_index][0], &self.best_moves[buffer_index], node_type));
 
         self.repetition_table.unvisit_position(move_list.get_board().zobrist);
 
-        value
+        self.best_moves_evaluation[buffer_index][0]
     }
 
     /// Finds the best possible move in the search tree.
@@ -476,6 +489,7 @@ mod tests {
         let mut move_list = MoveList::from_board(board);
 
         let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
+        engine.depth = 1;
 
         assert_eq!(DRAW, engine.search_alpha_beta_prunning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY));
         assert!(engine.repetition_table.is_empty());
@@ -490,6 +504,7 @@ mod tests {
         let mut move_list = MoveList::from_board(board);
 
         let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
+        engine.depth = 1;
 
         assert_eq!(NEGATIVE_INFINITY, engine.search_alpha_beta_prunning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY));
         assert!(engine.repetition_table.is_empty());
@@ -500,6 +515,7 @@ mod tests {
         let mut move_list = MoveList::from_board(board);
 
         let mut engine = Engine::new();
+        engine.depth = 1;
 
         assert_eq!(POSITIVE_INFINITY, engine.search_alpha_beta_prunning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY));
         assert!(engine.repetition_table.is_empty());
@@ -553,18 +569,19 @@ mod tests {
 
     #[test]
     fn check_insert_into_best_moves_best_move() {
-        let mut best_moves = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
-        let mut value = 0;
-        let mut best_moves_evaluation= [-100, -300];
-
         let piece_move = Move::new(0, 1, 0, QUEEN);
         let evaluation = 200;
 
-        Engine::insert_into_best_moves(&mut best_moves, &mut value, &mut best_moves_evaluation, piece_move, evaluation);
+        let mut engine = Engine::with_capacity(1);
+        engine.best_moves[0] = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
+        engine.best_moves_evaluation[0] = [0,-100,-300];
 
-        assert_eq!([Option::from(piece_move), Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN))], best_moves);
-        assert_eq!(200, value);
-        assert_eq!([0, -100], best_moves_evaluation);
+        engine.insert_into_best_moves(piece_move, evaluation, 0);
+
+        assert_eq!([Option::from(piece_move), Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN))], engine.best_moves[0]);
+        assert_eq!([None, None, None], engine.best_moves[1]);
+        assert_eq!([200, 0, -100], engine.best_moves_evaluation[0]);
+        assert_eq!([NEGATIVE_INFINITY, NEGATIVE_INFINITY, NEGATIVE_INFINITY], engine.best_moves_evaluation[1]);
     }
 
     #[test]
@@ -575,6 +592,7 @@ mod tests {
         let mut move_list = MoveList::from_board(board);
 
         let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
+        engine.depth = 0;
 
         assert_ne!(DRAW, engine.search_alpha_beta_prunning(&mut move_list, 0, NEGATIVE_INFINITY, POSITIVE_INFINITY));
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
@@ -637,50 +655,74 @@ mod tests {
 
     #[test]
     fn check_insert_into_best_moves_second_move() {
-        let mut best_moves = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
-        let mut value = 500;
-        let mut best_moves_evaluation= [0, -300];
-
         let piece_move = Move::new(0, 1, 0, QUEEN);
         let evaluation = 100;
 
-        Engine::insert_into_best_moves(&mut best_moves, &mut value, &mut best_moves_evaluation, piece_move, evaluation);
+        let mut engine = Engine::with_capacity(1);
+        engine.best_moves[0] = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
+        engine.best_moves_evaluation[0] = [500, 0,-300];
 
-        assert_eq!([Option::from(Move::new(63,62,0,KING)), Option::from(piece_move), Option::from(Move::new(0,8,0, PAWN))], best_moves);
-        assert_eq!(500, value);
-        assert_eq!([100, 0], best_moves_evaluation);
+        engine.insert_into_best_moves(piece_move, evaluation, 0);
+
+        assert_eq!([Option::from(Move::new(63,62,0,KING)), Option::from(piece_move), Option::from(Move::new(0,8,0, PAWN))], engine.best_moves[0]);
+        assert_eq!([None, None, None], engine.best_moves[1]);
+        assert_eq!([500, 100, 0], engine.best_moves_evaluation[0]);
+        assert_eq!([NEGATIVE_INFINITY, NEGATIVE_INFINITY, NEGATIVE_INFINITY], engine.best_moves_evaluation[1]);
     }
 
     #[test]
     fn check_insert_into_best_moves_third_move() {
-        let mut best_moves = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
-        let mut value = 500;
-        let mut best_moves_evaluation= [0, -300];
-
         let piece_move = Move::new(0, 1, 0, QUEEN);
         let evaluation = -100;
 
-        Engine::insert_into_best_moves(&mut best_moves, &mut value, &mut best_moves_evaluation, piece_move, evaluation);
+        let mut engine = Engine::with_capacity(1);
+        engine.best_moves[0] = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
+        engine.best_moves_evaluation[0] = [500, 0,-300];
 
-        assert_eq!([Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(piece_move)], best_moves);
-        assert_eq!(500, value);
-        assert_eq!([0, -100], best_moves_evaluation);
+        engine.insert_into_best_moves(piece_move, evaluation, 0);
+
+        assert_eq!([Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(piece_move)], engine.best_moves[0]);
+        assert_eq!([None, None, None], engine.best_moves[1]);
+        assert_eq!([500, 0, -100], engine.best_moves_evaluation[0]);
+        assert_eq!([NEGATIVE_INFINITY, NEGATIVE_INFINITY, NEGATIVE_INFINITY], engine.best_moves_evaluation[1]);
     }
 
     #[test]
     fn check_insert_into_best_moves_weak_move() {
-        let mut best_moves = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
-        let mut value = 500;
-        let mut best_moves_evaluation= [0, -300];
-
         let piece_move = Move::new(0, 1, 0, QUEEN);
         let evaluation = -600;
 
-        Engine::insert_into_best_moves(&mut best_moves, &mut value, &mut best_moves_evaluation, piece_move, evaluation);
+        let mut engine = Engine::with_capacity(1);
+        engine.best_moves[0] = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
+        engine.best_moves_evaluation[0] = [500, 0,-300];
 
-        assert_eq!([Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())], best_moves);
-        assert_eq!(500, value);
-        assert_eq!([0, -300], best_moves_evaluation);
+        engine.insert_into_best_moves(piece_move, evaluation, 0);
+
+        assert_eq!([Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())], engine.best_moves[0]);
+        assert_eq!([None, None, None], engine.best_moves[1]);
+        assert_eq!([500, 0, -300], engine.best_moves_evaluation[0]);
+        assert_eq!([NEGATIVE_INFINITY, NEGATIVE_INFINITY, NEGATIVE_INFINITY], engine.best_moves_evaluation[1]);
+    }
+
+    #[test]
+    fn check_insert_into_best_moves_deep() {
+        let piece_move = Move::new(0, 1, 0, QUEEN);
+        let evaluation = 100;
+
+        let mut engine = Engine::with_capacity(1);
+        engine.best_moves[0] = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
+        engine.best_moves[6] = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
+        engine.best_moves_evaluation[0] = [500, 0,-300];
+        engine.best_moves_evaluation[6] = [500, 0,-300];
+
+        engine.insert_into_best_moves(piece_move, evaluation, 6);
+
+        assert_eq!([Option::from(Move::new(63,62,0,KING)), Option::from(piece_move), Option::from(Move::new(0,8,0, PAWN))], engine.best_moves[6]);
+        assert_eq!([Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())], engine.best_moves[0]);
+        assert_eq!([None, None, None], engine.best_moves[1]);
+        assert_eq!([500, 100, 0], engine.best_moves_evaluation[6]);
+        assert_eq!([500, 0, -300], engine.best_moves_evaluation[0]);
+        assert_eq!([NEGATIVE_INFINITY, NEGATIVE_INFINITY, NEGATIVE_INFINITY], engine.best_moves_evaluation[1]);
     }
 
     // #[test]
@@ -776,9 +818,10 @@ mod tests {
 
         let mut engine = Engine::with_evaluator_and_capacity(MockMaterialEvaluator {}, 1024);
 
-
+        engine.depth = 2;
         engine.search_alpha_beta_prunning(&mut move_list, 2, NEGATIVE_INFINITY, POSITIVE_INFINITY);
-        assert!(!engine.killer_moves[0][0].is_none());
-        assert!(!engine.killer_moves[0][1].is_none());
+        // There is an obvious killer moves when we try to move our queen so that it can be captured by a pawn
+        assert!(!engine.killer_moves[1][0].is_none());
+        assert!(!engine.killer_moves[1][1].is_none());
     }
 }
