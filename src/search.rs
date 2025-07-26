@@ -307,31 +307,28 @@ impl<T: Evaluator> Engine<T> {
     /// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
     // #[inline(never)]
     fn quiescence_search(&mut self, move_list: &mut MoveList, mut alpha: i32, beta: i32) -> i32 {
-        // println!("Is repetition table empty?: {}", self.repetition_table.is_empty());
-        // println!("Visits to this position before: {}", self.repetition_table.get_repetition(move_list.get_board().zobrist));
-        if self.repetition_table.visit_position(move_list.get_board().zobrist) {
-            // println!("Repetition alert MADAFAKA");
-            self.repetition_table.unvisit_position(move_list.get_board().zobrist);
+        let zobrist = move_list.get_board().zobrist;
+        
+        if self.repetition_table.visit_position(zobrist) {
+            self.repetition_table.unvisit_position(zobrist);
             return DRAW;
         }
 
         let original_alpha = alpha;
 
-        let transposition_entry = self.transposition_table.get_from_zobrist(move_list.get_board().zobrist);
+        let transposition_entry = self.transposition_table.get_from_zobrist(zobrist);
 
         // Check if we have a proper entry in the transposition table
         if let Some(transposition) = transposition_entry {
-            // println!("Quiescence transposition reached: {:?}", transposition);
-            if transposition.node_type == EXACT { self.repetition_table.unvisit_position(move_list.get_board().zobrist); return transposition.value; }
-            if transposition.node_type == ALPHA && transposition.value <= alpha { self.repetition_table.unvisit_position(move_list.get_board().zobrist); return transposition.value; } // Our alpha cut-off is even bigger than it was for the put operation
-            if /*transposition.node_type == BETA*/ transposition.value >= beta { self.repetition_table.unvisit_position(move_list.get_board().zobrist); return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
+            if transposition.node_type == EXACT { self.repetition_table.unvisit_position(zobrist); return transposition.value; }
+            if transposition.node_type == ALPHA && transposition.value <= alpha { self.repetition_table.unvisit_position(zobrist); return transposition.value; } // Our alpha cut-off is even bigger than it was for the put operation
+            if /*transposition.node_type == BETA*/ transposition.value >= beta { self.repetition_table.unvisit_position(zobrist); return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
         }
 
         move_list.generate_noisy_moves();
-        // println!("Quiescence moves: {:?}", move_list.get_moves());
 
         if move_list.get_moves().len() == 0 {
-            self.repetition_table.unvisit_position(move_list.get_board().zobrist);
+            self.repetition_table.unvisit_position(zobrist);
             return T::evaluate(move_list.get_board());
         }
 
@@ -361,15 +358,15 @@ impl<T: Evaluator> Engine<T> {
         }
 
         if self.best_moves[buffer_index][0] == None {
-            self.repetition_table.unvisit_position(move_list.get_board().zobrist);
+            self.repetition_table.unvisit_position(zobrist);
             return if move_list.is_in_check() { NEGATIVE_INFINITY } else { DRAW }
         }
 
         // update the transposition table
         let node_type = if self.best_moves_evaluation[buffer_index][0] <= original_alpha { ALPHA } else if self.best_moves_evaluation[buffer_index][0] >= beta { BETA } else { EXACT };
-        self.transposition_table.put_transposition(&Transposition::from_zobrist(move_list.get_board().zobrist, 0, self.best_moves_evaluation[buffer_index][0], &self.best_moves[buffer_index], node_type));
+        self.transposition_table.put_transposition(&Transposition::from_zobrist(zobrist, 0, self.best_moves_evaluation[buffer_index][0], &self.best_moves[buffer_index], node_type));
 
-        self.repetition_table.unvisit_position(move_list.get_board().zobrist);
+        self.repetition_table.unvisit_position(zobrist);
 
         self.best_moves_evaluation[buffer_index][0]
     }
