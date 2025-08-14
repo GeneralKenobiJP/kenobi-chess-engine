@@ -28,7 +28,7 @@ const UNCASTLING_FLAG_ARRAY: [[u64;2]; 13] = [UNCASTLE_WHITE_KINGSIDE_FLAGS, UNC
 const ROOK_POSITION_ARRAY: [u8; 13] = [0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 56, 63];
 const ROOK_POSTPOSITION_ARRAY: [u8; 13] = [2, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 58, 60];
 
-const MAX_MOVES_IN_POSITION: usize = 218;
+pub const MAX_MOVES_IN_POSITION: usize = 218;
 
 #[derive(PartialEq, Eq, Hash, Clone, Debug, Copy)]
 pub struct Move {

@@ -4,10 +4,11 @@
 
 mod ordering;
 
+use std::cmp::max;
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::board::Board;
 use crate::evaluation::{DRAW, Evaluator, MainEvaluator};
-use crate::move_generator::{Move, MoveList};
+use crate::move_generator::{MAX_MOVES_IN_POSITION, Move, MoveList};
 use crate::evaluation::{POSITIVE_INFINITY, NEGATIVE_INFINITY};
 use crate::transposition_table::{RepetitionTable, Transposition, TranspositionTable};
 use crate::transposition_table::NodeType::{ALPHA, BETA, EXACT};
@@ -20,11 +21,13 @@ static STOP_FLAG: AtomicBool = AtomicBool::new(false);
 #[derive(Debug, Eq, PartialEq)]
 pub struct Engine<T: Evaluator = MainEvaluator> {
     evaluator: T,
-    transposition_table: TranspositionTable,
+    pub transposition_table: TranspositionTable,
     repetition_table: RepetitionTable,
     killer_moves: [[Option<Move>; 2]; KILLER_MOVES_CAPACITY],
     depth: u32,
+    max_depth: u32,
     current_ply: u32,
+    moves_buffer: [Vec<Move>; DEPTH_LIMIT],
     best_moves: [[Option<Move>; 3]; DEPTH_LIMIT],
     best_moves_evaluation: [[i32; 3]; DEPTH_LIMIT]
 }
@@ -38,7 +41,9 @@ impl Engine<MainEvaluator> {
             repetition_table: RepetitionTable::new(),
             killer_moves: [[None; 2]; KILLER_MOVES_CAPACITY],
             depth: 0,
+            max_depth: 0,
             current_ply: 0,
+            moves_buffer: core::array::from_fn(|_i| Vec::with_capacity(MAX_MOVES_IN_POSITION)),
             best_moves: [[None; 3]; DEPTH_LIMIT],
             best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT]
         }
@@ -51,7 +56,9 @@ impl Engine<MainEvaluator> {
             repetition_table: RepetitionTable::new(),
             killer_moves: [[None; 2]; KILLER_MOVES_CAPACITY],
             depth: 0,
+            max_depth: 0,
             current_ply: 0,
+            moves_buffer: core::array::from_fn(|_i| Vec::with_capacity(MAX_MOVES_IN_POSITION)),
             best_moves: [[None; 3]; DEPTH_LIMIT],
             best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT]
         }
@@ -83,7 +90,9 @@ impl<T: Evaluator> Engine<T> {
             repetition_table: RepetitionTable::new(),
             killer_moves: [[None; 2]; KILLER_MOVES_CAPACITY],
             depth: 0,
+            max_depth: 0,
             current_ply: 0,
+            moves_buffer: core::array::from_fn(|_i| Vec::with_capacity(MAX_MOVES_IN_POSITION)),
             best_moves: [[None; 3]; DEPTH_LIMIT],
             best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT]
         }
@@ -96,7 +105,9 @@ impl<T: Evaluator> Engine<T> {
             repetition_table: RepetitionTable::new(),
             killer_moves: [[None; 2]; KILLER_MOVES_CAPACITY],
             depth: 0,
+            max_depth: 0,
             current_ply: 0,
+            moves_buffer: core::array::from_fn(|_i| Vec::with_capacity(MAX_MOVES_IN_POSITION)),
             best_moves: [[None; 3]; DEPTH_LIMIT],
             best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT]
         }
@@ -141,12 +152,21 @@ impl<T: Evaluator> Engine<T> {
     // #[inline(never)]
     pub fn search(&mut self, move_list: &mut MoveList, depth: u32) -> i32 {
         self.current_ply = move_list.get_board().plies;
+        let initial_zobrist = move_list.get_board().zobrist;
+
+        // Clear best moves (and evaluations) that were used up in the previous search
+        for i in 0..self.max_depth as usize {
+            self.best_moves[i] = [None; 3];
+            self.best_moves_evaluation[i] = [NEGATIVE_INFINITY; 3];
+        }
+
+        self.max_depth = depth;
 
         let mut value = 0;
         for current_depth in 1..depth+1 {
             self.depth = current_depth;
             value = self.search_alpha_beta_prunning(move_list, current_depth, NEGATIVE_INFINITY, POSITIVE_INFINITY);
-            self.best_moves[0] = self.transposition_table.get_from_zobrist(move_list.get_board().zobrist).clone().unwrap().best_moves;
+            self.best_moves[0] = self.transposition_table.get_from_zobrist(initial_zobrist).clone().unwrap().best_moves;
             if STOP_FLAG.load(Ordering::SeqCst) {
                 return value;
             }
@@ -201,19 +221,24 @@ impl<T: Evaluator> Engine<T> {
         move_list.generate_moves();
         self.order_moves(move_list);
 
-        let moves = move_list.get_moves().clone();
-
-        let mut cutoff_move = Move::empty();
-
         // Index for the best moves buffer.
         // self.depth - target depth that we want to reach with our current search
         // depth - depth left to search
         // When we start, we have depth = self.depth, so we fill in the first buffer space.
         // When we end, we have depth = 1, so we fill the buffer space indexed self.depth - 1
         let buffer_index = (self.depth - depth) as usize;
+        // println!("buffer_index AB: {}", buffer_index);
 
-        for piece_move in moves
+        // Efficient copying of move list
+        self.moves_buffer[buffer_index].clear();
+        self.moves_buffer[buffer_index].extend_from_slice(&move_list.get_moves());
+
+        let mut cutoff_move = Move::empty();
+
+        for i in 0..self.moves_buffer[buffer_index].len()
         {
+            let piece_move = { let current_buffer = &self.moves_buffer[buffer_index];  current_buffer[i]};
+
             move_list.make_move(&piece_move);
             if !move_list.is_opponent_in_check() {
                 let move_evaluation = -self.search_alpha_beta_prunning(move_list, depth - 1, -beta, -alpha);
@@ -337,11 +362,16 @@ impl<T: Evaluator> Engine<T> {
         // Index for the best moves buffer.
         // We subtract the difference between the board's ply and the original ply.
         let buffer_index = (move_list.get_board().plies - self.current_ply) as usize;
+        self.max_depth = max(self.max_depth, buffer_index as u32);
 
-        let moves = move_list.get_moves().clone();
+        // Efficient copying of the move list
+        self.moves_buffer[buffer_index].clear();
+        self.moves_buffer[buffer_index].extend_from_slice(&move_list.get_moves());
 
-        for piece_move in moves
+        for i in 0..self.moves_buffer[buffer_index].len()
         {
+            let piece_move = { let current_buffer = &self.moves_buffer[buffer_index];  current_buffer[i]};
+
             move_list.make_move(&piece_move);
             if !move_list.is_opponent_in_check() {
                 let move_evaluation = -self.quiescence_search(move_list, -beta, -alpha);
@@ -405,7 +435,7 @@ impl<T: Evaluator> Engine<T> {
 mod tests {
     use std::time::Instant;
     use crate::board::START_POSITION;
-    use crate::piece::Piece::{KING, PAWN, QUEEN, ROOK};
+    use crate::piece::Piece::{KING, KNIGHT, PAWN, QUEEN, ROOK};
     use super::*;
     use crate::evaluation::MockMaterialEvaluator;
 
@@ -720,6 +750,44 @@ mod tests {
         assert_eq!([500, 100, 0], engine.best_moves_evaluation[6]);
         assert_eq!([500, 0, -300], engine.best_moves_evaluation[0]);
         assert_eq!([NEGATIVE_INFINITY, NEGATIVE_INFINITY, NEGATIVE_INFINITY], engine.best_moves_evaluation[1]);
+    }
+
+    #[test]
+    fn check_tt_stores_own_copy_of_move() {
+        let mut engine = Engine::new();
+        let mut ml = MoveList::from_fen(START_POSITION);
+
+        // generate a fake best move into engine.best_moves[0]
+        engine.best_moves[0][0] = Some(Move::new(48, 40, 0, PAWN));
+        let current_board = ml.get_board().clone();
+        let zob = current_board.zobrist;
+
+        // store transposition using this array
+        engine.transposition_table.put_transposition(&Transposition::from_zobrist(zob, 1, 0, &engine.best_moves[0], EXACT));
+
+        // mutate engine.best_moves[0][0]
+        engine.best_moves[0][0] = Some(Move::new(1, 18, 0, KNIGHT));
+
+        // get from TT
+        if let Some(t) = engine.transposition_table.get_from_zobrist(zob) {
+            assert_eq!(t.best_moves[0], Some(Move::new(48, 40, 0, PAWN)), "TT did not preserve its copy of the move");
+        } else {
+            panic!("TT entry missing");
+        }
+    }
+
+    #[test]
+    fn check_sequence() {
+        let mut engine = Engine::new();
+        let mut move_list = MoveList::from_fen(START_POSITION);
+
+        engine.search(&mut move_list, 7);
+        move_list.make_move(&Move::new(1, 18, 0, KNIGHT));
+        engine.search(&mut move_list, 7);
+        move_list.make_move(&Move::new(48, 40, 0, PAWN));
+        let board = move_list.get_board().clone();
+        engine.search(&mut move_list, 7);
+        assert!(engine.get_best_move(&board).origin < 24);
     }
 
     // #[test]

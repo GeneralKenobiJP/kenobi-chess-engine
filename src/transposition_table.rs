@@ -8,7 +8,7 @@ use crate::move_generator::Move;
 use crate::zobrist::zobrist_hash;
 
 const INITIAL_CAPACITY: usize = 1024 * 1024 * 64; // 67 108 864 entries => 2 147 483 648 Bytes
-const HASH_SET_SEARCH_LIMIT: usize = 1024;
+const HASH_SET_SEARCH_LIMIT: usize = 1024 * 64;
 const REPETITION_CAPACITY: usize = 1024 * 2; // 2048 entries => 65 536 Bytes
 const THREEFOLD_REPETITION: u8 = 3;
 
@@ -74,9 +74,10 @@ impl TranspositionTable {
     /// Hashes the key by implementing linear probing
     /// Should be called for a zobrist-hashed key
     fn hash(&self, key: u64) -> usize {
-        let mut hash = key as usize % self.table.len();
+        let initial_hash = key as usize % self.table.len();
+        let mut hash = initial_hash;
 
-        while hash != (hash + HASH_SET_SEARCH_LIMIT) % self.table.len() {
+        while hash != (initial_hash + HASH_SET_SEARCH_LIMIT) % self.table.len() {
             let entry = &self.table[hash];
 
             match entry {
@@ -90,7 +91,7 @@ impl TranspositionTable {
             }
         }
 
-        hash
+        initial_hash
     }
 
     /// Put a position in a transposition table, given a board situation, depth, best move evaluation,
