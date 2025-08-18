@@ -15,6 +15,9 @@ use crate::transposition_table::NodeType::{ALPHA, BETA, EXACT};
 
 const KILLER_MOVES_CAPACITY: usize = 1024;
 const DEPTH_LIMIT: usize = 128;
+const ASPIRATION_MARGIN: i32 = 50;
+const ASPIRATION_LIMIT: usize = 2;
+const ASPIRATION_START_DEPTH: u32 = 3;
 
 static STOP_FLAG: AtomicBool = AtomicBool::new(false);
 
@@ -148,7 +151,15 @@ impl<T: Evaluator> Engine<T> {
     /// Calls search algorithm to find the best possible moves in the current situation.
     /// Searches up to the given depth.
     /// Uses the given move list to generate moves in-place and analyze the board situation.
-    /// Calls the algorithm using alpha-beta prunning and quiescence search
+    /// Calls the algorithm using alpha-beta prunning and quiescence search.
+    ///
+    /// Uses aspiration window to limit the search space.
+    /// Aspiration window works as follows: we act on the assumption that the evaluation at depth x
+    /// should not differ too much from the one at depth x-1, so we take alpha and beta
+    /// close to the former evaluation.
+    /// If the assumption turns out wrong, we retry with the alpha and beta values twice as high.
+    /// We retry up to ASPIRATION_LIMIT times, afterwards - we abandon the window and take infinities.
+    /// The aspiration window is turned off before the ASPIRATION_START_DEPTH.
     // #[inline(never)]
     pub fn search(&mut self, move_list: &mut MoveList, depth: u32) -> i32 {
         self.current_ply = move_list.get_board().plies;
@@ -165,8 +176,30 @@ impl<T: Evaluator> Engine<T> {
         let mut value = 0;
         for current_depth in 1..depth+1 {
             self.depth = current_depth;
-            value = self.search_alpha_beta_prunning(move_list, current_depth, NEGATIVE_INFINITY, POSITIVE_INFINITY);
-            self.best_moves[0] = self.transposition_table.get_from_zobrist(initial_zobrist).clone().unwrap().best_moves;
+
+            // Check if we should use an aspiration window
+            let (alpha, beta) = if current_depth < ASPIRATION_START_DEPTH {
+                (NEGATIVE_INFINITY, POSITIVE_INFINITY)
+            } else {
+                let delta = ASPIRATION_MARGIN;
+                (value - delta, value + delta)
+            };
+
+            value = self.search_alpha_beta_prunning(move_list, current_depth, alpha, beta);
+
+            // Increase the aspiration window
+            let mut idx = 0;
+            while (value <= alpha || value >= beta) && idx < ASPIRATION_LIMIT {
+                value = self.search_alpha_beta_prunning(move_list, current_depth, 2 * alpha, 2 * beta);
+            }
+
+            // Abandon the aspiration window
+            value = if value <= alpha || value >= beta {
+                self.search_alpha_beta_prunning(move_list, current_depth, NEGATIVE_INFINITY, POSITIVE_INFINITY)
+            } else {
+                value
+            };
+
             if STOP_FLAG.load(Ordering::SeqCst) {
                 return value;
             }
