@@ -6,6 +6,7 @@ mod ordering;
 
 use std::cmp::max;
 use std::sync::atomic::{AtomicBool, Ordering};
+use num_traits::real::Real;
 use crate::board::Board;
 use crate::evaluation::{DRAW, Evaluator, MainEvaluator};
 use crate::move_generator::{MAX_MOVES_IN_POSITION, Move, MoveList};
@@ -18,6 +19,8 @@ const DEPTH_LIMIT: usize = 128;
 const ASPIRATION_MARGIN: i32 = 50;
 const ASPIRATION_LIMIT: usize = 2;
 const ASPIRATION_START_DEPTH: u32 = 3;
+const LMR_DEPTH_LIMIT: u32 = 3;
+const LMR_MOVE_NUMBER_LIMIT: usize = 3;
 
 static STOP_FLAG: AtomicBool = AtomicBool::new(false);
 
@@ -169,7 +172,6 @@ impl<T: Evaluator> Engine<T> {
     // #[inline(never)]
     pub fn search(&mut self, move_list: &mut MoveList, depth: u32) -> i32 {
         self.current_ply = move_list.get_board().plies;
-        let initial_zobrist = move_list.get_board().zobrist;
 
         // Clear best moves (and evaluations) that were used up in the previous search
         for i in 0..self.max_depth as usize {
@@ -184,7 +186,7 @@ impl<T: Evaluator> Engine<T> {
             self.depth = current_depth;
 
             // Check if we should use an aspiration window
-            let (alpha, beta) = if current_depth < ASPIRATION_START_DEPTH {
+            let (mut alpha, mut beta) = if current_depth < ASPIRATION_START_DEPTH {
                 (NEGATIVE_INFINITY, POSITIVE_INFINITY)
             } else {
                 let delta = ASPIRATION_MARGIN;
@@ -196,7 +198,9 @@ impl<T: Evaluator> Engine<T> {
             // Increase the aspiration window
             let mut idx = 0;
             while (value <= alpha || value >= beta) && idx < ASPIRATION_LIMIT {
-                value = self.search_alpha_beta_prunning(move_list, current_depth, 2 * alpha, 2 * beta);
+                value = self.search_alpha_beta_prunning(move_list, current_depth, alpha, beta);
+                alpha = alpha.saturating_mul(2);
+                beta = beta.saturating_mul(2);
                 idx += 1;
             }
 
@@ -213,6 +217,21 @@ impl<T: Evaluator> Engine<T> {
         }
 
         value
+    }
+
+    /// Applies late move reduction, given the remaining depth, and the move number (in ordering),
+    /// and outputs the reduced depth.
+    ///
+    /// The rationale is that the later moves in the sorted ordering (so those we deem worse)
+    /// do not look promising, and therefore we search them only with a reduced depth to limit computation.
+    /// If the search fails high, however, we retry the search with the full ab window and full depth.
+    ///
+    /// The formula used is: R = 0.5 + log2(depth)^1.3 * log2(move_number).
+    /// All logarithms operate on integers exclusively to accelerate computation.
+    ///
+    /// Should be called after checking for depth and move number constraints.
+    fn apply_late_move_reduction(depth: u32, move_number: usize) -> u32 {
+        (depth - 1).saturating_sub((0.5 + ((depth.ilog2() as f32).powf(1.3) * move_number.ilog2() as f32)) as u32)
     }
 
     /// Calls search algorithm to find the best possible moves in the current situation.
@@ -267,7 +286,6 @@ impl<T: Evaluator> Engine<T> {
         // When we start, we have depth = self.depth, so we fill in the first buffer space.
         // When we end, we have depth = 1, so we fill the buffer space indexed self.depth - 1
         let buffer_index = (self.depth - depth) as usize;
-        // println!("buffer_index AB: {}", buffer_index);
 
         // Efficient copying of move list
         self.moves_buffer[buffer_index].clear();
@@ -281,7 +299,22 @@ impl<T: Evaluator> Engine<T> {
 
             move_list.make_move(&piece_move);
             if !move_list.is_opponent_in_check() {
-                let move_evaluation = -self.search_alpha_beta_prunning(move_list, depth - 1, -beta, -alpha);
+
+                // Do we want to apply late move reduction
+                let move_evaluation = if depth < LMR_DEPTH_LIMIT || i < LMR_MOVE_NUMBER_LIMIT {
+                    -self.search_alpha_beta_prunning(move_list, depth - 1, -beta, -alpha)
+                } else {
+                    // Late Move Reduction
+                    let lmr_depth = Self::apply_late_move_reduction(depth, i + 1);
+                    let move_evaluation = -self.search_alpha_beta_prunning(move_list, lmr_depth, -alpha-1, -alpha);
+                    if move_evaluation > alpha {
+                        // LMR failed high - apply full window instead
+                        -self.search_alpha_beta_prunning(move_list, depth - 1, -beta, -alpha)
+                    }
+                    else {
+                        move_evaluation
+                    }
+                };
 
                 // Update the best moves record
                 self.insert_into_best_moves(piece_move, move_evaluation, buffer_index);
