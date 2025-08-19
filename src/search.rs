@@ -147,6 +147,12 @@ impl<T: Evaluator> Engine<T> {
     pub fn get_current_best_moves(&self) -> &[Option<Move>; 3] {
         &self.best_moves[0]
     }
+
+    /// Retrieves the depth at which the engine is currently conducting a search
+    /// or the depth at which the engine has conducted a search if the engine is idle
+    pub fn get_current_depth(&self) -> u32 {
+        self.depth
+    }
     
     /// Calls search algorithm to find the best possible moves in the current situation.
     /// Searches up to the given depth.

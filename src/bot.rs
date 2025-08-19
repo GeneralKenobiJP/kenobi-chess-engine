@@ -63,6 +63,8 @@ impl Bot<MainEvaluator> {
             "quit" => return None,
             "player" => { let list = self.move_list.lock().unwrap();
                 ( list.get_board().active_player as u32).to_string() }
+            "depth" => { let engine_binding = self.engine.lock().unwrap();
+                engine_binding.get_current_depth().to_string() }
             _ => String::from("Unexpected command. This command might be unsupported by the current version of the engine or by the UCI standard."),
         };
 
