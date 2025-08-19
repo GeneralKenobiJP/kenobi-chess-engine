@@ -191,6 +191,7 @@ impl<T: Evaluator> Engine<T> {
             let mut idx = 0;
             while (value <= alpha || value >= beta) && idx < ASPIRATION_LIMIT {
                 value = self.search_alpha_beta_prunning(move_list, current_depth, 2 * alpha, 2 * beta);
+                idx += 1;
             }
 
             // Abandon the aspiration window
