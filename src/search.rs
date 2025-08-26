@@ -8,19 +8,23 @@ use std::cmp::max;
 use std::sync::atomic::{AtomicBool, Ordering};
 use num_traits::real::Real;
 use crate::board::Board;
-use crate::evaluation::{DRAW, Evaluator, MainEvaluator};
+use crate::evaluation::{compute_game_phase_factor, DRAW, Evaluator, MainEvaluator};
 use crate::move_generator::{MAX_MOVES_IN_POSITION, Move, MoveList};
 use crate::evaluation::{POSITIVE_INFINITY, NEGATIVE_INFINITY};
 use crate::transposition_table::{RepetitionTable, Transposition, TranspositionTable};
-use crate::transposition_table::NodeType::{ALPHA, BETA, EXACT};
+use crate::transposition_table::NodeType::{ALPHA, BETA, EXACT, NOISY_ONLY};
 
 const KILLER_MOVES_CAPACITY: usize = 1024;
-const DEPTH_LIMIT: usize = 128;
+const DEPTH_LIMIT: usize = 1024;
 const ASPIRATION_MARGIN: i32 = 50;
 const ASPIRATION_LIMIT: usize = 2;
 const ASPIRATION_START_DEPTH: u32 = 3;
 const LMR_DEPTH_LIMIT: u32 = 3;
 const LMR_MOVE_NUMBER_LIMIT: usize = 3;
+const NULL_MOVE_PRUNING_DEPTH_LIMIT: u32 = 4;
+const NULL_MOVE_REDUCTION: u32 = 3;
+const NULL_MOVE_DEPTH_SCALING_FACTOR: u32 = 4;
+const NULL_MOVE_PHASE_LIMIT: i32 = 20;
 
 static STOP_FLAG: AtomicBool = AtomicBool::new(false);
 
@@ -171,7 +175,17 @@ impl<T: Evaluator> Engine<T> {
     /// The aspiration window is turned off before the ASPIRATION_START_DEPTH.
     // #[inline(never)]
     pub fn search(&mut self, move_list: &mut MoveList, depth: u32) -> i32 {
-        self.current_ply = move_list.get_board().plies;
+        let board = move_list.get_board();
+        let transposition_entry = self.transposition_table.get_from_zobrist(board.zobrist);
+
+        // Check if we have a proper entry in the transposition table
+        if let Some(transposition) = transposition_entry {
+        if transposition.depth >= depth && transposition.node_type == EXACT {
+            return transposition.value;
+        }
+}
+
+        self.current_ply = board.plies;
 
         // Clear best moves (and evaluations) that were used up in the previous search
         for i in 0..self.max_depth as usize {
@@ -226,12 +240,12 @@ impl<T: Evaluator> Engine<T> {
     /// do not look promising, and therefore we search them only with a reduced depth to limit computation.
     /// If the search fails high, however, we retry the search with the full ab window and full depth.
     ///
-    /// The formula used is: R = 0.5 + log2(depth)^1.3 * log2(move_number).
+    /// The formula used is: R = 0.5 + 0.2 * log2(depth)^1.3 * log2(move_number).
     /// All logarithms operate on integers exclusively to accelerate computation.
     ///
     /// Should be called after checking for depth and move number constraints.
     fn apply_late_move_reduction(depth: u32, move_number: usize) -> u32 {
-        (depth - 1).saturating_sub((0.5 + ((depth.ilog2() as f32).powf(1.3) * move_number.ilog2() as f32)) as u32)
+        (depth - 1).saturating_sub((0.5 + ((depth.ilog2() as f32).powf(1.3) * move_number.ilog2() as f32 * 0.2)) as u32)
     }
 
     /// Calls search algorithm to find the best possible moves in the current situation.
@@ -250,6 +264,15 @@ impl<T: Evaluator> Engine<T> {
     /// Calls quiescence search if depth is zero
     /// Alpha - minimum score the current player is assured of (we found a move of at least this value earlier at this depth)
     /// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
+    ///
+    /// Implements null move pruning - in an unchecked non-(pawn-endgame) situation,
+    /// we perform a null move, under an assumption that in almost all situations doing
+    /// something is more beneficial than doing nothing, to observe the conservative
+    /// estimate of the opponent's position - if this search causes a beta cutoff, we return
+    /// otherwise - we retry with a normal search.
+    ///
+    /// Implements late move reduction - the later the move is in the heuristically ordered list
+    /// of moves, the lesser the depth of search at this node.
     // #[inline(never)]
     fn search_alpha_beta_prunning(&mut self, move_list: &mut MoveList, depth: u32, mut alpha: i32, beta: i32) -> i32 {
         let zobrist = move_list.get_board().zobrist;
@@ -262,6 +285,7 @@ impl<T: Evaluator> Engine<T> {
         let original_alpha=  alpha;
 
         let transposition_entry = self.transposition_table.get_from_zobrist(zobrist);
+        let mut skip_null = false;
 
         // Check if we have a proper entry in the transposition table
         if let Some(transposition) = transposition_entry {
@@ -270,6 +294,10 @@ impl<T: Evaluator> Engine<T> {
                 if transposition.node_type == ALPHA && transposition.value <= alpha { self.repetition_table.unvisit_position(zobrist); return transposition.value; } // Our alpha cut-off is even bigger than it was for the put operation
                 if /*transposition.node_type == BETA*/ transposition.value >= beta { self.repetition_table.unvisit_position(zobrist); return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
             }
+            else {
+                // We do not want to perform null move pruning on an EXACT or BETA node
+                if transposition.node_type == EXACT || transposition.node_type == BETA { skip_null = true; }
+            }
         }
 
         if depth == 0 {
@@ -277,21 +305,54 @@ impl<T: Evaluator> Engine<T> {
             return self.quiescence_search(move_list, -beta, -alpha);
         }
 
+        // Index for the best moves buffer.
+        // remaining depth = total depth of search -> buffer_index = 0
+        // remaining depth = total depth of search - 1 -> buffer_index = 1
+        // (This is not entirely a true description due to lmr and null move pruning,
+        // but serves as a good intuition)
+        let buffer_index = (move_list.get_board().plies - self.current_ply) as usize;
+
+        // Null move pruning
+        // The assumption is that usually doing anything is better than (hypothetically) doing nothing,
+        // so a null move provides a conservative lower bound estimate on our position.
+        // This serves as a way to limit the computation needed -
+        // if the opponent cannot beat beta even with us sitting idle,
+        // then this position cannot fail-high, i.e. opponent will choose a different play
+        // that will lead to a different position, therefore examination of this node is unnecessary.
+        //
+        // Since this is an estimate anyway, we do not need to perform full-depth search,
+        // instead we reduce depth by NULL_MOVE_REDUCTION.
+        //
+        // Used only if not in check and the chance for a zugzwang position is minimal,
+        // i.e. there is some number of pieces left on the board, ideally stronger than pawns,
+        // as otherwise the null move observation may not necessarily hold true.
+        // (Zugzwang is a situation, where we are forced to make an unfavourable move, whereas
+        // waiting idly would be beneficial)
+        let board = move_list.get_board();
+        if !skip_null && depth >= NULL_MOVE_PRUNING_DEPTH_LIMIT && beta < POSITIVE_INFINITY && !move_list.is_in_check() &&
+            !board.is_pawn_and_king_endgame() && compute_game_phase_factor(&board.piece_counter) >= NULL_MOVE_PHASE_LIMIT {
+            let reduced_depth = depth.saturating_sub(1 + NULL_MOVE_REDUCTION + depth / NULL_MOVE_DEPTH_SCALING_FACTOR);
+
+            move_list.make_null_move();
+            let value = -self.search_alpha_beta_prunning(move_list, reduced_depth, -beta, -beta + 1);
+            move_list.unmake_null_move();
+
+            if value >= beta {
+                self.repetition_table.unvisit_position(zobrist);
+                self.transposition_table.put_transposition_with_validation(&Transposition::from_zobrist(zobrist, reduced_depth, value, &self.best_moves[buffer_index], BETA));
+                return beta;
+            }
+        }
+
         move_list.generate_moves();
         self.order_moves(move_list);
-
-        // Index for the best moves buffer.
-        // self.depth - target depth that we want to reach with our current search
-        // depth - depth left to search
-        // When we start, we have depth = self.depth, so we fill in the first buffer space.
-        // When we end, we have depth = 1, so we fill the buffer space indexed self.depth - 1
-        let buffer_index = (self.depth - depth) as usize;
 
         // Efficient copying of move list
         self.moves_buffer[buffer_index].clear();
         self.moves_buffer[buffer_index].extend_from_slice(&move_list.get_moves());
 
         let mut cutoff_move = Move::empty();
+        let mut used_depth = depth;
 
         for i in 0..self.moves_buffer[buffer_index].len()
         {
@@ -309,9 +370,11 @@ impl<T: Evaluator> Engine<T> {
                     let move_evaluation = -self.search_alpha_beta_prunning(move_list, lmr_depth, -alpha-1, -alpha);
                     if move_evaluation > alpha {
                         // LMR failed high - apply full window instead
+                        used_depth = depth;
                         -self.search_alpha_beta_prunning(move_list, depth - 1, -beta, -alpha)
                     }
                     else {
+                        used_depth = lmr_depth + 1;
                         move_evaluation
                     }
                 };
@@ -337,7 +400,7 @@ impl<T: Evaluator> Engine<T> {
         // update the transposition table
         let node_type = if self.best_moves_evaluation[buffer_index][0] <= original_alpha { ALPHA }
             else if self.best_moves_evaluation[buffer_index][0] >= beta { self.store_killer_move(&cutoff_move, move_list.get_board().plies as usize); BETA } else { EXACT };
-        self.transposition_table.put_transposition(&Transposition::from_zobrist(zobrist, depth, self.best_moves_evaluation[buffer_index][0], &self.best_moves[buffer_index], node_type));
+        self.transposition_table.put_transposition_with_validation(&Transposition::from_zobrist(zobrist, used_depth, self.best_moves_evaluation[buffer_index][0], &self.best_moves[buffer_index], node_type));
 
         self.repetition_table.unvisit_position(zobrist);
 
@@ -415,7 +478,6 @@ impl<T: Evaluator> Engine<T> {
         let original_alpha = alpha;
 
         let transposition_entry = self.transposition_table.get_from_zobrist(zobrist);
-
         // Check if we have a proper entry in the transposition table
         if let Some(transposition) = transposition_entry {
             if transposition.node_type == EXACT { self.repetition_table.unvisit_position(zobrist); return transposition.value; }
@@ -466,8 +528,8 @@ impl<T: Evaluator> Engine<T> {
         }
 
         // update the transposition table
-        let node_type = if self.best_moves_evaluation[buffer_index][0] <= original_alpha { ALPHA } else if self.best_moves_evaluation[buffer_index][0] >= beta { BETA } else { EXACT };
-        self.transposition_table.put_transposition(&Transposition::from_zobrist(zobrist, 0, self.best_moves_evaluation[buffer_index][0], &self.best_moves[buffer_index], node_type));
+        let node_type = if self.best_moves_evaluation[buffer_index][0] <= original_alpha { ALPHA } else if self.best_moves_evaluation[buffer_index][0] >= beta { BETA } else { NOISY_ONLY };
+        self.transposition_table.put_transposition_with_validation(&Transposition::from_zobrist(zobrist, 0, self.best_moves_evaluation[buffer_index][0], &self.best_moves[buffer_index], node_type));
 
         self.repetition_table.unvisit_position(zobrist);
 

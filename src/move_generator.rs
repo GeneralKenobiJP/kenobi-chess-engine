@@ -223,6 +223,43 @@ impl MoveList {
             priority_b.cmp(priority_a)  // Sort in descending order (higher priority first)
         });
     }
+
+    /// Makes a null move - does not move any piece, but advances time and switches player instead.
+    /// Used for e.g. null move pruning - acting on assumption that any move is better than
+    /// no move and therefore doing no move to obtain a conservative estimate of the opponent's
+    /// position.
+    ///
+    /// Advances ply, takes care of en passant, switches player.
+    pub fn make_null_move(&mut self) {
+        self.board.plies += 1;
+
+        self.en_passant_history.push(self.board.en_passant_possibility);
+
+        if self.board.en_passant_possibility != NO_PASSANT {
+            self.board.zobrist ^= ZOBRIST_TABLE.en_passant[self.board.en_passant_possibility as usize % 8];
+        }
+        self.board.en_passant_possibility = NO_PASSANT;
+
+        self.board.switch_active_player();
+    }
+
+    /// Unmakes a null move - does not move any piece, but retreats in time and switches player instead.
+    /// Used for e.g. null move pruning - acting on assumption that any move is better than
+    /// no move and therefore doing no move to obtain a conservative estimate of the opponent's
+    /// position.
+    ///
+    /// Decreases ply, takes care of en passant, switches player.
+    pub fn unmake_null_move(&mut self) {
+        self.board.plies -= 1;
+
+        self.board.en_passant_possibility = self.en_passant_history.pop().unwrap_or_default();
+
+        if self.board.en_passant_possibility != NO_PASSANT {
+            self.board.zobrist ^= ZOBRIST_TABLE.en_passant[self.board.en_passant_possibility as usize % 8];
+        }
+
+        self.board.switch_active_player();
+    }
     
     /// Makes a move on the board, given a move.
     pub fn make_move(&mut self, piece_move: &Move) {
@@ -232,7 +269,7 @@ impl MoveList {
 
         self.board.plies += 1;
 
-        if self.board.en_passant_possibility != 64 {
+        if self.board.en_passant_possibility != NO_PASSANT {
             self.board.zobrist ^= ZOBRIST_TABLE.en_passant[self.board.en_passant_possibility as usize % 8];
         }
 
@@ -1117,7 +1154,7 @@ impl MoveList {
                     continue;
                 }
 
-                lookup_table[origin as usize] |= 1 << target;
+                lookup_table[origin as usize] |= 1u64 << target;
             }
         }
 
@@ -1191,7 +1228,7 @@ impl MoveList {
 
             // Occupancy combinations
 
-            for combination_mask in 0..(1 << full_mask_vector.len()) {
+            for combination_mask in 0..(1u64 << full_mask_vector.len()) {
                 let raw_key = Self::generate_magic_raw_key(&full_mask_vector, combination_mask);
                 let value = Self::generate_rook_magic_value(raw_key, square);
                 let key = magic_hash_rook(raw_key, square);
@@ -1244,12 +1281,12 @@ impl MoveList {
         let mut square = origin + 1;
 
         while square % 8 != 7 {
-            bitboard |= 1 << square;
+            bitboard |= 1u64 << square;
             if (key >> square) % 2 == 1 { break; }
 
             square += 1;
         }
-        bitboard |= 1 << square;
+        bitboard |= 1u64 << square;
 
         bitboard
     }
@@ -1265,12 +1302,12 @@ impl MoveList {
         let mut square = origin - 1;
 
         while square % 8 != 0 {
-            bitboard |= 1 << square;
+            bitboard |= 1u64 << square;
             if (key >> square) % 2 == 1 { break; }
 
             square -= 1;
         }
-        bitboard |= 1 << square;
+        bitboard |= 1u64 << square;
 
         bitboard
     }
@@ -1286,12 +1323,12 @@ impl MoveList {
         let mut square = origin + 8;
 
         while square / 8 != 7 {
-            bitboard |= 1 << square;
+            bitboard |= 1u64 << square;
             if (key >> square) % 2 == 1 { break; }
 
             square += 8;
         }
-        bitboard |= 1 << square;
+        bitboard |= 1u64 << square;
 
         bitboard
     }
@@ -1307,12 +1344,12 @@ impl MoveList {
         let mut square = origin - 8;
 
         while square / 8 != 0 {
-            bitboard |= 1 << square;
+            bitboard |= 1u64 << square;
             if (key >> square) % 2 == 1 { break; }
 
             square -= 8;
         }
-        bitboard |= 1 << square;
+        bitboard |= 1u64 << square;
 
         bitboard
     }
@@ -1411,7 +1448,7 @@ impl MoveList {
 
             // Occupancy combinations
 
-            for combination_mask in 0..(1 << full_mask_vector.len()) {
+            for combination_mask in 0..(1u64 << full_mask_vector.len()) {
                 let raw_key = Self::generate_magic_raw_key(&full_mask_vector, combination_mask);
                 let value = Self::generate_bishop_magic_value(raw_key, square);
                 let key = magic_hash_bishop(raw_key, square);
@@ -1465,12 +1502,12 @@ impl MoveList {
         let mut square = origin + 9;
 
         while square % 8 != 7 && square / 8 != 7 {
-            bitboard |= 1 << square;
+            bitboard |= 1u64 << square;
             if (key >> square) % 2 == 1 { break; }
 
             square += 9;
         }
-        bitboard |= 1 << square;
+        bitboard |= 1u64 << square;
 
         bitboard
     }
@@ -1486,12 +1523,12 @@ impl MoveList {
         let mut square = origin + 7;
 
         while square % 8 != 0 && square / 8 != 7 {
-            bitboard |= 1 << square;
+            bitboard |= 1u64 << square;
             if (key >> square) % 2 == 1 { break; }
 
             square += 7;
         }
-        bitboard |= 1 << square;
+        bitboard |= 1u64 << square;
 
         bitboard
     }
@@ -1507,12 +1544,12 @@ impl MoveList {
         let mut square = origin - 9;
 
         while square / 8 != 0 && square % 8 != 0 {
-            bitboard |= 1 << square;
+            bitboard |= 1u64 << square;
             if (key >> square) % 2 == 1 { break; }
 
             square -= 9;
         }
-        bitboard |= 1 << square;
+        bitboard |= 1u64 << square;
 
         bitboard
     }

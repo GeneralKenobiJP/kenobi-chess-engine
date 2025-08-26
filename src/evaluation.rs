@@ -330,7 +330,7 @@ fn evaluate_piece_position(tile: u64, piece_index: usize, phase_factor: i32) -> 
 /// Game phase factor is an integer in [0,100],
 /// 0 means endgame, 100 means midgame.
 /// Takes in a pointer to the piece counter array of a Board object.
-fn compute_game_phase_factor(piece_count: &[u8; 12]) -> i32 {
+pub fn compute_game_phase_factor(piece_count: &[u8; 12]) -> i32 {
     let mut factor: i32 = 0;
     for color in 0..2 {
         for piece in 1..6 {

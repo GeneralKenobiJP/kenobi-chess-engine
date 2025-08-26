@@ -7,7 +7,7 @@
 
 use num_traits::FromPrimitive;
 use scanner_rust::ScannerStr;
-
+use crate::evaluation::{NEGATIVE_INFINITY, POSITIVE_INFINITY};
 use crate::piece::Piece;
 use crate::piece::Colour;
 use crate::piece::Colour::{BLACK, WHITE};
@@ -264,6 +264,16 @@ impl Board {
         }
 
         None
+    }
+
+    /// Outputs whether pawns and kings are the only pieces left in the game.
+    pub fn is_pawn_and_king_endgame(&self) -> bool {
+        for piece in 2..6 {
+            if self.piece_counter[piece] != 0 { return false; }
+            if self.piece_counter[piece + 6] != 0 { return false; }
+        }
+
+        return true;
     }
 }
 
