@@ -7,7 +7,7 @@
 
 use num_traits::FromPrimitive;
 use scanner_rust::ScannerStr;
-
+use crate::evaluation::{NEGATIVE_INFINITY, POSITIVE_INFINITY};
 use crate::piece::Piece;
 use crate::piece::Colour;
 use crate::piece::Colour::{BLACK, WHITE};
@@ -101,7 +101,7 @@ impl Board {
     ///     - colour - piece colour
     ///     - tile - tile number (u32)
     pub fn put_piece(&mut self, piece: Piece, colour: Colour, tile: u32) {
-        let bit = 1 << tile;
+        let bit = 1u64 << tile;
         self.main_bitboard |= bit;
         self.empty_bitboard ^= bit;
         self.colour_bitboards[colour as usize] |= bit;
@@ -242,7 +242,7 @@ impl Board {
     /// Returns an option of a Piece enum.
     /// If the square is empty, it returns None.
     pub fn get_piece_from_square(&self, square: u8) -> Option<Piece> {
-        let tile = 1 << square;
+        let tile = 1u64 << square;
         for index in 0..12 {
             if self.piece_bitboards[index] & tile != 0 {
                 return Option::from(FromPrimitive::from_usize(index % 6));
@@ -256,7 +256,7 @@ impl Board {
     /// Returns an option of a Piece enum.
     /// If the square is empty or occupied by a piece of the other player, it returns None.
     pub fn get_piece_from_square_by_player(&self, square: u8, player: usize) -> Option<Piece> {
-        let tile = 1 << square;
+        let tile = 1u64 << square;
         for index in 6* player..6* player + 6 {
             if self.piece_bitboards[index] & tile != 0 {
                 return Option::from(FromPrimitive::from_usize(index % 6));
@@ -264,6 +264,16 @@ impl Board {
         }
 
         None
+    }
+
+    /// Outputs whether pawns and kings are the only pieces left in the game.
+    pub fn is_pawn_and_king_endgame(&self) -> bool {
+        for piece in 2..6 {
+            if self.piece_counter[piece] != 0 { return false; }
+            if self.piece_counter[piece + 6] != 0 { return false; }
+        }
+
+        return true;
     }
 }
 

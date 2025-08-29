@@ -4,26 +4,44 @@
 
 mod ordering;
 
+use std::cmp::max;
 use std::sync::atomic::{AtomicBool, Ordering};
+use num_traits::real::Real;
 use crate::board::Board;
-use crate::evaluation::{DRAW, Evaluator, MainEvaluator};
-use crate::move_generator::{Move, MoveList};
+use crate::evaluation::{compute_game_phase_factor, DRAW, Evaluator, MainEvaluator, PIECE_WORTH};
+use crate::move_generator::{MAX_MOVES_IN_POSITION, Move, MoveList};
 use crate::evaluation::{POSITIVE_INFINITY, NEGATIVE_INFINITY};
 use crate::transposition_table::{RepetitionTable, Transposition, TranspositionTable};
-use crate::transposition_table::NodeType::{ALPHA, BETA, EXACT};
+use crate::transposition_table::NodeType::{ALPHA, BETA, EXACT, NOISY_ONLY};
 
 const KILLER_MOVES_CAPACITY: usize = 1024;
+const DEPTH_LIMIT: usize = 1024;
+const ASPIRATION_MARGIN: i32 = 50;
+const ASPIRATION_LIMIT: usize = 2;
+const ASPIRATION_START_DEPTH: u32 = 3;
+const LMR_DEPTH_LIMIT: u32 = 3;
+const LMR_MOVE_NUMBER_LIMIT: usize = 3;
+const NULL_MOVE_PRUNING_DEPTH_LIMIT: u32 = 4;
+const NULL_MOVE_REDUCTION: u32 = 3;
+const NULL_MOVE_DEPTH_SCALING_FACTOR: u32 = 4;
+const NULL_MOVE_PHASE_LIMIT: i32 = 20;
+const DELTA_MARGIN: i32 = 200;
+const DELTA_PRUNING_PHASE_LIMIT: i32 = 20;
 
 static STOP_FLAG: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Engine<T: Evaluator = MainEvaluator> {
     evaluator: T,
-    transposition_table: TranspositionTable,
+    pub transposition_table: TranspositionTable,
     repetition_table: RepetitionTable,
     killer_moves: [[Option<Move>; 2]; KILLER_MOVES_CAPACITY],
     depth: u32,
-    best_moves: [Option<Move>; 3]
+    max_depth: u32,
+    current_ply: u32,
+    moves_buffer: [Vec<Move>; DEPTH_LIMIT],
+    best_moves: [[Option<Move>; 3]; DEPTH_LIMIT],
+    best_moves_evaluation: [[i32; 3]; DEPTH_LIMIT]
 }
 
 impl Engine<MainEvaluator> {
@@ -35,7 +53,11 @@ impl Engine<MainEvaluator> {
             repetition_table: RepetitionTable::new(),
             killer_moves: [[None; 2]; KILLER_MOVES_CAPACITY],
             depth: 0,
-            best_moves: [None; 3]
+            max_depth: 0,
+            current_ply: 0,
+            moves_buffer: core::array::from_fn(|_i| Vec::with_capacity(MAX_MOVES_IN_POSITION)),
+            best_moves: [[None; 3]; DEPTH_LIMIT],
+            best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT]
         }
     }
 
@@ -46,7 +68,11 @@ impl Engine<MainEvaluator> {
             repetition_table: RepetitionTable::new(),
             killer_moves: [[None; 2]; KILLER_MOVES_CAPACITY],
             depth: 0,
-            best_moves: [None; 3]
+            max_depth: 0,
+            current_ply: 0,
+            moves_buffer: core::array::from_fn(|_i| Vec::with_capacity(MAX_MOVES_IN_POSITION)),
+            best_moves: [[None; 3]; DEPTH_LIMIT],
+            best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT]
         }
     }
 }
@@ -65,27 +91,6 @@ impl Engine {
     pub fn get_stop_flag() -> bool {
         STOP_FLAG.load(Ordering::SeqCst)
     }
-
-    /// Given a move and its evaluation, insert into a given array of best moves and array of best moves evaluation at a proper position
-    // #[inline(never)]
-    fn insert_into_best_moves(best_moves: &mut [Option<Move>; 3], value: &mut i32, best_moves_evaluation: &mut [i32; 2], piece_move: Move, move_evaluation: i32) {
-        if move_evaluation > *value {
-            best_moves_evaluation[1] = best_moves_evaluation[0];
-            best_moves_evaluation[0] = *value;
-            *value = move_evaluation;
-            best_moves[2] = best_moves[1];
-            best_moves[1] = best_moves[0];
-            best_moves[0] = Option::from(piece_move);
-        } else if move_evaluation > best_moves_evaluation[0] {
-            best_moves_evaluation[1] = best_moves_evaluation[0];
-            best_moves_evaluation[0] = move_evaluation;
-            best_moves[2] = best_moves[1];
-            best_moves[1] = Option::from(piece_move);
-        } else if move_evaluation > best_moves_evaluation[1] {
-            best_moves_evaluation[1] = move_evaluation;
-            best_moves[2] = Option::from(piece_move);
-        }
-    }
 }
 
 impl<T: Evaluator> Engine<T> {
@@ -97,7 +102,11 @@ impl<T: Evaluator> Engine<T> {
             repetition_table: RepetitionTable::new(),
             killer_moves: [[None; 2]; KILLER_MOVES_CAPACITY],
             depth: 0,
-            best_moves: [None; 3]
+            max_depth: 0,
+            current_ply: 0,
+            moves_buffer: core::array::from_fn(|_i| Vec::with_capacity(MAX_MOVES_IN_POSITION)),
+            best_moves: [[None; 3]; DEPTH_LIMIT],
+            best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT]
         }
     }
 
@@ -108,7 +117,32 @@ impl<T: Evaluator> Engine<T> {
             repetition_table: RepetitionTable::new(),
             killer_moves: [[None; 2]; KILLER_MOVES_CAPACITY],
             depth: 0,
-            best_moves: [None; 3]
+            max_depth: 0,
+            current_ply: 0,
+            moves_buffer: core::array::from_fn(|_i| Vec::with_capacity(MAX_MOVES_IN_POSITION)),
+            best_moves: [[None; 3]; DEPTH_LIMIT],
+            best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT]
+        }
+    }
+
+    /// Given a move and its evaluation, insert into a given array of best moves and array of best moves evaluation at a proper position
+    // #[inline(never)]
+    fn insert_into_best_moves(&mut self, piece_move: Move, move_evaluation: i32, depth: usize) {
+        if move_evaluation > self.best_moves_evaluation[depth][0] {
+            self.best_moves_evaluation[depth][2] = self.best_moves_evaluation[depth][1];
+            self.best_moves_evaluation[depth][1] = self.best_moves_evaluation[depth][0];
+            self.best_moves_evaluation[depth][0] = move_evaluation;
+            self.best_moves[depth][2] = self.best_moves[depth][1];
+            self.best_moves[depth][1] = self.best_moves[depth][0];
+            self.best_moves[depth][0] = Option::from(piece_move);
+        } else if move_evaluation > self.best_moves_evaluation[depth][1] {
+            self.best_moves_evaluation[depth][2] = self.best_moves_evaluation[depth][1];
+            self.best_moves_evaluation[depth][1] = move_evaluation;
+            self.best_moves[depth][2] = self.best_moves[depth][1];
+            self.best_moves[depth][1] = Option::from(piece_move);
+        } else if move_evaluation > self.best_moves_evaluation[depth][2] {
+            self.best_moves_evaluation[depth][2] = move_evaluation;
+            self.best_moves[depth][2] = Option::from(piece_move);
         }
     }
 
@@ -119,27 +153,101 @@ impl<T: Evaluator> Engine<T> {
     }
 
     /// Retrieves what the engine thinks the best moves for the most recent board situation is.
-    pub fn get_best_moves(&self) -> &[Option<Move>; 3] {
-        &self.best_moves
+    pub fn get_current_best_moves(&self) -> &[Option<Move>; 3] {
+        &self.best_moves[0]
+    }
+
+    /// Retrieves the depth at which the engine is currently conducting a search
+    /// or the depth at which the engine has conducted a search if the engine is idle
+    pub fn get_current_depth(&self) -> u32 {
+        self.depth
     }
     
     /// Calls search algorithm to find the best possible moves in the current situation.
     /// Searches up to the given depth.
     /// Uses the given move list to generate moves in-place and analyze the board situation.
-    /// Calls the algorithm using alpha-beta prunning and quiescence search
+    /// Calls the algorithm using alpha-beta prunning and quiescence search.
+    ///
+    /// Uses aspiration window to limit the search space.
+    /// Aspiration window works as follows: we act on the assumption that the evaluation at depth x
+    /// should not differ too much from the one at depth x-1, so we take alpha and beta
+    /// close to the former evaluation.
+    /// If the assumption turns out wrong, we retry with the alpha and beta values twice as high.
+    /// We retry up to ASPIRATION_LIMIT times, afterwards - we abandon the window and take infinities.
+    /// The aspiration window is turned off before the ASPIRATION_START_DEPTH.
     // #[inline(never)]
     pub fn search(&mut self, move_list: &mut MoveList, depth: u32) -> i32 {
+        let board = move_list.get_board();
+        let transposition_entry = self.transposition_table.get_from_zobrist(board.zobrist);
+
+        // Check if we have a proper entry in the transposition table
+        if let Some(transposition) = transposition_entry {
+            if transposition.depth >= depth && transposition.node_type == EXACT {
+                return transposition.value;
+            }
+        }
+
+        self.current_ply = board.plies;
+
+        // Clear best moves (and evaluations) that were used up in the previous search
+        for i in 0..self.max_depth as usize {
+            self.best_moves[i] = [None; 3];
+            self.best_moves_evaluation[i] = [NEGATIVE_INFINITY; 3];
+        }
+
+        self.max_depth = depth;
+
         let mut value = 0;
         for current_depth in 1..depth+1 {
-            value = self.search_alpha_beta_prunning(move_list, current_depth, NEGATIVE_INFINITY, POSITIVE_INFINITY);
-            self.best_moves = self.transposition_table.get_from_zobrist(move_list.get_board().zobrist).clone().unwrap().best_moves;
             self.depth = current_depth;
+
+            // Check if we should use an aspiration window
+            let (mut alpha, mut beta) = if current_depth < ASPIRATION_START_DEPTH {
+                (NEGATIVE_INFINITY, POSITIVE_INFINITY)
+            } else {
+                let delta = ASPIRATION_MARGIN;
+                (value - delta, value + delta)
+            };
+
+            value = self.search_alpha_beta_prunning(move_list, current_depth, alpha, beta);
+
+            // Increase the aspiration window
+            let mut idx = 0;
+            while (value <= alpha || value >= beta) && idx < ASPIRATION_LIMIT {
+                value = self.search_alpha_beta_prunning(move_list, current_depth, alpha, beta);
+                alpha = alpha.saturating_mul(2);
+                beta = beta.saturating_mul(2);
+                idx += 1;
+            }
+
+            // Abandon the aspiration window
+            value = if value <= alpha || value >= beta {
+                self.search_alpha_beta_prunning(move_list, current_depth, NEGATIVE_INFINITY, POSITIVE_INFINITY)
+            } else {
+                value
+            };
+
             if STOP_FLAG.load(Ordering::SeqCst) {
                 return value;
             }
         }
 
         value
+    }
+
+    /// Applies late move reduction, given the remaining depth, and the move number (in ordering),
+    /// and outputs the reduced depth.
+    ///
+    /// The rationale is that the later moves in the sorted ordering (so those we deem worse)
+    /// do not look promising, and therefore we search them only with a reduced depth to limit computation.
+    /// If the search fails high, however, we retry the search with the full ab window and full depth.
+    ///
+    /// The formula used is: R = 0.5 + 0.2 * log2(depth)^1.3 * log2(move_number).
+    /// All logarithms operate on integers exclusively to accelerate computation.
+    ///
+    /// Should be called after checking for depth and move number constraints.
+    fn apply_late_move_reduction(depth: u32, move_number: usize) -> u32 {
+        (depth - 1).saturating_sub((0.5 + ((depth.ilog2() as f32).powf(1.3) * move_number.ilog2() as f32 * 0.2)) as u32)
     }
 
     /// Calls search algorithm to find the best possible moves in the current situation.
@@ -158,58 +266,127 @@ impl<T: Evaluator> Engine<T> {
     /// Calls quiescence search if depth is zero
     /// Alpha - minimum score the current player is assured of (we found a move of at least this value earlier at this depth)
     /// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
+    ///
+    /// Implements null move pruning - in an unchecked non-(pawn-endgame) situation,
+    /// we perform a null move, under an assumption that in almost all situations doing
+    /// something is more beneficial than doing nothing, to observe the conservative
+    /// estimate of the opponent's position - if this search causes a beta cutoff, we return
+    /// otherwise - we retry with a normal search.
+    ///
+    /// Implements late move reduction - the later the move is in the heuristically ordered list
+    /// of moves, the lesser the depth of search at this node.
     // #[inline(never)]
     fn search_alpha_beta_prunning(&mut self, move_list: &mut MoveList, depth: u32, mut alpha: i32, beta: i32) -> i32 {
-        if self.repetition_table.visit_position(move_list.get_board().zobrist) {
-            self.repetition_table.unvisit_position(move_list.get_board().zobrist);
+        let zobrist = move_list.get_board().zobrist;
+
+        if self.repetition_table.visit_position(zobrist) {
+            self.repetition_table.unvisit_position(zobrist);
             return DRAW;
         }
 
         let original_alpha=  alpha;
 
-        let transposition_entry = self.transposition_table.get_from_zobrist(move_list.get_board().zobrist);
+        let transposition_entry = self.transposition_table.get_from_zobrist(zobrist);
+        let mut skip_null = false;
 
         // Check if we have a proper entry in the transposition table
         if let Some(transposition) = transposition_entry {
             if transposition.depth >= depth {
-                // println!("Transposition reached: {:?}", transposition);
-                if transposition.node_type == EXACT { self.repetition_table.unvisit_position(move_list.get_board().zobrist); return transposition.value; }
-                if transposition.node_type == ALPHA && transposition.value <= alpha { self.repetition_table.unvisit_position(move_list.get_board().zobrist); return transposition.value; } // Our alpha cut-off is even bigger than it was for the put operation
-                if /*transposition.node_type == BETA*/ transposition.value >= beta { self.repetition_table.unvisit_position(move_list.get_board().zobrist); return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
+                if transposition.node_type == EXACT { self.repetition_table.unvisit_position(zobrist); return transposition.value; }
+                if transposition.node_type == ALPHA && transposition.value <= alpha { self.repetition_table.unvisit_position(zobrist); return transposition.value; } // Our alpha cut-off is even bigger than it was for the put operation
+                if /*transposition.node_type == BETA*/ transposition.value >= beta { self.repetition_table.unvisit_position(zobrist); return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
+            }
+            else {
+                // We do not want to perform null move pruning on an EXACT or BETA node
+                if transposition.node_type == EXACT || transposition.node_type == BETA { skip_null = true; }
             }
         }
 
-        let mut value: i32 = NEGATIVE_INFINITY;
-
         if depth == 0 {
-            self.repetition_table.unvisit_position(move_list.get_board().zobrist);
+            self.repetition_table.unvisit_position(zobrist);
             return self.quiescence_search(move_list, -beta, -alpha);
+        }
+
+        // Index for the best moves buffer.
+        // remaining depth = total depth of search -> buffer_index = 0
+        // remaining depth = total depth of search - 1 -> buffer_index = 1
+        // (This is not entirely a true description due to lmr and null move pruning,
+        // but serves as a good intuition)
+        let buffer_index = (move_list.get_board().plies - self.current_ply) as usize;
+
+        // Null move pruning
+        // The assumption is that usually doing anything is better than (hypothetically) doing nothing,
+        // so a null move provides a conservative lower bound estimate on our position.
+        // This serves as a way to limit the computation needed -
+        // if the opponent cannot beat beta even with us sitting idle,
+        // then this position cannot fail-high, i.e. opponent will choose a different play
+        // that will lead to a different position, therefore examination of this node is unnecessary.
+        //
+        // Since this is an estimate anyway, we do not need to perform full-depth search,
+        // instead we reduce depth by NULL_MOVE_REDUCTION.
+        //
+        // Used only if not in check and the chance for a zugzwang position is minimal,
+        // i.e. there is some number of pieces left on the board, ideally stronger than pawns,
+        // as otherwise the null move observation may not necessarily hold true.
+        // (Zugzwang is a situation, where we are forced to make an unfavourable move, whereas
+        // waiting idly would be beneficial)
+        let board = move_list.get_board();
+        if !skip_null && depth >= NULL_MOVE_PRUNING_DEPTH_LIMIT && beta < POSITIVE_INFINITY && !move_list.is_in_check() &&
+            !board.is_pawn_and_king_endgame() && compute_game_phase_factor(&board.piece_counter) >= NULL_MOVE_PHASE_LIMIT {
+            let reduced_depth = depth.saturating_sub(1 + NULL_MOVE_REDUCTION + depth / NULL_MOVE_DEPTH_SCALING_FACTOR);
+
+            move_list.make_null_move();
+            let value = -self.search_alpha_beta_prunning(move_list, reduced_depth, -beta, -beta + 1);
+            move_list.unmake_null_move();
+
+            if value >= beta {
+                self.repetition_table.unvisit_position(zobrist);
+                self.transposition_table.put_transposition_with_validation(&Transposition::from_zobrist(zobrist, reduced_depth, value, &self.best_moves[buffer_index], BETA));
+                return beta;
+            }
         }
 
         move_list.generate_moves();
         self.order_moves(move_list);
 
-        let moves = move_list.get_moves().clone();
-
-        let mut best_moves: [Option<Move>; 3] = [None; 3];
-        let mut best_moves_evaluation: [i32; 2] = [NEGATIVE_INFINITY; 2]; // we omit the first move evaluation, as this is simply the value variable
+        // Efficient copying of move list
+        self.moves_buffer[buffer_index].clear();
+        self.moves_buffer[buffer_index].extend_from_slice(&move_list.get_moves());
 
         let mut cutoff_move = Move::empty();
+        let mut used_depth = depth;
 
-        for piece_move in moves
+        for i in 0..self.moves_buffer[buffer_index].len()
         {
+            let piece_move = { let current_buffer = &self.moves_buffer[buffer_index];  current_buffer[i]};
+
             move_list.make_move(&piece_move);
             if !move_list.is_opponent_in_check() {
-                let move_evaluation = -self.search_alpha_beta_prunning(move_list, depth - 1, -beta, -alpha);
+
+                // Do we want to apply late move reduction
+                let move_evaluation = if depth < LMR_DEPTH_LIMIT || i < LMR_MOVE_NUMBER_LIMIT {
+                    -self.search_alpha_beta_prunning(move_list, depth - 1, -beta, -alpha)
+                } else {
+                    // Late Move Reduction
+                    let lmr_depth = Self::apply_late_move_reduction(depth, i + 1);
+                    let move_evaluation = -self.search_alpha_beta_prunning(move_list, lmr_depth, -alpha-1, -alpha);
+                    if move_evaluation > alpha {
+                        // LMR failed high - apply full window instead
+                        used_depth = depth;
+                        -self.search_alpha_beta_prunning(move_list, depth - 1, -beta, -alpha)
+                    }
+                    else {
+                        used_depth = lmr_depth + 1;
+                        move_evaluation
+                    }
+                };
 
                 // Update the best moves record
-                Engine::insert_into_best_moves(&mut best_moves, &mut value, &mut best_moves_evaluation, piece_move, move_evaluation);
+                self.insert_into_best_moves(piece_move, move_evaluation, buffer_index);
             }
             move_list.unmake_move(&piece_move);
 
-            alpha = alpha.max(value);
-            // println!("alpha: {}", alpha);
-            // println!("beta: {}", beta);
+            alpha = alpha.max(self.best_moves_evaluation[buffer_index][0]);
             if alpha >= beta { cutoff_move = piece_move; break; }
 
             if STOP_FLAG.load(Ordering::SeqCst) {
@@ -217,19 +394,19 @@ impl<T: Evaluator> Engine<T> {
             }
         }
 
-        if best_moves[0] == None {
-            self.repetition_table.unvisit_position(move_list.get_board().zobrist);
+        if self.best_moves[buffer_index][0] == None {
+            self.repetition_table.unvisit_position(zobrist);
             return if move_list.is_in_check() { NEGATIVE_INFINITY } else { DRAW }
         }
 
         // update the transposition table
-        let node_type = if value <= original_alpha { ALPHA }
-            else if value >= beta { self.store_killer_move(&cutoff_move, (move_list.get_board().plies + self.depth) as usize); BETA } else { EXACT };
-        self.transposition_table.put_transposition(&Transposition::from_zobrist(move_list.get_board().zobrist, depth, value, &best_moves, node_type));
+        let node_type = if self.best_moves_evaluation[buffer_index][0] <= original_alpha { ALPHA }
+            else if self.best_moves_evaluation[buffer_index][0] >= beta { self.store_killer_move(&cutoff_move, move_list.get_board().plies as usize); BETA } else { EXACT };
+        self.transposition_table.put_transposition_with_validation(&Transposition::from_zobrist(zobrist, used_depth, self.best_moves_evaluation[buffer_index][0], &self.best_moves[buffer_index], node_type));
 
-        self.repetition_table.unvisit_position(move_list.get_board().zobrist);
+        self.repetition_table.unvisit_position(zobrist);
 
-        value
+        self.best_moves_evaluation[buffer_index][0]
     }
 
     /// Stores a killer move in the killer moves array
@@ -285,6 +462,38 @@ impl<T: Evaluator> Engine<T> {
         value
     }
 
+    /// Delta pruning checks if it is worth at all to examine this particular node
+    /// during quiescence search.
+    /// The idea is as follows:
+    /// If we are making a capture, and the worth of the captured piece with some safety margin
+    /// will not raise alpha, then evaluating this capture is useless, we prune the node instead.
+    /// For the sake of conservatism, we are not pruning any non-capture noisy moves.
+    ///
+    /// Parameters:
+    ///     - piece_move - the move we are evaluating
+    ///     - board - the board object
+    ///     - alpha - difference between the alpha (lower bound) we are trying to raise and
+    /// the current value of the node
+    ///     - game_phase - the metric of the midgame vs. endgame heuristic. Precomputed for
+    /// the sake of speed. We do NOT want to perform delta pruning in the endgame, as it may
+    /// cause the engine to be blind to some low material endgames.
+    fn delta_pruning(piece_move: &Move, board: &Board, diff: i32, game_phase: i32) -> bool {
+        if diff == NEGATIVE_INFINITY {
+            return false;
+        }
+        if game_phase <= DELTA_PRUNING_PHASE_LIMIT {
+            return false;
+        }
+
+        let target_square = piece_move.target;
+        let target_piece = board.get_piece_from_square_by_player(
+            target_square, board.inactive_player as usize);
+
+        if target_piece.is_none() { return false; }
+
+        return PIECE_WORTH[target_piece.unwrap() as usize - 1] + DELTA_MARGIN <= diff;
+    }
+
     /// Uses alpha-beta prunning to find the best possible move in the search tree.
     /// Searches until it finds a 'quiet' position, where no captures, promotions or checks can be made.
     /// It avoids the horizon effect by not ignoring threats at depth zero.
@@ -293,72 +502,81 @@ impl<T: Evaluator> Engine<T> {
     /// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
     // #[inline(never)]
     fn quiescence_search(&mut self, move_list: &mut MoveList, mut alpha: i32, beta: i32) -> i32 {
-        // println!("Is repetition table empty?: {}", self.repetition_table.is_empty());
-        // println!("Visits to this position before: {}", self.repetition_table.get_repetition(move_list.get_board().zobrist));
-        if self.repetition_table.visit_position(move_list.get_board().zobrist) {
-            // println!("Repetition alert MADAFAKA");
-            self.repetition_table.unvisit_position(move_list.get_board().zobrist);
+        let zobrist = move_list.get_board().zobrist;
+        
+        if self.repetition_table.visit_position(zobrist) {
+            self.repetition_table.unvisit_position(zobrist);
             return DRAW;
         }
 
         let original_alpha = alpha;
 
-        let transposition_entry = self.transposition_table.get_from_zobrist(move_list.get_board().zobrist);
-
+        let transposition_entry = self.transposition_table.get_from_zobrist(zobrist);
         // Check if we have a proper entry in the transposition table
         if let Some(transposition) = transposition_entry {
-            // println!("Quiescence transposition reached: {:?}", transposition);
-            if transposition.node_type == EXACT { self.repetition_table.unvisit_position(move_list.get_board().zobrist); return transposition.value; }
-            if transposition.node_type == ALPHA && transposition.value <= alpha { self.repetition_table.unvisit_position(move_list.get_board().zobrist); return transposition.value; } // Our alpha cut-off is even bigger than it was for the put operation
-            if /*transposition.node_type == BETA*/ transposition.value >= beta { self.repetition_table.unvisit_position(move_list.get_board().zobrist); return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
+            if transposition.node_type == EXACT { self.repetition_table.unvisit_position(zobrist); return transposition.value; }
+            if transposition.node_type == ALPHA && transposition.value <= alpha { self.repetition_table.unvisit_position(zobrist); return transposition.value; } // Our alpha cut-off is even bigger than it was for the put operation
+            if /*transposition.node_type == BETA*/ transposition.value >= beta { self.repetition_table.unvisit_position(zobrist); return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
         }
 
-        let mut value: i32 = NEGATIVE_INFINITY;
-
         move_list.generate_noisy_moves();
-        // println!("Quiescence moves: {:?}", move_list.get_moves());
 
         if move_list.get_moves().len() == 0 {
-            self.repetition_table.unvisit_position(move_list.get_board().zobrist);
+            self.repetition_table.unvisit_position(zobrist);
             return T::evaluate(move_list.get_board());
         }
 
         self.order_moves(move_list);
 
-        let mut best_moves: [Option<Move>; 3] = [None; 3];
-        let mut best_moves_evaluation: [i32; 2] = [NEGATIVE_INFINITY; 2]; // we omit the first move evaluation, as this is simply the value variable
+        // Index for the best moves buffer.
+        // We subtract the difference between the board's ply and the original ply.
+        let buffer_index = (move_list.get_board().plies - self.current_ply) as usize;
+        self.max_depth = max(self.max_depth, buffer_index as u32);
 
-        let moves = move_list.get_moves().clone();
+        // Efficient copying of the move list
+        self.moves_buffer[buffer_index].clear();
+        self.moves_buffer[buffer_index].extend_from_slice(&move_list.get_moves());
 
-        for piece_move in moves
+        // Precompute game phase for the sake of delta pruning
+        let board = move_list.get_board();
+        let game_phase = compute_game_phase_factor(&board.piece_counter);
+
+        for i in 0..self.moves_buffer[buffer_index].len()
         {
+            let piece_move = { let current_buffer = &self.moves_buffer[buffer_index];  current_buffer[i]};
+
+            if Self::delta_pruning(&piece_move, move_list.get_board(),
+                                   alpha.saturating_sub(self.best_moves_evaluation[buffer_index][0]), game_phase) {
+                continue;
+            }
+
             move_list.make_move(&piece_move);
             if !move_list.is_opponent_in_check() {
                 let move_evaluation = -self.quiescence_search(move_list, -beta, -alpha);
 
-                Engine::insert_into_best_moves(&mut best_moves, &mut value, &mut best_moves_evaluation, piece_move, move_evaluation);
+                self.insert_into_best_moves(piece_move, move_evaluation, buffer_index);
             }
             move_list.unmake_move(&piece_move);
 
-            alpha = alpha.max(value);
+            alpha = alpha.max(self.best_moves_evaluation[buffer_index][0]);
             if alpha >= beta { break; }
             if STOP_FLAG.load(Ordering::SeqCst) {
                 break;
             }
         }
 
-        if best_moves[0] == None {
-            self.repetition_table.unvisit_position(move_list.get_board().zobrist);
+        if self.best_moves[buffer_index][0] == None {
+            self.repetition_table.unvisit_position(zobrist);
             return if move_list.is_in_check() { NEGATIVE_INFINITY } else { DRAW }
         }
 
         // update the transposition table
-        let node_type = if value <= original_alpha { ALPHA } else if value >= beta { BETA } else { EXACT };
-        self.transposition_table.put_transposition(&Transposition::from_zobrist(move_list.get_board().zobrist, 0, value, &best_moves, node_type));
+        let node_type = if self.best_moves_evaluation[buffer_index][0] <= original_alpha { ALPHA } else if self.best_moves_evaluation[buffer_index][0] >= beta { BETA } else { NOISY_ONLY };
+        self.transposition_table.put_transposition_with_validation(&Transposition::from_zobrist(zobrist, 0, self.best_moves_evaluation[buffer_index][0], &self.best_moves[buffer_index], node_type));
 
-        self.repetition_table.unvisit_position(move_list.get_board().zobrist);
+        self.repetition_table.unvisit_position(zobrist);
 
-        value
+        self.best_moves_evaluation[buffer_index][0]
     }
 
     /// Finds the best possible move in the search tree.
@@ -395,7 +613,7 @@ impl<T: Evaluator> Engine<T> {
 mod tests {
     use std::time::Instant;
     use crate::board::START_POSITION;
-    use crate::piece::Piece::{KING, PAWN, QUEEN, ROOK};
+    use crate::piece::Piece::{KING, KNIGHT, PAWN, QUEEN, ROOK};
     use super::*;
     use crate::evaluation::MockMaterialEvaluator;
 
@@ -476,6 +694,7 @@ mod tests {
         let mut move_list = MoveList::from_board(board);
 
         let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
+        engine.depth = 1;
 
         assert_eq!(DRAW, engine.search_alpha_beta_prunning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY));
         assert!(engine.repetition_table.is_empty());
@@ -490,6 +709,7 @@ mod tests {
         let mut move_list = MoveList::from_board(board);
 
         let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
+        engine.depth = 1;
 
         assert_eq!(NEGATIVE_INFINITY, engine.search_alpha_beta_prunning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY));
         assert!(engine.repetition_table.is_empty());
@@ -500,6 +720,7 @@ mod tests {
         let mut move_list = MoveList::from_board(board);
 
         let mut engine = Engine::new();
+        engine.depth = 1;
 
         assert_eq!(POSITIVE_INFINITY, engine.search_alpha_beta_prunning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY));
         assert!(engine.repetition_table.is_empty());
@@ -553,18 +774,19 @@ mod tests {
 
     #[test]
     fn check_insert_into_best_moves_best_move() {
-        let mut best_moves = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
-        let mut value = 0;
-        let mut best_moves_evaluation= [-100, -300];
-
         let piece_move = Move::new(0, 1, 0, QUEEN);
         let evaluation = 200;
 
-        Engine::insert_into_best_moves(&mut best_moves, &mut value, &mut best_moves_evaluation, piece_move, evaluation);
+        let mut engine = Engine::with_capacity(1);
+        engine.best_moves[0] = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
+        engine.best_moves_evaluation[0] = [0,-100,-300];
 
-        assert_eq!([Option::from(piece_move), Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN))], best_moves);
-        assert_eq!(200, value);
-        assert_eq!([0, -100], best_moves_evaluation);
+        engine.insert_into_best_moves(piece_move, evaluation, 0);
+
+        assert_eq!([Option::from(piece_move), Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN))], engine.best_moves[0]);
+        assert_eq!([None, None, None], engine.best_moves[1]);
+        assert_eq!([200, 0, -100], engine.best_moves_evaluation[0]);
+        assert_eq!([NEGATIVE_INFINITY, NEGATIVE_INFINITY, NEGATIVE_INFINITY], engine.best_moves_evaluation[1]);
     }
 
     #[test]
@@ -575,6 +797,7 @@ mod tests {
         let mut move_list = MoveList::from_board(board);
 
         let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
+        engine.depth = 0;
 
         assert_ne!(DRAW, engine.search_alpha_beta_prunning(&mut move_list, 0, NEGATIVE_INFINITY, POSITIVE_INFINITY));
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
@@ -637,50 +860,112 @@ mod tests {
 
     #[test]
     fn check_insert_into_best_moves_second_move() {
-        let mut best_moves = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
-        let mut value = 500;
-        let mut best_moves_evaluation= [0, -300];
-
         let piece_move = Move::new(0, 1, 0, QUEEN);
         let evaluation = 100;
 
-        Engine::insert_into_best_moves(&mut best_moves, &mut value, &mut best_moves_evaluation, piece_move, evaluation);
+        let mut engine = Engine::with_capacity(1);
+        engine.best_moves[0] = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
+        engine.best_moves_evaluation[0] = [500, 0,-300];
 
-        assert_eq!([Option::from(Move::new(63,62,0,KING)), Option::from(piece_move), Option::from(Move::new(0,8,0, PAWN))], best_moves);
-        assert_eq!(500, value);
-        assert_eq!([100, 0], best_moves_evaluation);
+        engine.insert_into_best_moves(piece_move, evaluation, 0);
+
+        assert_eq!([Option::from(Move::new(63,62,0,KING)), Option::from(piece_move), Option::from(Move::new(0,8,0, PAWN))], engine.best_moves[0]);
+        assert_eq!([None, None, None], engine.best_moves[1]);
+        assert_eq!([500, 100, 0], engine.best_moves_evaluation[0]);
+        assert_eq!([NEGATIVE_INFINITY, NEGATIVE_INFINITY, NEGATIVE_INFINITY], engine.best_moves_evaluation[1]);
     }
 
     #[test]
     fn check_insert_into_best_moves_third_move() {
-        let mut best_moves = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
-        let mut value = 500;
-        let mut best_moves_evaluation= [0, -300];
-
         let piece_move = Move::new(0, 1, 0, QUEEN);
         let evaluation = -100;
 
-        Engine::insert_into_best_moves(&mut best_moves, &mut value, &mut best_moves_evaluation, piece_move, evaluation);
+        let mut engine = Engine::with_capacity(1);
+        engine.best_moves[0] = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
+        engine.best_moves_evaluation[0] = [500, 0,-300];
 
-        assert_eq!([Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(piece_move)], best_moves);
-        assert_eq!(500, value);
-        assert_eq!([0, -100], best_moves_evaluation);
+        engine.insert_into_best_moves(piece_move, evaluation, 0);
+
+        assert_eq!([Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(piece_move)], engine.best_moves[0]);
+        assert_eq!([None, None, None], engine.best_moves[1]);
+        assert_eq!([500, 0, -100], engine.best_moves_evaluation[0]);
+        assert_eq!([NEGATIVE_INFINITY, NEGATIVE_INFINITY, NEGATIVE_INFINITY], engine.best_moves_evaluation[1]);
     }
 
     #[test]
     fn check_insert_into_best_moves_weak_move() {
-        let mut best_moves = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
-        let mut value = 500;
-        let mut best_moves_evaluation= [0, -300];
-
         let piece_move = Move::new(0, 1, 0, QUEEN);
         let evaluation = -600;
 
-        Engine::insert_into_best_moves(&mut best_moves, &mut value, &mut best_moves_evaluation, piece_move, evaluation);
+        let mut engine = Engine::with_capacity(1);
+        engine.best_moves[0] = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
+        engine.best_moves_evaluation[0] = [500, 0,-300];
 
-        assert_eq!([Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())], best_moves);
-        assert_eq!(500, value);
-        assert_eq!([0, -300], best_moves_evaluation);
+        engine.insert_into_best_moves(piece_move, evaluation, 0);
+
+        assert_eq!([Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())], engine.best_moves[0]);
+        assert_eq!([None, None, None], engine.best_moves[1]);
+        assert_eq!([500, 0, -300], engine.best_moves_evaluation[0]);
+        assert_eq!([NEGATIVE_INFINITY, NEGATIVE_INFINITY, NEGATIVE_INFINITY], engine.best_moves_evaluation[1]);
+    }
+
+    #[test]
+    fn check_insert_into_best_moves_deep() {
+        let piece_move = Move::new(0, 1, 0, QUEEN);
+        let evaluation = 100;
+
+        let mut engine = Engine::with_capacity(1);
+        engine.best_moves[0] = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
+        engine.best_moves[6] = [Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())];
+        engine.best_moves_evaluation[0] = [500, 0,-300];
+        engine.best_moves_evaluation[6] = [500, 0,-300];
+
+        engine.insert_into_best_moves(piece_move, evaluation, 6);
+
+        assert_eq!([Option::from(Move::new(63,62,0,KING)), Option::from(piece_move), Option::from(Move::new(0,8,0, PAWN))], engine.best_moves[6]);
+        assert_eq!([Option::from(Move::new(63,62,0,KING)), Option::from(Move::new(0,8,0, PAWN)), Option::from(Move::empty())], engine.best_moves[0]);
+        assert_eq!([None, None, None], engine.best_moves[1]);
+        assert_eq!([500, 100, 0], engine.best_moves_evaluation[6]);
+        assert_eq!([500, 0, -300], engine.best_moves_evaluation[0]);
+        assert_eq!([NEGATIVE_INFINITY, NEGATIVE_INFINITY, NEGATIVE_INFINITY], engine.best_moves_evaluation[1]);
+    }
+
+    #[test]
+    fn check_tt_stores_own_copy_of_move() {
+        let mut engine = Engine::new();
+        let mut ml = MoveList::from_fen(START_POSITION);
+
+        // generate a fake best move into engine.best_moves[0]
+        engine.best_moves[0][0] = Some(Move::new(48, 40, 0, PAWN));
+        let current_board = ml.get_board().clone();
+        let zob = current_board.zobrist;
+
+        // store transposition using this array
+        engine.transposition_table.put_transposition(&Transposition::from_zobrist(zob, 1, 0, &engine.best_moves[0], EXACT));
+
+        // mutate engine.best_moves[0][0]
+        engine.best_moves[0][0] = Some(Move::new(1, 18, 0, KNIGHT));
+
+        // get from TT
+        if let Some(t) = engine.transposition_table.get_from_zobrist(zob) {
+            assert_eq!(t.best_moves[0], Some(Move::new(48, 40, 0, PAWN)), "TT did not preserve its copy of the move");
+        } else {
+            panic!("TT entry missing");
+        }
+    }
+
+    #[test]
+    fn check_sequence() {
+        let mut engine = Engine::new();
+        let mut move_list = MoveList::from_fen(START_POSITION);
+
+        engine.search(&mut move_list, 7);
+        move_list.make_move(&Move::new(1, 18, 0, KNIGHT));
+        engine.search(&mut move_list, 7);
+        move_list.make_move(&Move::new(48, 40, 0, PAWN));
+        let board = move_list.get_board().clone();
+        engine.search(&mut move_list, 7);
+        assert!(engine.get_best_move(&board).origin < 24);
     }
 
     // #[test]
@@ -776,9 +1061,35 @@ mod tests {
 
         let mut engine = Engine::with_evaluator_and_capacity(MockMaterialEvaluator {}, 1024);
 
+        engine.depth = 3;
+        engine.search_alpha_beta_prunning(&mut move_list, 3, NEGATIVE_INFINITY, POSITIVE_INFINITY);
+        // There are obvious killer moves when we try to move our queen so that it can be captured by a pawn
+        assert!(!engine.killer_moves[1][0].is_none());
+        assert!(!engine.killer_moves[1][1].is_none());
+    }
 
-        engine.search_alpha_beta_prunning(&mut move_list, 2, NEGATIVE_INFINITY, POSITIVE_INFINITY);
-        assert!(!engine.killer_moves[0][0].is_none());
-        assert!(!engine.killer_moves[0][1].is_none());
+    #[test]
+    fn test_delta_pruning() {
+        let mut board = Board::new();
+        let fen = "4k3/8/8/8/8/8/6qp/4K2Q w - - 0 1";
+        board.read_fen(fen);
+
+        let game_phase = 10;
+        let piece_move = Move::new(0, 8, 0, QUEEN);
+        let diff = 500;
+
+        assert!(!Engine::<MockMaterialEvaluator>::delta_pruning(&piece_move, &board, diff, game_phase));
+
+        let game_phase = 70;
+        assert!(Engine::<MockMaterialEvaluator>::delta_pruning(&piece_move, &board, diff, game_phase));
+
+        let diff = 299;
+        assert!(!Engine::<MockMaterialEvaluator>::delta_pruning(&piece_move, &board, diff, game_phase));
+
+        let piece_move = Move::new(0, 9, 0, QUEEN);
+        assert!(!Engine::<MockMaterialEvaluator>::delta_pruning(&piece_move, &board, diff, game_phase));
+
+        let diff = 1100;
+        assert!(Engine::<MockMaterialEvaluator>::delta_pruning(&piece_move, &board, diff, game_phase));
     }
 }

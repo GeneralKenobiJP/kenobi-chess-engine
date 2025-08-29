@@ -8,7 +8,7 @@ use num_traits::WrappingNeg;
 use crate::board::Board;
 
 // We omit the king
-const PIECE_WORTH: [i32; 5] = [100, 900, 500, 300, 300];
+pub const PIECE_WORTH: [i32; 5] = [100, 900, 500, 300, 300];
 pub const NEGATIVE_INFINITY: i32 = i32::MIN + 1;
 pub const POSITIVE_INFINITY: i32 = i32::MAX;
 pub const DRAW: i32 = 0;
@@ -330,7 +330,7 @@ fn evaluate_piece_position(tile: u64, piece_index: usize, phase_factor: i32) -> 
 /// Game phase factor is an integer in [0,100],
 /// 0 means endgame, 100 means midgame.
 /// Takes in a pointer to the piece counter array of a Board object.
-fn compute_game_phase_factor(piece_count: &[u8; 12]) -> i32 {
+pub fn compute_game_phase_factor(piece_count: &[u8; 12]) -> i32 {
     let mut factor: i32 = 0;
     for color in 0..2 {
         for piece in 1..6 {
@@ -527,17 +527,17 @@ mod tests {
         let phase_factor = compute_game_phase_factor(&board.piece_counter);
         println!("{}", phase_factor);
 
-        let expected = evaluate_piece_position(1 << 1, 6*0 + 5, phase_factor) +
-            evaluate_piece_position(1 << 11, 6*0 + 1, phase_factor) +
-            evaluate_piece_position(1 << 0, 6*0 + 0, phase_factor) +
-            evaluate_piece_position(1 << 7, 6*0 + 3, phase_factor) +
-            evaluate_piece_position(1 << 14, 6*0 + 1, phase_factor) +
-            evaluate_piece_position(1 << 15, 6*0 + 1, phase_factor) -
-            evaluate_piece_position(1 << 12, 6*1 + 1, phase_factor) -
-            evaluate_piece_position(1 << 19, 6*1 + 0, phase_factor) -
-            evaluate_piece_position(1 << 63, 6*1 + 3, phase_factor) -
-            evaluate_piece_position(1 << 55, 6*1 + 1, phase_factor) -
-            evaluate_piece_position(1 << 54, 6*1 + 1, phase_factor);
+        let expected = evaluate_piece_position(1u64 << 1, 6*0 + 5, phase_factor) +
+            evaluate_piece_position(1u64 << 11, 6*0 + 1, phase_factor) +
+            evaluate_piece_position(1u64 << 0, 6*0 + 0, phase_factor) +
+            evaluate_piece_position(1u64 << 7, 6*0 + 3, phase_factor) +
+            evaluate_piece_position(1u64 << 14, 6*0 + 1, phase_factor) +
+            evaluate_piece_position(1u64 << 15, 6*0 + 1, phase_factor) -
+            evaluate_piece_position(1u64 << 12, 6*1 + 1, phase_factor) -
+            evaluate_piece_position(1u64 << 19, 6*1 + 0, phase_factor) -
+            evaluate_piece_position(1u64 << 63, 6*1 + 3, phase_factor) -
+            evaluate_piece_position(1u64 << 55, 6*1 + 1, phase_factor) -
+            evaluate_piece_position(1u64 << 54, 6*1 + 1, phase_factor);
 
         assert_eq!(expected, evaluate_structure(&board, phase_factor));
     }
@@ -559,26 +559,26 @@ mod tests {
 
         let phase_factor = compute_game_phase_factor(&board.piece_counter);
 
-        let expected_structure = -evaluate_piece_position(1 << 63, 6*1 + 3, phase_factor) -
-            evaluate_piece_position(1 << 59, 6*1 + 0, phase_factor) +
-            evaluate_piece_position(1 << 54, 6*0 + 1, phase_factor) -
-            evaluate_piece_position(1 << 53, 6*1 + 3, phase_factor) -
-            evaluate_piece_position(1 << 42, 6*1 + 1, phase_factor) -
-            evaluate_piece_position(1 << 41, 6*1 + 1, phase_factor) -
-            evaluate_piece_position(1 << 36, 6*1 + 1, phase_factor) +
-            evaluate_piece_position(1 << 35, 6*0 + 1, phase_factor) +
-            evaluate_piece_position(1 << 34, 6*0 + 4, phase_factor) +
-            evaluate_piece_position(1 << 33, 6*0 + 1, phase_factor) +
-            evaluate_piece_position(1 << 32, 6*0 + 1, phase_factor) -
-            evaluate_piece_position(1 << 30, 6*1 + 4, phase_factor) +
-            evaluate_piece_position(1 << 28, 6*0 + 1, phase_factor) +
-            evaluate_piece_position(1 << 25, 6*0 + 2, phase_factor) -
-            evaluate_piece_position(1 << 24, 6*1 + 2, phase_factor) +
-            evaluate_piece_position(1 << 21, 6*0 + 3, phase_factor) +
-            evaluate_piece_position(1 << 18, 6*0 + 5, phase_factor) +
-            evaluate_piece_position(1 << 15, 6*0 + 1, phase_factor) +
-            evaluate_piece_position(1 << 7, 6*0 + 3, phase_factor) +
-            evaluate_piece_position(1 << 6, 6*0 + 0, phase_factor);
+        let expected_structure = -evaluate_piece_position(1u64 << 63, 6*1 + 3, phase_factor) -
+            evaluate_piece_position(1u64 << 59, 6*1 + 0, phase_factor) +
+            evaluate_piece_position(1u64 << 54, 6*0 + 1, phase_factor) -
+            evaluate_piece_position(1u64 << 53, 6*1 + 3, phase_factor) -
+            evaluate_piece_position(1u64 << 42, 6*1 + 1, phase_factor) -
+            evaluate_piece_position(1u64 << 41, 6*1 + 1, phase_factor) -
+            evaluate_piece_position(1u64 << 36, 6*1 + 1, phase_factor) +
+            evaluate_piece_position(1u64 << 35, 6*0 + 1, phase_factor) +
+            evaluate_piece_position(1u64 << 34, 6*0 + 4, phase_factor) +
+            evaluate_piece_position(1u64 << 33, 6*0 + 1, phase_factor) +
+            evaluate_piece_position(1u64 << 32, 6*0 + 1, phase_factor) -
+            evaluate_piece_position(1u64 << 30, 6*1 + 4, phase_factor) +
+            evaluate_piece_position(1u64 << 28, 6*0 + 1, phase_factor) +
+            evaluate_piece_position(1u64 << 25, 6*0 + 2, phase_factor) -
+            evaluate_piece_position(1u64 << 24, 6*1 + 2, phase_factor) +
+            evaluate_piece_position(1u64 << 21, 6*0 + 3, phase_factor) +
+            evaluate_piece_position(1u64 << 18, 6*0 + 5, phase_factor) +
+            evaluate_piece_position(1u64 << 15, 6*0 + 1, phase_factor) +
+            evaluate_piece_position(1u64 << 7, 6*0 + 3, phase_factor) +
+            evaluate_piece_position(1u64 << 6, 6*0 + 0, phase_factor);
 
         assert_eq!(600 + expected_structure, MainEvaluator::evaluate(&board));
     }
