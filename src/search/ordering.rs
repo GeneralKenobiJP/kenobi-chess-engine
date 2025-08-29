@@ -114,7 +114,7 @@ impl<T: Evaluator> Engine<T> {
         let board = move_list.get_board();
         for piece_move in move_list.get_moves() {
             // Efficient check for whether the target square is empty or not
-            if board.colour_bitboards[board.inactive_player as usize] & (1 << piece_move.target) == 0 {
+            if board.colour_bitboards[board.inactive_player as usize] & (1u64 << piece_move.target) == 0 {
                 continue;
             }
 
@@ -139,7 +139,7 @@ impl<T: Evaluator> Engine<T> {
         let board = move_list.get_board();
         for piece_move in move_list.get_moves() {
             // Efficient check for whether the target square is empty or not
-            if board.colour_bitboards[board.inactive_player as usize] & (1 << piece_move.target) == 0 {
+            if board.colour_bitboards[board.inactive_player as usize] & (1u64 << piece_move.target) == 0 {
                 continue;
             }
 

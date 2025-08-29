@@ -14,7 +14,7 @@ type OrderTable = HashMap<Move, i32>;
 
 const KNIGHT_SHIFTS: [i8; 8] = [17, 10, -6, -15, -17, -10, 6, 15]; // Beginning on NW, counter-clockwise
 const INITIAL_STACK_CAPACITY: usize = 64; // used by MoveList constructor
-pub const NO_CAPTURE: u16 = 1 << 4;
+pub const NO_CAPTURE: u16 = 1u16 << 4;
 pub const CAPTURE_PIECE_MASK: u16 = 0x00FF;
 pub const CAPTURE_SQUARE_MASK: u16 = 0xFF00;
 pub const NO_PASSANT: u8 = 64;
@@ -273,7 +273,7 @@ impl MoveList {
             self.board.zobrist ^= ZOBRIST_TABLE.en_passant[self.board.en_passant_possibility as usize % 8];
         }
 
-        let target = 1 << piece_move.target;
+        let target = 1u64 << piece_move.target;
         let active_player = self.board.active_player as usize;
         let inactive_player = self.board.inactive_player as usize;
         let piece = piece_move.piece.clone() as usize;
@@ -333,7 +333,7 @@ impl MoveList {
     /// Handles en passant.
     /// Adjusts the board and the zobrist accordingly.
     /// Parameters:
-    ///     - target_tile - 1 << target
+    ///     - target_tile - 1u64 << target
     ///     - inactive_player - index of an IN-active player as usize
     /// Parameters are optimized in a way to allow make_move and unmake_move run as fast as possible.
     fn handle_en_passant(&mut self, target_tile: u64, inactive_player: usize) {
@@ -370,13 +370,13 @@ impl MoveList {
     /// Parameters:
     ///     - origin - index of an origin square
     ///     - target - index of a target square
-    ///     - target_tile - 1 << target
+    ///     - target_tile - 1u64 << target
     ///     - piece - piece type before move as usize
     ///     - final_piece - piece type after move as usize
     ///     - active_player - index of an active player as usize
     /// Parameters are optimized in a way to allow make_move and unmake_move run as fast as possible.
     fn move_piece(&mut self, origin: u8, target: u8, target_tile: u64, piece: usize, final_piece: usize, active_player: usize) {
-        let origin_tile = 1 << origin;
+        let origin_tile = 1u64 << origin;
         self.board.main_bitboard ^= origin_tile;
         self.board.main_bitboard |= target_tile;
         self.board.empty_bitboard = !self.board.main_bitboard;
@@ -395,7 +395,7 @@ impl MoveList {
     /// Checks if a given move is a capture and handles it accordingly. Used by make_move.
     /// Parameters:
     ///     - target - index of a target square
-    ///     - target_tile - 1 << target
+    ///     - target_tile - 1u64 << target
     ///     - inactive_player - index of an IN-active player as usize
     ///     - should_reset_fifty_moves - pointer to a boolean, dictating whether a given move should
     ///         reset a fifty-move rule. Necessary for make_move
@@ -411,6 +411,12 @@ impl MoveList {
                 self.board.zobrist ^= ZOBRIST_TABLE.pieces[index][target as usize];
                 self.capture_history.push(((target as u16) << 8) | index as u16);
                 *should_reset_fifty_moves = true;
+                if self.board.piece_counter[index] == 0 {
+                    println!("index: {}", index);
+                    println!("target: {}", target);
+                    println!("counters: {:?}", self.board.piece_counter);
+                    println!("bitboards: {:?}", self.board.piece_bitboards);
+                }
                 self.board.piece_counter[index] -= 1;
             },
             None => self.capture_history.push(NO_CAPTURE)
@@ -420,7 +426,7 @@ impl MoveList {
     /// Checks if a given move is a capture and unmakes it. Used by unmake_move.
     /// Parameters:
     ///     - target - index of a target square
-    ///     - target_tile - 1 << target
+    ///     - target_tile - 1u64 << target
     ///     - active_player - index of an active player as usize
     /// Parameters are optimized in a way to allow unmake_move run as fast as possible.
     fn unmake_capture(&mut self, target: u8, target_tile: u64, active_player: usize) {
@@ -486,8 +492,8 @@ impl MoveList {
     pub fn unmake_move(&mut self, piece_move: &Move) {
         self.restore_state();
 
-        let target = 1 << piece_move.target;
-        let origin = 1 << piece_move.origin;
+        let target = 1u64 << piece_move.target;
+        let origin = 1u64 << piece_move.origin;
         let active_player = self.board.active_player as usize;
         let inactive_player = self.board.inactive_player as usize;
         let piece = piece_move.piece.clone() as usize;
@@ -778,7 +784,7 @@ impl MoveList {
     /// Inputs a given 1st rank square (u8)
     /// Outputs true/false
     fn is_edge_square_attacked_by_black(&self, square: u8) -> bool {
-        let tile = 1 << square;
+        let tile = 1u64 << square;
 
         // The main idea is to virtually place a piece of type X belonging to us on the given square
         // and check if it can attack any enemy piece of the same type X.
@@ -802,7 +808,7 @@ impl MoveList {
     /// Inputs a given 8th rank square (u8)
     /// Outputs true/false
     fn is_edge_square_attacked_by_white(&self, square: u8) -> bool {
-        let tile = 1 << square;
+        let tile = 1u64 << square;
 
         // The main idea is to virtually place a piece of type X belonging to us on the given square
         // and check if it can attack any enemy piece of the same type X.
@@ -835,7 +841,8 @@ impl MoveList {
         if (tile & NOT_FILE_A_MASK) >> 7 & self.board.piece_bitboards[1] != 0 { return true; }
 
         let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
-        if tile & self.king_lookup_table[square as usize] != 0 { return true; }
+        if tile & self.king_lookup_table[u64::checked_ilog2(self.board.piece_bitboards[0])
+            .unwrap_or_default() as usize] != 0 { return true; }
         if self.knight_lookup_table[square as usize] & self.board.piece_bitboards[5] != 0 { return true; }
         if self.get_bishop_magic_bitboard(square) & self.board.piece_bitboards[4] != 0 { return true; }
         if self.get_rook_magic_bitboard(square) & self.board.piece_bitboards[3] != 0 { return true; }
@@ -990,7 +997,7 @@ impl MoveList {
     fn generate_white_pawn_left_capture_bitboard(&self) -> u64 {
         let mut attack_options = self.board.colour_bitboards[BLACK as usize];
         if self.board.en_passant_possibility < NO_PASSANT {
-            let en_passant_tile = 1 << self.board.en_passant_possibility;
+            let en_passant_tile = 1u64 << self.board.en_passant_possibility;
             attack_options |= en_passant_tile;
         }
         let index = PAWN as usize;
@@ -1004,7 +1011,7 @@ impl MoveList {
     fn generate_white_pawn_right_capture_bitboard(&self) -> u64 {
         let mut attack_options = self.board.colour_bitboards[BLACK as usize];
         if self.board.en_passant_possibility < NO_PASSANT {
-            let en_passant_tile = 1 << self.board.en_passant_possibility;
+            let en_passant_tile = 1u64 << self.board.en_passant_possibility;
             attack_options |= en_passant_tile;
         }
         let index = PAWN as usize;
@@ -1115,7 +1122,7 @@ impl MoveList {
     fn generate_black_pawn_left_capture_bitboard(&self) -> u64 {
         let mut attack_options = self.board.colour_bitboards[WHITE as usize];
         if self.board.en_passant_possibility < NO_PASSANT {
-            let en_passant_tile = 1 << self.board.en_passant_possibility;
+            let en_passant_tile = 1u64 << self.board.en_passant_possibility;
             attack_options |= en_passant_tile;
         }
         let index = PAWN as usize + 6;
@@ -1129,7 +1136,7 @@ impl MoveList {
     fn generate_black_pawn_right_capture_bitboard(&self) -> u64 {
         let mut attack_options = self.board.colour_bitboards[WHITE as usize];
         if self.board.en_passant_possibility < NO_PASSANT {
-            let en_passant_tile = 1 << self.board.en_passant_possibility;
+            let en_passant_tile = 1u64 << self.board.en_passant_possibility;
             attack_options |= en_passant_tile;
         }
         let index = PAWN as usize + 6;
@@ -1228,7 +1235,7 @@ impl MoveList {
 
             // Occupancy combinations
 
-            for combination_mask in 0..(1u64 << full_mask_vector.len()) {
+            for combination_mask in 0..(1 << full_mask_vector.len()) {
                 let raw_key = Self::generate_magic_raw_key(&full_mask_vector, combination_mask);
                 let value = Self::generate_rook_magic_value(raw_key, square);
                 let key = magic_hash_rook(raw_key, square);
@@ -1448,7 +1455,7 @@ impl MoveList {
 
             // Occupancy combinations
 
-            for combination_mask in 0..(1u64 << full_mask_vector.len()) {
+            for combination_mask in 0..(1 << full_mask_vector.len()) {
                 let raw_key = Self::generate_magic_raw_key(&full_mask_vector, combination_mask);
                 let value = Self::generate_bishop_magic_value(raw_key, square);
                 let key = magic_hash_bishop(raw_key, square);
@@ -1565,12 +1572,12 @@ impl MoveList {
         let mut square = origin - 7;
 
         while square / 8 != 0 && square % 8 != 7 {
-            bitboard |= 1 << square;
+            bitboard |= 1u64 << square;
             if (key >> square) % 2 == 1 { break; }
 
             square -= 7;
         }
-        bitboard |= 1 << square;
+        bitboard |= 1u64 << square;
 
         bitboard
     }
@@ -2748,8 +2755,8 @@ mod tests {
 
         let piece_move = Move { origin: 15, target: 23, promotion: 0, piece: PAWN };
 
-        let origin: u64 = 1 << 15;
-        let target: u64 = 1 << 23;
+        let origin: u64 = 1u64 << 15;
+        let target: u64 = 1u64 << 23;
 
         move_list.make_move(&piece_move);
 
@@ -2810,8 +2817,8 @@ mod tests {
 
         let piece_move = Move { origin: 34, target: 43, promotion: 0, piece: BISHOP };
 
-        let origin: u64 = 1 << 34;
-        let target: u64 = 1 << 43;
+        let origin: u64 = 1u64 << 34;
+        let target: u64 = 1u64 << 43;
 
         move_list.make_move(&piece_move);
 
@@ -2871,8 +2878,8 @@ mod tests {
 
         let piece_move = Move { origin: 6, target: 5, promotion: 0, piece: KING };
 
-        let origin: u64 = 1 << 6;
-        let target: u64 = 1 << 5;
+        let origin: u64 = 1u64 << 6;
+        let target: u64 = 1u64 << 5;
 
         move_list.make_move(&piece_move);
 
@@ -2932,8 +2939,8 @@ mod tests {
 
         let piece_move = Move { origin: 37, target: 29, promotion: 0, piece: PAWN };
 
-        let origin: u64 = 1 << 37;
-        let target: u64 = 1 << 29;
+        let origin: u64 = 1u64 << 37;
+        let target: u64 = 1u64 << 29;
 
         move_list.make_move(&piece_move);
 
@@ -2993,8 +3000,8 @@ mod tests {
 
         let piece_move = Move { origin: 55, target: 39, promotion: 0, piece: PAWN };
 
-        let origin: u64 = 1 << 55;
-        let target: u64 = 1 << 39;
+        let origin: u64 = 1u64 << 55;
+        let target: u64 = 1u64 << 39;
 
         let now = Instant::now();
         move_list.make_move(&piece_move);
@@ -3057,8 +3064,8 @@ mod tests {
 
         let piece_move = Move { origin: 32, target: 41, promotion: 0, piece: PAWN };
 
-        let origin: u64 = 1 << 32;
-        let target: u64 = 1 << 41;
+        let origin: u64 = 1u64 << 32;
+        let target: u64 = 1u64 << 41;
 
         let now = Instant::now();
         move_list.make_move(&piece_move);
@@ -3124,9 +3131,9 @@ mod tests {
 
         let piece_move = Move { origin: 35, target: 44, promotion: 0, piece: PAWN };
 
-        let origin: u64 = 1 << 35;
-        let target: u64 = 1 << 44;
-        let capture: u64 = 1 << 36;
+        let origin: u64 = 1u64 << 35;
+        let target: u64 = 1u64 << 44;
+        let capture: u64 = 1u64 << 36;
 
         let now = Instant::now();
         move_list.make_move(&piece_move);
@@ -3193,8 +3200,8 @@ mod tests {
 
         let piece_move = Move { origin: 54, target: 63, promotion: 2, piece: PAWN };
 
-        let origin: u64 = 1 << 54;
-        let target: u64 = 1 << 63;
+        let origin: u64 = 1u64 << 54;
+        let target: u64 = 1u64 << 63;
 
         let start = Instant::now();
         move_list.make_move(&piece_move);
@@ -3269,10 +3276,10 @@ mod tests {
 
         let piece_move = Move { origin: 3, target: 1, promotion: 1, piece: KING };
 
-        let origin: u64 = 1 << 3;
-        let target: u64 = 1 << 1;
-        let rook_origin: u64 = 1 << 0;
-        let rook_target: u64 = 1 << 2;
+        let origin: u64 = 1u64 << 3;
+        let target: u64 = 1u64 << 1;
+        let rook_origin: u64 = 1u64 << 0;
+        let rook_target: u64 = 1u64 << 2;
 
         let start = Instant::now();
         move_list.make_move(&piece_move);
@@ -3342,10 +3349,10 @@ mod tests {
 
         let piece_move = Move { origin: 3, target: 5, promotion: 1, piece: KING };
 
-        let origin: u64 = 1 << 3;
-        let target: u64 = 1 << 5;
-        let rook_origin: u64 = 1 << 7;
-        let rook_target: u64 = 1 << 4;
+        let origin: u64 = 1u64 << 3;
+        let target: u64 = 1u64 << 5;
+        let rook_origin: u64 = 1u64 << 7;
+        let rook_target: u64 = 1u64 << 4;
 
         move_list.make_move(&piece_move);
 
@@ -3388,10 +3395,10 @@ mod tests {
 
         let piece_move = Move { origin: 59, target: 57, promotion: 1, piece: KING };
 
-        let origin: u64 = 1 << 59;
-        let target: u64 = 1 << 57;
-        let rook_origin: u64 = 1 << 56;
-        let rook_target: u64 = 1 << 58;
+        let origin: u64 = 1u64 << 59;
+        let target: u64 = 1u64 << 57;
+        let rook_origin: u64 = 1u64 << 56;
+        let rook_target: u64 = 1u64 << 58;
 
         move_list.make_move(&piece_move);
 
@@ -3453,10 +3460,10 @@ mod tests {
 
         let piece_move = Move { origin: 59, target: 61, promotion: 1, piece: KING };
 
-        let origin: u64 = 1 << 59;
-        let target: u64 = 1 << 61;
-        let rook_origin: u64 = 1 << 63;
-        let rook_target: u64 = 1 << 60;
+        let origin: u64 = 1u64 << 59;
+        let target: u64 = 1u64 << 61;
+        let rook_origin: u64 = 1u64 << 63;
+        let rook_target: u64 = 1u64 << 60;
 
         move_list.make_move(&piece_move);
 
@@ -3761,9 +3768,9 @@ mod tests {
 
         let mut move_list = MoveList::from_board(board);
 
-        move_list.move_piece(18, 42, 1 << 42, QUEEN as usize, QUEEN as usize, WHITE as usize);
-        let origin = 1 << 18;
-        let target = 1 << 42;
+        move_list.move_piece(18, 42, 1u64 << 42, QUEEN as usize, QUEEN as usize, WHITE as usize);
+        let origin = 1u64 << 18;
+        let target = 1u64 << 42;
 
         assert_eq!(main_bitboard ^ origin, move_list.board.main_bitboard);
         assert_eq!(empty_bitboard | origin, move_list.board.empty_bitboard);
@@ -3794,9 +3801,9 @@ mod tests {
 
         let mut move_list = MoveList::from_board(board);
 
-        move_list.move_piece(41, 33, 1 << 33, PAWN as usize, PAWN as usize, BLACK as usize);
-        let origin = 1 << 41;
-        let target = 1 << 33;
+        move_list.move_piece(41, 33, 1u64 << 33, PAWN as usize, PAWN as usize, BLACK as usize);
+        let origin = 1u64 << 41;
+        let target = 1u64 << 33;
 
         assert_eq!(main_bitboard ^ origin | target, move_list.board.main_bitboard);
         assert_eq!(empty_bitboard ^ target | origin, move_list.board.empty_bitboard);
@@ -3827,11 +3834,11 @@ mod tests {
 
         let mut move_list = MoveList::from_board(board);
 
-        move_list.move_piece(35, 44, 1 << 44, PAWN as usize, PAWN as usize, WHITE as usize);
-        move_list.handle_en_passant(1 << 44, BLACK as usize);
-        let origin = 1 << 35;
-        let target = 1 << 44;
-        let en_passant: u64 = 1 << 36;
+        move_list.move_piece(35, 44, 1u64 << 44, PAWN as usize, PAWN as usize, WHITE as usize);
+        move_list.handle_en_passant(1u64 << 44, BLACK as usize);
+        let origin = 1u64 << 35;
+        let target = 1u64 << 44;
+        let en_passant: u64 = 1u64 << 36;
 
         assert_eq!(main_bitboard ^ origin ^ en_passant | target, move_list.board.main_bitboard);
         assert_eq!(empty_bitboard ^ target | en_passant | origin, move_list.board.empty_bitboard);
@@ -3855,7 +3862,7 @@ mod tests {
                        ZOBRIST_TABLE.pieces[PAWN as usize + 6][36], move_list.board.zobrist);
 
         // unhandle en passant
-        move_list.handle_en_passant(1 << 44, BLACK as usize);
+        move_list.handle_en_passant(1u64 << 44, BLACK as usize);
         assert_eq!(main_bitboard ^ origin | target, move_list.board.main_bitboard);
         assert_eq!(empty_bitboard ^ target | origin, move_list.board.empty_bitboard);
         assert_eq!(colour_bitboards[0] ^ origin | target, move_list.board.colour_bitboards[0]);
@@ -3992,7 +3999,7 @@ mod tests {
         let mut move_list = MoveList::from_board(board);
 
         let mut should_reset_fifty_moves = false;
-        move_list.make_capture(16, 1 << 16, BLACK as usize, &mut should_reset_fifty_moves);
+        move_list.make_capture(16, 1u64 << 16, BLACK as usize, &mut should_reset_fifty_moves);
 
         assert_eq!(NO_CAPTURE, move_list.capture_history.pop().unwrap_or_default());
         assert_eq!(zobrist, move_list.get_board().zobrist);
@@ -4018,7 +4025,7 @@ mod tests {
         let mut move_list = MoveList::from_board(board);
 
         let mut should_reset_fifty_moves = false;
-        let target = 1 << 48;
+        let target = 1u64 << 48;
         move_list.make_capture(48, target, BLACK as usize, &mut should_reset_fifty_moves);
 
         let index = PAWN as u16 + 6 * BLACK as u16;
@@ -4056,7 +4063,7 @@ mod tests {
         let mut move_list = MoveList::from_board(board);
 
         let mut should_reset_fifty_moves = false;
-        let target = 1 << 4;
+        let target = 1u64 << 4;
         move_list.make_capture(4, target, WHITE as usize, &mut should_reset_fifty_moves);
 
         let index = QUEEN as u16 + 6 * WHITE as u16;
@@ -4093,8 +4100,8 @@ mod tests {
         let mut move_list = MoveList::from_board(board);
 
         let mut should_reset_fifty_moves = false;
-        move_list.make_capture(16, 1 << 16, BLACK as usize, &mut should_reset_fifty_moves);
-        move_list.unmake_capture(16, 1 << 16, BLACK as usize);
+        move_list.make_capture(16, 1u64 << 16, BLACK as usize, &mut should_reset_fifty_moves);
+        move_list.unmake_capture(16, 1u64 << 16, BLACK as usize);
 
         assert_eq!(None, move_list.capture_history.pop());
         assert_eq!(zobrist, move_list.get_board().zobrist);
@@ -4116,7 +4123,7 @@ mod tests {
         let piece_bitboards = board.piece_bitboards.clone();
         let zobrist = board.zobrist.clone();
 
-        let target = 1 << 48;
+        let target = 1u64 << 48;
         board.main_bitboard ^= target; // we need to do this manually so that unmake_capture works properly
         board.empty_bitboard |= target; // does not influence the behaviour of make_capture
 
@@ -4124,7 +4131,7 @@ mod tests {
 
         let mut should_reset_fifty_moves = false;
         move_list.make_capture(48, target, BLACK as usize, &mut should_reset_fifty_moves);
-        move_list.unmake_capture(48, 1 << 48, BLACK as usize);
+        move_list.unmake_capture(48, 1u64 << 48, BLACK as usize);
 
         assert_eq!(None, move_list.capture_history.pop());
         assert_eq!(zobrist, move_list.get_board().zobrist);
@@ -4148,7 +4155,7 @@ mod tests {
         let piece_bitboards = board.piece_bitboards.clone();
         let zobrist = board.zobrist.clone();
 
-        let target = 1 << 4;
+        let target = 1u64 << 4;
         board.main_bitboard ^= target; // we need to do this manually so that unmake_capture works properly
         board.empty_bitboard |= target; // does not influence the behaviour of make_capture
 
