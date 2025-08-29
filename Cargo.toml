@@ -23,5 +23,6 @@ opt-level = 3
 lto = "fat"
 
 [profile.test]
-opt-level = 1
+opt-level = 0
 lto = false
+debug = "full"

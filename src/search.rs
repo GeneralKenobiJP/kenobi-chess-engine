@@ -8,7 +8,7 @@ use std::cmp::max;
 use std::sync::atomic::{AtomicBool, Ordering};
 use num_traits::real::Real;
 use crate::board::Board;
-use crate::evaluation::{compute_game_phase_factor, DRAW, Evaluator, MainEvaluator};
+use crate::evaluation::{compute_game_phase_factor, DRAW, Evaluator, MainEvaluator, PIECE_WORTH};
 use crate::move_generator::{MAX_MOVES_IN_POSITION, Move, MoveList};
 use crate::evaluation::{POSITIVE_INFINITY, NEGATIVE_INFINITY};
 use crate::transposition_table::{RepetitionTable, Transposition, TranspositionTable};
@@ -25,6 +25,8 @@ const NULL_MOVE_PRUNING_DEPTH_LIMIT: u32 = 4;
 const NULL_MOVE_REDUCTION: u32 = 3;
 const NULL_MOVE_DEPTH_SCALING_FACTOR: u32 = 4;
 const NULL_MOVE_PHASE_LIMIT: i32 = 20;
+const DELTA_MARGIN: i32 = 200;
+const DELTA_PRUNING_PHASE_LIMIT: i32 = 20;
 
 static STOP_FLAG: AtomicBool = AtomicBool::new(false);
 
@@ -180,10 +182,10 @@ impl<T: Evaluator> Engine<T> {
 
         // Check if we have a proper entry in the transposition table
         if let Some(transposition) = transposition_entry {
-        if transposition.depth >= depth && transposition.node_type == EXACT {
-            return transposition.value;
+            if transposition.depth >= depth && transposition.node_type == EXACT {
+                return transposition.value;
+            }
         }
-}
 
         self.current_ply = board.plies;
 
@@ -460,6 +462,38 @@ impl<T: Evaluator> Engine<T> {
         value
     }
 
+    /// Delta pruning checks if it is worth at all to examine this particular node
+    /// during quiescence search.
+    /// The idea is as follows:
+    /// If we are making a capture, and the worth of the captured piece with some safety margin
+    /// will not raise alpha, then evaluating this capture is useless, we prune the node instead.
+    /// For the sake of conservatism, we are not pruning any non-capture noisy moves.
+    ///
+    /// Parameters:
+    ///     - piece_move - the move we are evaluating
+    ///     - board - the board object
+    ///     - alpha - difference between the alpha (lower bound) we are trying to raise and
+    /// the current value of the node
+    ///     - game_phase - the metric of the midgame vs. endgame heuristic. Precomputed for
+    /// the sake of speed. We do NOT want to perform delta pruning in the endgame, as it may
+    /// cause the engine to be blind to some low material endgames.
+    fn delta_pruning(piece_move: &Move, board: &Board, diff: i32, game_phase: i32) -> bool {
+        if diff == NEGATIVE_INFINITY {
+            return false;
+        }
+        if game_phase <= DELTA_PRUNING_PHASE_LIMIT {
+            return false;
+        }
+
+        let target_square = piece_move.target;
+        let target_piece = board.get_piece_from_square_by_player(
+            target_square, board.inactive_player as usize);
+
+        if target_piece.is_none() { return false; }
+
+        return PIECE_WORTH[target_piece.unwrap() as usize - 1] + DELTA_MARGIN <= diff;
+    }
+
     /// Uses alpha-beta prunning to find the best possible move in the search tree.
     /// Searches until it finds a 'quiet' position, where no captures, promotions or checks can be made.
     /// It avoids the horizon effect by not ignoring threats at depth zero.
@@ -503,9 +537,18 @@ impl<T: Evaluator> Engine<T> {
         self.moves_buffer[buffer_index].clear();
         self.moves_buffer[buffer_index].extend_from_slice(&move_list.get_moves());
 
+        // Precompute game phase for the sake of delta pruning
+        let board = move_list.get_board();
+        let game_phase = compute_game_phase_factor(&board.piece_counter);
+
         for i in 0..self.moves_buffer[buffer_index].len()
         {
             let piece_move = { let current_buffer = &self.moves_buffer[buffer_index];  current_buffer[i]};
+
+            if Self::delta_pruning(&piece_move, move_list.get_board(),
+                                   alpha.saturating_sub(self.best_moves_evaluation[buffer_index][0]), game_phase) {
+                continue;
+            }
 
             move_list.make_move(&piece_move);
             if !move_list.is_opponent_in_check() {
@@ -1018,10 +1061,35 @@ mod tests {
 
         let mut engine = Engine::with_evaluator_and_capacity(MockMaterialEvaluator {}, 1024);
 
-        engine.depth = 2;
-        engine.search_alpha_beta_prunning(&mut move_list, 2, NEGATIVE_INFINITY, POSITIVE_INFINITY);
-        // There is an obvious killer moves when we try to move our queen so that it can be captured by a pawn
+        engine.depth = 3;
+        engine.search_alpha_beta_prunning(&mut move_list, 3, NEGATIVE_INFINITY, POSITIVE_INFINITY);
+        // There are obvious killer moves when we try to move our queen so that it can be captured by a pawn
         assert!(!engine.killer_moves[1][0].is_none());
         assert!(!engine.killer_moves[1][1].is_none());
+    }
+
+    #[test]
+    fn test_delta_pruning() {
+        let mut board = Board::new();
+        let fen = "4k3/8/8/8/8/8/6qp/4K2Q w - - 0 1";
+        board.read_fen(fen);
+
+        let game_phase = 10;
+        let piece_move = Move::new(0, 8, 0, QUEEN);
+        let diff = 500;
+
+        assert!(!Engine::<MockMaterialEvaluator>::delta_pruning(&piece_move, &board, diff, game_phase));
+
+        let game_phase = 70;
+        assert!(Engine::<MockMaterialEvaluator>::delta_pruning(&piece_move, &board, diff, game_phase));
+
+        let diff = 299;
+        assert!(!Engine::<MockMaterialEvaluator>::delta_pruning(&piece_move, &board, diff, game_phase));
+
+        let piece_move = Move::new(0, 9, 0, QUEEN);
+        assert!(!Engine::<MockMaterialEvaluator>::delta_pruning(&piece_move, &board, diff, game_phase));
+
+        let diff = 1100;
+        assert!(Engine::<MockMaterialEvaluator>::delta_pruning(&piece_move, &board, diff, game_phase));
     }
 }
