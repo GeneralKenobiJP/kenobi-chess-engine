@@ -11,6 +11,7 @@ mod bot;
 mod string_builder;
 
 use std::{io, thread};
+use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::bot::Bot;
@@ -33,6 +34,7 @@ fn main() {
             Some(output) => {
                 if !output.is_empty() {
                     println!("{}", output);
+                    io::stdout().flush().unwrap();
                 }
             },
             None => { loop_flag.store(false, Ordering::SeqCst); }

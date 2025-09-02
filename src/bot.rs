@@ -4,6 +4,8 @@
 //! Communication is realized through the message() function.
 //! It should be called in the game loop of the main function.
 
+use std::alloc::System;
+use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 use std::thread::{spawn};
@@ -69,6 +71,27 @@ impl Bot<MainEvaluator> {
         };
 
         Option::from(response)
+    }
+
+    /// Tokenizes a UCI-protocol command message.
+    /// Given a message, the function parses it and outputs a vector of substrings contained
+    /// within the original message. The delimiter is a whitespace.
+    fn tokenize(message: &str) -> Vec<String> {
+        let mut scanner = ScannerStr::new(message);
+        let mut tokens = Vec::new();
+
+        while let response = scanner.next() {
+            if response.is_err() {
+                eprintln!("Error: could not parse the message. Tokenizing failed.");
+                return tokens;
+            }
+
+            let response_unwrapped = response.unwrap();
+            if response_unwrapped.is_none() {break;}
+            tokens.push(String::from(response_unwrapped.unwrap_or_default()));
+        }
+
+        tokens
     }
 
     /// Responds to a "uci" command.
@@ -538,6 +561,28 @@ mod tests {
 
         let response = bot.message("quit");
         assert!(response.is_none());
+    }
+
+    #[test]
+    fn check_tokenize_empty_message() {
+        let message = "";
+        assert_eq!(Vec::<String>::new(), Bot::tokenize(message));
+    }
+
+    #[test]
+    fn check_tokenize_one_word() {
+        let message = "uci";
+        assert_eq!(vec!(String::from("uci")), Bot::tokenize(message));
+    }
+
+    #[test]
+    fn check_tokenize_long_message() {
+        let message = "go wtime 59780 winc 0 btime 60000 binc 0";
+        assert_eq!(vec!(
+            String::from("go"), String::from("wtime"), String::from("59780"), String::from("winc"),
+            String::from("0"), String::from("btime"), String::from("60000"), String::from("binc"),
+            String::from("0")),
+                   Bot::tokenize(message));
     }
 
 }
