@@ -188,6 +188,10 @@ impl<T: Evaluator> Engine<T> {
         self.transposition_table.get_from_zobrist(board.zobrist).clone().unwrap().best_moves[0].unwrap()
     }
 
+    pub fn get_transposition(&self, board: &Board) -> Option<Transposition> {
+        self.transposition_table.get_from_zobrist(board.zobrist).clone()
+    }
+
     /// Retrieves what the engine thinks the best moves for the most recent board situation is.
     pub fn get_current_best_moves(&self) -> &[Option<Move>; 3] {
         &self.best_moves[0]
