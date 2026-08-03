@@ -10,68 +10,61 @@ mod transposition_table;
 mod bot;
 mod string_builder;
 
-use std::{io, thread};
-use std::io::Write;
-use std::sync::{Arc, mpsc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread::spawn;
-use crate::bot::Bot;
-use crate::evaluation::MainEvaluator;
+use std::io::{self, BufRead, Write};
 
-fn main() {
-    let loop_flag = Arc::new(AtomicBool::new(true));
-    let loop_flag_worker = Arc::clone(&loop_flag);
-    let (tx, rx) = mpsc::channel::<String>();
+use crate::bot::{Bot, Command};
 
-    // The thread for the handling of UCI messages
-
-    let worker = spawn(move || {
-        let mut bot = Bot::new();
-
-        while loop_flag_worker.load(Ordering::SeqCst) {
-            let message = rx.recv();
-
-            if message.is_err() {
-                break;
-            }
-
-            let message = message.unwrap();
-            let message = message.as_str();
-
-            let responses = bot.message(&message);
-            let mut responses = responses.iter();
-            while let Some(response) = responses.next() {
-                match response {
-                    Some(output) => {
-                        if !output.is_empty() {
-                            println!("{}", output);
-                            io::stdout().flush().unwrap();
-                        }
-                    },
-                    // Exit the engine
-                    None => { loop_flag_worker.store(false, Ordering::SeqCst); }
-                }
-            }
-        }
-    });
-
-    // Main thread: read stdin, send messages to worker <=> the game loop
-    while loop_flag.load(Ordering::SeqCst) {
-        let mut message = String::new();
-
-        io::stdin().read_line(&mut message)
-            .expect("Failed to read line");
-
-        // If user typed "quit", send it so the worker can clean up, then stop immediately.
-        if message.trim() == "quit" {
-            let _ = tx.send(message);
-            break; // stop main loop immediately
-        }
-
-        if tx.send(message).is_err() { break; } // worker gone
+fn send_response(response: &str) -> io::Result<()> {
+    if response.is_empty() {
+        return Ok(());
     }
 
-    // Close the channel and wait for worker to finish.
-    drop(tx);
-    let _ = worker.join();
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    writeln!(out, "{response}")?;
+    out.flush()
+}
+
+fn run_uci_loop() -> io::Result<()> {
+    // The control loop is the sole owner of Bot. Bot::go must start search in
+    // the background
+    let mut bot = Bot::new();
+    let stdin = io::stdin();
+    let mut input = stdin.lock();
+    let mut line = String::new();
+
+    loop {
+        line.clear();
+
+        // EOF is equivalent to a shutdown. Calling Quit first leaves one place
+        // for Bot to stop and join its search worker during cleanup.
+        if input.read_line(&mut line)? == 0 {
+            let _ = bot.process(Command::Quit);
+            break;
+        }
+
+        // Blank lines and comments are intentionally ignored. They are not
+        // parse errors and must not produce protocol noise on stdout.
+        let Some(command) = Bot::parse(&line) else {
+            continue;
+        };
+
+        if matches!(&command, Command::Quit) {
+            let _ = bot.process(command);
+            break;
+        }
+
+        if let Some(response) = bot.process(command) {
+            send_response(&response)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn main() {
+    if let Err(error) = run_uci_loop() {
+        // Diagnostics belong on stderr; stdout is reserved for UCI traffic.
+        eprintln!("UCI I/O error: {error}");
+    }
 }
