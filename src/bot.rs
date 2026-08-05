@@ -4,14 +4,11 @@
 //! Communication is realized through the message() function.
 //! It should be called in the game loop of the main function.
 
-use std::alloc::System;
-use std::fmt::{Debug, format};
+use std::io::{self, Write};
 use std::iter::Peekable;
-use std::ops::Deref;
-use std::slice::Iter;
 use std::str::SplitWhitespace;
-use std::sync::{Arc, Mutex};
-use std::thread::{sleep, spawn};
+use std::sync::{Arc, Condvar, Mutex};
+use std::thread::{spawn, JoinHandle};
 use std::time::{Duration, Instant};
 
 use scanner_rust::ScannerStr;
@@ -20,15 +17,17 @@ use crate::board::{Board, START_POSITION};
 use crate::evaluation::{Evaluator, MainEvaluator};
 use crate::move_generator::{Move, MoveList};
 use crate::perft::perft_log;
-use crate::search::Engine;
+use crate::search::{Engine, SearchControl};
 use crate::string_builder::StringBuilder;
-use crate::transposition_table::Transposition;
 
 const INFINITE_DEPTH: u32 = 256;
+const DEFAULT_MOVE_OVERHEAD_MS: u64 = 10;
+const MAX_MOVE_OVERHEAD_MS: u64 = 5_000;
 
 #[derive(Debug)]
 pub enum Command {
     Uci,
+    Debug(bool),
     IsReady,
     UciNewGame,
     SetOption {name: String, value: Option<String>},
@@ -37,17 +36,8 @@ pub enum Command {
     Stop,
     PonderHit,
     Quit,
+    Invalid(String),
     Unknown(String),
-}
-
-#[derive(Debug, Default, Clone)]
-enum SearchMode {
-    #[default]
-    InGame,
-    Infinite,
-    Depth(Option<u32>),
-    Perft(Option<u32>),
-    Ponder
 }
 
 #[derive(Debug, Default, Clone)]
@@ -57,27 +47,86 @@ pub struct SearchSettings {
     pub winc: Option<u64>,
     pub binc: Option<u64>,
     pub moves_to_go: Option<u32>,
-    // pub depth: Option<u32>,
+    pub depth: Option<u32>,
     pub nodes: Option<u64>,
     pub mate: Option<u32>,
     pub move_time: Option<u64>,
-    // pub infinite: bool,
-    // pub perft: bool,
-    // pub ponder: bool,
-    pub mode: SearchMode,
+    pub infinite: bool,
+    pub perft: Option<u32>,
+    pub ponder: bool,
     pub search_moves: Vec<String>
+}
+
+struct ActiveSearch {
+    control: Arc<SearchControl>,
+    ponder_budget: Option<Duration>,
+    ponder_gate: Option<Arc<PonderGate>>,
+    handle: Option<JoinHandle<()>>,
+}
+
+struct PonderGate {
+    pondering: Mutex<bool>,
+    changed: Condvar,
+}
+
+impl PonderGate {
+    fn new() -> Self {
+        Self {
+            pondering: Mutex::new(true),
+            changed: Condvar::new(),
+        }
+    }
+
+    fn release(&self) {
+        if let Ok(mut pondering) = self.pondering.lock() {
+            *pondering = false;
+            self.changed.notify_all();
+        }
+    }
+
+    fn wait_until_released(&self) {
+        let Ok(mut pondering) = self.pondering.lock() else {
+            return;
+        };
+        while *pondering {
+            match self.changed.wait(pondering) {
+                Ok(state) => pondering = state,
+                Err(_) => return,
+            }
+        }
+    }
 }
 
 pub struct Bot<T: Evaluator = MainEvaluator> {
     engine: Arc<Mutex<Engine<T>>>,
     move_list: Arc<Mutex<MoveList>>,
+    active_search: Option<ActiveSearch>,
+    debug: bool,
+    move_overhead_ms: u64,
+}
+
+impl<T: Evaluator> Drop for Bot<T> {
+    fn drop(&mut self) {
+        if let Some(mut search) = self.active_search.take() {
+            search.control.request_stop();
+            if let Some(gate) = &search.ponder_gate {
+                gate.release();
+            }
+            if let Some(handle) = search.handle.take() {
+                let _ = handle.join();
+            }
+        }
+    }
 }
 
 impl Bot<MainEvaluator> {
     pub fn new() -> Self {
         Bot {
             engine: Arc::new(Mutex::new(Engine::new())),
-            move_list: Arc::new(Mutex::new(MoveList::new()))
+            move_list: Arc::new(Mutex::new(MoveList::new())),
+            active_search: None,
+            debug: false,
+            move_overhead_ms: DEFAULT_MOVE_OVERHEAD_MS,
         }
     }
 
@@ -86,6 +135,9 @@ impl Bot<MainEvaluator> {
         Bot {
             engine: Arc::new(Mutex::new(Engine::with_evaluator(evaluator))),
             move_list: Arc::new(Mutex::new(MoveList::from_fen(fen))),
+            active_search: None,
+            debug: false,
+            move_overhead_ms: DEFAULT_MOVE_OVERHEAD_MS,
         }
     }
 
@@ -97,12 +149,16 @@ impl Bot<MainEvaluator> {
             return None;
         }
 
-        let message = message.to_lowercase();
         let mut iter = message.split_whitespace().peekable();
         let Some(head) = iter.next() else { return None; };
 
-        match head {
+        match head.to_ascii_lowercase().as_str() {
             "uci" => Some(Command::Uci),
+            "debug" => match iter.next() {
+                Some(value) if value.eq_ignore_ascii_case("on") => Some(Command::Debug(true)),
+                Some(value) if value.eq_ignore_ascii_case("off") => Some(Command::Debug(false)),
+                _ => Some(Command::Debug(true)),
+            },
             "isready" => Some(Command::IsReady),
             "ucinewgame" => Some(Command::UciNewGame),
             "stop" => Some(Command::Stop),
@@ -112,20 +168,22 @@ impl Bot<MainEvaluator> {
             "setoption" => Self::parse_set_option(&mut iter, &message),
             "position" => Self::parse_position(&mut iter, &message),
             "go" => Self::parse_go(&mut iter, &message),
-            _ => Some(Command::Unknown(message.to_string())),
+            _ => Some(Command::Unknown(message.to_owned())),
         }
     }
 
-    fn parse_set_option(iter: &mut Peekable<SplitWhitespace>, message: &String) -> Option<Command> {
+    fn parse_set_option(iter: &mut Peekable<SplitWhitespace>, _message: &str) -> Option<Command> {
         let mut name_tokens: Vec<&str> = Vec::new();
         let mut value_tokens: Vec<&str> = Vec::new();
 
-        if iter.next()? != "name" {
-            return Some(Command::Unknown((*message.clone()).parse().unwrap()));
+        if !iter.next()?.eq_ignore_ascii_case("name") {
+            return Some(Command::Invalid(
+                "setoption must contain the 'name' token".to_owned(),
+            ));
         }
 
         while let Some(token) = iter.next() {
-            if token == "value" {
+            if token.eq_ignore_ascii_case("value") {
                 break;
             }
             name_tokens.push(token);
@@ -136,29 +194,34 @@ impl Bot<MainEvaluator> {
         }
 
         let name = name_tokens.join(" ");
+        if name.is_empty() {
+            return Some(Command::Invalid(
+                "setoption requires a non-empty option name".to_owned(),
+            ));
+        }
         let value = if value_tokens.is_empty() { None } else { Some(value_tokens.join(" ")) };
 
         Some(Command::SetOption { name, value })
     }
 
-    fn parse_position(iter: &mut Peekable<SplitWhitespace>, message: &String) -> Option<Command> {
+    fn parse_position(iter: &mut Peekable<SplitWhitespace>, message: &str) -> Option<Command> {
         let mut startpos = false;
         let mut fen: Option<String> = None;
         let mut moves: Vec<String> = Vec::new();
 
         match iter.next() {
-            Some("startpos") => {
+            Some(token) if token.eq_ignore_ascii_case("startpos") => {
                 startpos = true;
 
                 // Consume the "moves" token
-                if iter.peek() == Some(&"moves") {
+                if iter.peek().map_or(false, |token| token.eq_ignore_ascii_case("moves")) {
                     iter.next();
                 }
             }
-            Some("fen") => {
+            Some(token) if token.eq_ignore_ascii_case("fen") => {
                 let mut fen_tokens: Vec<&str> = Vec::new();
                 while let Some(token) = iter.next() {
-                    if token == "moves" {
+                    if token.eq_ignore_ascii_case("moves") {
                         // Consume the "moves" token
                         break;
                     }
@@ -168,7 +231,11 @@ impl Bot<MainEvaluator> {
                     fen = Some(fen_tokens.join(" "));
                 }
             }
-            _ => return Some(Command::Unknown(message.clone().parse().unwrap())),
+            _ => {
+                return Some(Command::Invalid(format!(
+                    "invalid position command: {message}"
+                )))
+            }
         }
 
         while let Some(piece_move) = iter.next() {
@@ -178,23 +245,37 @@ impl Bot<MainEvaluator> {
         Some(Command::Position { fen, startpos, moves })
     }
 
-    fn parse_go(iter: &mut Peekable<SplitWhitespace>, message: &String) -> Option<Command> {
+    fn parse_go(iter: &mut Peekable<SplitWhitespace>, _message: &str) -> Option<Command> {
         let mut settings = SearchSettings::default();
 
+        macro_rules! parse_number {
+            ($field:expr, $ty:ty, $name:literal) => {
+                match iter.next().and_then(|value| value.parse::<$ty>().ok()) {
+                    Some(value) => $field = Some(value),
+                    None => {
+                        return Some(Command::Invalid(format!(
+                            "go {} requires a valid non-negative integer",
+                            $name
+                        )))
+                    }
+                }
+            };
+        }
+
         while let Some(token) = iter.next() {
-            match token {
-                "wtime" => settings.wtime = iter.next().and_then(|s| s.parse().ok()),
-                "btime" => settings.btime = iter.next().and_then(|s| s.parse().ok()),
-                "winc" => settings.winc = iter.next().and_then(|s| s.parse().ok()),
-                "binc" => settings.binc = iter.next().and_then(|s| s.parse().ok()),
-                "movestogo" => settings.moves_to_go = iter.next().and_then(|s| s.parse().ok()),
-                "depth" => settings.mode = SearchMode::Depth(iter.next().and_then(|s| s.parse().ok())),
-                "nodes" => settings.nodes = iter.next().and_then(|s| s.parse().ok()),
-                "mate" => settings.mate = iter.next().and_then(|s| s.parse().ok()),
-                "movetime" => settings.move_time = iter.next().and_then(|s| s.parse().ok()),
-                "infinite" => settings.mode = SearchMode::Infinite,
-                "perft" => settings.mode = SearchMode::Perft(iter.next().and_then(|s| s.parse().ok())),
-                "ponder" => settings.mode = SearchMode::Ponder,
+            match token.to_ascii_lowercase().as_str() {
+                "wtime" => parse_number!(settings.wtime, u64, "wtime"),
+                "btime" => parse_number!(settings.btime, u64, "btime"),
+                "winc" => parse_number!(settings.winc, u64, "winc"),
+                "binc" => parse_number!(settings.binc, u64, "binc"),
+                "movestogo" => parse_number!(settings.moves_to_go, u32, "movestogo"),
+                "depth" => parse_number!(settings.depth, u32, "depth"),
+                "nodes" => parse_number!(settings.nodes, u64, "nodes"),
+                "mate" => parse_number!(settings.mate, u32, "mate"),
+                "movetime" => parse_number!(settings.move_time, u64, "movetime"),
+                "infinite" => settings.infinite = true,
+                "perft" => parse_number!(settings.perft, u32, "perft"),
+                "ponder" => settings.ponder = true,
 
                 "searchmoves" => {
                     while let Some(piece_move) = iter.next() {
@@ -203,135 +284,67 @@ impl Bot<MainEvaluator> {
                     break;
                 }
 
-                _ => return Some(Command::Unknown((*message.clone()).parse().unwrap())),
+                // UCI requires unknown tokens to be ignored so parsing can
+                // continue with extensions added by future GUIs.
+                _ => {}
             }
         }
 
         Some(Command::Go(settings))
     }
-    
+
     pub fn process(&mut self, command: Command) -> Option<String> {
         match command {
             Command::Uci => Self::uci(),
+            Command::Debug(enabled) => {
+                self.debug = enabled;
+                Some(String::new())
+            }
             Command::IsReady => Self::readyok(),
             Command::UciNewGame => self.new_game(),
-            Command::SetOption { name, value } => Self::set_option(),
+            Command::SetOption { name, value } => self.set_option(name, value),
             Command::Position { fen, startpos, moves } =>
                 self.input_position(fen, startpos, moves),
             Command::Go(settings) => self.go(settings),
-            Command::Stop => Self::stop(),
+            Command::Stop => self.stop(),
             Command::PonderHit => self.ponder_hit(),
-            Command::Quit => None,
-            Command::Unknown(message) => Self::unsupported_command(message),
-        }
-    }
-
-    /// Responds to a given message, according to the UCI standard.
-    /// This function is the method used for manipulating the game state in the Bot object.
-    /// Should a particular command or option not be implemented, it will notify about the fact
-    /// with "Unexpected command. This command might be unsupported by the current version of the engine or by the UCI standard."
-    /// Calls relevant response functions that use a StringBuilder to return a response String,
-    /// which is printed out in this method.
-    /// Returns Option from a response string if no error occurred.
-    /// Returns None if the "quit" command was provided
-    pub fn message(&mut self, message: &str) -> Option<String> {
-        let command = Self::parse(message);
-
-        if command.is_none() {
-            return None;
-        }
-
-        let command = command.unwrap();
-        self.process(command)
-    }
-    // pub fn message(&mut self, message: &str) -> Vec<Option<String>> {
-    //     let tokens = Self::tokenize(message);
-    //     let mut responses = Vec::new();
-    // 
-    //     if tokens.is_empty() {
-    //         responses.push(Some(String::from("No command has been found.")));
-    //         return responses;
-    //     }
-    // 
-    //     let mut tokens_iter = tokens.iter();
-    // 
-    //     while let Some(command) = tokens_iter.next() {
-    //         let command = command.as_str();
-    //         let response = match command {
-    //             "uci" => Bot::uci(),
-    //             "ucinewgame" => self.new_game(),
-    //             "isready" => Self::readyok(),
-    //             "position" => self.input_position(&mut tokens_iter),
-    //             "go" => self.go(&mut tokens_iter),
-    //             "stop" => Self::stop(),
-    //             "quit" => None,
-    //             "player" => self.current_player(),
-    //             "depth" => self.depth(),
-    //             _ => Option::from(String::from(
-    //                 format!("Unexpected command. The command {} might be unsupported by the current version of the engine or by the UCI standard.",
-    //             command))),
-    //         };
-    // 
-    //         let quit = response.is_none();
-    // 
-    //         responses.push(response);
-    // 
-    //         if quit { break; } // break immediately if we want to quit
-    //     }
-    // 
-    //     responses
-    // 
-    //     // let mut scanner = ScannerStr::new(message);
-    //     //
-    //     // let command = scanner.next().unwrap_or_default().unwrap_or_default();
-    //     // let response = match command {
-    //     //     "uci" =>  Bot::uci(),
-    //     //     "ucinewgame" => self.new_game(),
-    //     //     "isready" => Self::readyok(),
-    //     //     "position" => self.input_position(&mut scanner),
-    //     //     "go" => self.go(String::from(scanner.next_line().unwrap().unwrap_or_default())),
-    //     //     "stop" => self.stop(),
-    //     //     "quit" => return None,
-    //     //     "player" => { let list = self.move_list.lock().unwrap();
-    //     //         ( list.get_board().active_player as u32).to_string() }
-    //     //     "depth" => { let engine_binding = self.engine.lock().unwrap();
-    //     //         engine_binding.get_current_depth().to_string() }
-    //     //     _ => String::from("Unexpected command. This command might be unsupported by the current version of the engine or by the UCI standard."),
-    //     // };
-    //     //
-    //     // Option::from(response)
-    // }
-
-    /// Tokenizes a UCI-protocol command message.
-    /// Given a message, the function parses it and outputs a vector of substrings contained
-    /// within the original message. The delimiter is a whitespace.
-    pub fn tokenize(message: &str) -> Vec<String> {
-        let mut scanner = ScannerStr::new(message);
-        let mut tokens = Vec::new();
-
-        while let response = scanner.next() {
-            if response.is_err() {
-                eprintln!("Error: could not parse the message. Tokenizing failed.");
-                return tokens;
+            Command::Quit => {
+                self.stop_and_join_search();
+                None
             }
-
-            let response_unwrapped = response.unwrap();
-            if response_unwrapped.is_none() {break;}
-            tokens.push(String::from(response_unwrapped.unwrap_or_default()));
+            Command::Invalid(message) => Some(format!("info string {message}")),
+            Command::Unknown(message) => self.unsupported_command(message),
         }
-
-        tokens
     }
+
+    // /// Responds to a given message, according to the UCI standard.
+    // /// This function is the method used for manipulating the game state in the Bot object.
+    // /// Should a particular command or option not be implemented, it will notify about the fact
+    // /// with "Unexpected command. This command might be unsupported by the current version of the engine or by the UCI standard."
+    // /// Calls relevant response functions that use a StringBuilder to return a response String,
+    // /// which is printed out in this method.
+    // /// Returns Option from a response string if no error occurred.
+    // /// Returns None if the "quit" command was provided
+    // pub fn message(&mut self, message: &str) -> Option<String> {
+    //     let command = Self::parse(message);
+    //
+    //     match command {
+    //         Some(command) => self.process(command),
+    //         None => Some(String::new()),
+    //     }
+    // }
 
     /// Responds to a "uci" command.
     /// Returns the id of the engine (name, version, author) and available options.
     /// Ends the response with "uciok"
     fn uci() -> Option<String> {
         let mut response = StringBuilder::new();
-        response
-            .append_line(&Bot::id())
-            .append_line(&Bot::option())
-            .append_line(&"uciok");
+        response.append_line(&Bot::id());
+        let options = Bot::option();
+        if !options.is_empty() {
+            response.append_line(&options);
+        }
+        response.append_line(&"uciok");
         Option::from(response.build())
     }
 
@@ -343,6 +356,7 @@ impl Bot<MainEvaluator> {
     /// Responds to a "ucinewgame" command.
     /// Creates a new engine object and clears the move list
     fn new_game(&mut self) -> Option<String> {
+        self.stop_and_join_search();
         self.engine = Arc::new(Mutex::new(Engine::new()));
         self.move_list.lock().unwrap().clear();
         Option::from(String::new())
@@ -351,7 +365,7 @@ impl Bot<MainEvaluator> {
     fn input_position(&mut self, fen: Option<String>, startpos: bool, moves: Vec<String>) -> Option<String> {
         let response = String::new();
 
-        Engine::set_stop_flag(true);
+        self.stop_and_join_search();
 
         // we lock the move_list before using it
         let mut move_list_binding = self.move_list.lock().unwrap();
@@ -363,7 +377,7 @@ impl Bot<MainEvaluator> {
         else {
             match fen {
                 Some(fen) => *board = Board::from_fen(& *fen),
-                None => return Some(String::from("No FEN has been detected! Provide a valid position."))
+                None => return Some(String::from("info string position command has no FEN"))
             }
         }
 
@@ -396,22 +410,99 @@ impl Bot<MainEvaluator> {
     /// It responds with an empty string, as it returns before the computing threads conclude their work.
     /// Prints directly the responses of the computation thread.
     fn go(&mut self, settings: SearchSettings) -> Option<String> {
-        Engine::set_stop_flag(false);
+        self.stop_and_join_search();
 
-        let move_list_arc = self.move_list.clone();
-        let engine_arc = self.engine.clone();
+        if let Some(depth) = settings.perft {
+            return Self::go_perft(&mut self.move_list.lock().unwrap(), Some(depth));
+        }
 
-        let response = match settings.mode {
-            SearchMode::InGame => Self::go_ingame(&mut *engine_arc.lock().unwrap(), &mut *move_list_arc.lock().unwrap()),
-            SearchMode::Infinite => Self::go_infinite(&mut *engine_arc.lock().unwrap(), &mut *move_list_arc.lock().unwrap()),
-            SearchMode::Depth(depth) => Self::go_depth(&mut *engine_arc.lock().unwrap(), &mut *move_list_arc.lock().unwrap(),
-                                      depth),
-            SearchMode::Perft(depth) => Self::go_perft(&mut *move_list_arc.lock().unwrap(), depth),
-            SearchMode::Ponder => Self::go_ingame(&mut *engine_arc.lock().unwrap(), &mut *move_list_arc.lock().unwrap()),
-            //_ => Self::go_infinite(&mut *engine_arc.lock().unwrap(), &mut *move_list_arc.lock().unwrap())
+        let budget = {
+            let move_list = self.move_list.lock().unwrap();
+            self.time_budget(&settings, &move_list)
+        };
+        let deadline = if settings.ponder {
+            None
+        } else {
+            budget.map(|duration| Instant::now() + duration)
         };
 
-        response
+        let depth = settings
+            .depth
+            .or_else(|| settings.mate.map(|moves| moves.saturating_mul(2)))
+            .unwrap_or(INFINITE_DEPTH)
+            .min(INFINITE_DEPTH);
+
+        let control = Arc::new(SearchControl::new(settings.nodes, deadline));
+        let thread_control = Arc::clone(&control);
+        let engine = Arc::clone(&self.engine);
+        let move_list = Arc::clone(&self.move_list);
+        let search_moves = settings.search_moves.clone();
+        let ponder_gate = settings
+            .ponder
+            .then(|| Arc::new(PonderGate::new()));
+        let thread_ponder_gate = ponder_gate.as_ref().map(Arc::clone);
+        let started = Instant::now();
+
+        let handle = spawn(move || {
+            let mut engine = match engine.lock() {
+                Ok(engine) => engine,
+                Err(_) => {
+                    Self::write_uci_response("info string engine mutex was poisoned");
+                    Self::write_uci_response("bestmove 0000");
+                    return;
+                }
+            };
+            let mut move_list = match move_list.lock() {
+                Ok(move_list) => move_list,
+                Err(_) => {
+                    Self::write_uci_response("info string position mutex was poisoned");
+                    Self::write_uci_response("bestmove 0000");
+                    return;
+                }
+            };
+
+            let root_moves = if search_moves.is_empty() {
+                None
+            } else {
+                Some(
+                    search_moves
+                        .iter()
+                        .map(|input| Move::from_algebraic_notation(input, move_list.get_board()))
+                        .collect::<Vec<_>>(),
+                )
+            };
+
+            engine.search(
+                &mut move_list,
+                depth,
+                &thread_control,
+                root_moves.as_deref(),
+            );
+
+            // UCI forbids a ponder search from publishing bestmove before
+            // either `ponderhit` or `stop`, even if a finite depth completed.
+            if let Some(gate) = thread_ponder_gate {
+                gate.wait_until_released();
+            }
+
+            let response = Self::best_move(
+                &mut engine,
+                &mut move_list,
+                thread_control.get_nodes(),
+                started.elapsed(),
+                root_moves.as_deref(),
+            );
+            Self::write_uci_response(&response);
+        });
+
+        self.active_search = Some(ActiveSearch {
+            control,
+            ponder_budget: if settings.ponder { budget } else { None },
+            ponder_gate,
+            handle: Some(handle),
+        });
+
+        Some(String::new())
     }
 
     /// Responds to a "go perft" command.
@@ -419,7 +510,7 @@ impl Bot<MainEvaluator> {
     /// and the number of nodes from each immediate response
     fn go_perft(move_list: &mut MoveList, depth: Option<u32>) -> Option<String> {
         if depth.is_none() {
-            return Some(String::from("No depth has been found!"));
+            return Some(String::from("info string go perft requires a depth"));
         }
         let depth = depth.unwrap();
 
@@ -427,123 +518,189 @@ impl Bot<MainEvaluator> {
         let nodes = perft_log(move_list, depth);
         let duration = start.elapsed();
 
-        let response = format!("perft {} searched {} nodes in {:?}", depth, nodes, duration);
+        let response = format!(
+            "info string perft {} searched {} nodes in {:?}",
+            depth, nodes, duration
+        );
         Option::from(response)
     }
 
-    /// Responds to a "go Infinite" command.
-    /// Orders the engine to search indefinitely until the "stop" command is received.
-    /// (We limit the depth with an actual finite constant,
-    /// though it will not be reached in practice).
-    /// Responds with an empty string.
-    fn go_infinite(engine: &mut Engine, move_list: &mut MoveList) -> Option<String> {
-        engine.search(move_list, INFINITE_DEPTH);
-
-        Self::best_move(engine, move_list)
-    }
-
-    /// Responds to a "go Infinite" command.
-    /// Orders the engine to search indefinitely until the "stop" command is received.
-    /// (We limit the depth with an actual finite constant,
-    /// though it will not be reached in practice).
-    /// Responds with an empty string.
-    fn go_ingame(engine: &mut Engine, move_list: &mut MoveList) -> Option<String> {
-        let depth = 6;
-
-        engine.search(move_list, depth);
-
-        Self::best_move(engine, move_list)
-    }
-
-    /// Responds to a "go depth" command.
-    /// Orders the engine to search up to the given depth.
-    /// If uninterrupted, responds with the "best_move" communicate,
-    /// otherwise, returns an empty string
-    fn go_depth(engine: &mut Engine, move_list: &mut MoveList, depth: Option<u32>) -> Option<String> {
-        if depth.is_none() {
-            return Some(String::from("No depth has been found!"));
+    fn time_budget(&self, settings: &SearchSettings, move_list: &MoveList) -> Option<Duration> {
+        if let Some(milliseconds) = settings.move_time {
+            return Some(Duration::from_millis(milliseconds));
         }
-        let depth = depth.unwrap();
+        if settings.infinite {
+            return None;
+        }
 
-        engine.search(move_list, depth);
+        let white_to_move = move_list.get_board().active_player as u32 == 0;
+        let remaining = if white_to_move {
+            settings.wtime?
+        } else {
+            settings.btime?
+        };
+        let increment = if white_to_move {
+            settings.winc.unwrap_or(0)
+        } else {
+            settings.binc.unwrap_or(0)
+        };
+        let moves_to_go = u64::from(settings.moves_to_go.unwrap_or(30).max(1));
 
-        Self::best_move(engine, move_list)
+        // Conservative single-move budget: an equal share of the remaining
+        // clock plus 75% of the increment, while retaining the configured
+        // communication/move overhead as a reserve.
+        let proposed = remaining / moves_to_go + increment.saturating_mul(3) / 4;
+        let budget = proposed.min(remaining.saturating_sub(self.move_overhead_ms));
+        Some(Duration::from_millis(budget))
+    }
+
+    fn stop_and_join_search(&mut self) {
+        let Some(mut search) = self.active_search.take() else {
+            return;
+        };
+
+        search.control.request_stop();
+        if let Some(gate) = &search.ponder_gate {
+            gate.release();
+        }
+        if let Some(handle) = search.handle.take() {
+            let _ = handle.join();
+        }
+    }
+
+    fn write_uci_response(response: &str) {
+        if response.is_empty() {
+            return;
+        }
+        let stdout = io::stdout();
+        let mut out = stdout.lock();
+        let _ = writeln!(out, "{response}");
+        let _ = out.flush();
     }
 
     /// Responds to a "stop command".
     /// Immediately ceases further position analysis.
     /// Responds with the best move
-    fn stop() -> Option<String> {
-        Engine::set_stop_flag(true);
-
-        // Bot::best_move(&mut self.engine.lock().unwrap(), &mut self.move_list.lock().unwrap())
+    fn stop(&mut self) -> Option<String> {
+        if let Some(search) = &self.active_search {
+            search.control.request_stop();
+            if let Some(gate) = &search.ponder_gate {
+                gate.release();
+            }
+        }
         Option::from(String::new())
     }
 
     fn ponder_hit(&mut self) -> Option<String> {
-        loop {
-            let engine_binding = self.engine.lock().unwrap();
-            if engine_binding.get_current_depth() >= 6 {
-                Engine::set_stop_flag(true);
-                break;
+        if let Some(search) = &mut self.active_search {
+            if let Some(budget) = search.ponder_budget.take() {
+                search.control.set_deadline_from_now(budget);
             }
-            sleep(Duration::from_millis(50));
+            if let Some(gate) = &search.ponder_gate {
+                gate.release();
+            }
+        }
+        Some(String::new())
+    }
+
+    fn set_option(&mut self, name: String, value: Option<String>) -> Option<String> {
+        if name.eq_ignore_ascii_case("Move Overhead") {
+            let Some(value) = value.and_then(|value| value.parse::<u64>().ok()) else {
+                return Some("info string Move Overhead requires an integer value".to_owned());
+            };
+            if value > MAX_MOVE_OVERHEAD_MS {
+                return Some(format!(
+                    "info string Move Overhead must be between 0 and {MAX_MOVE_OVERHEAD_MS}"
+                ));
+            }
+            self.move_overhead_ms = value;
+        } else if name.eq_ignore_ascii_case("Clear Hash") {
+            self.stop_and_join_search();
+            self.engine = Arc::new(Mutex::new(Engine::new()));
+        } else if self.debug {
+            eprintln!("Ignored unsupported UCI option: {name}");
         }
 
-        let mut engine_binding = self.engine.lock().unwrap();
-        let mut move_list_binding = self.move_list.lock().unwrap();
-
-        Self::best_move(&mut engine_binding, &mut move_list_binding)
+        Some(String::new())
     }
 
-    fn set_option() -> Option<String> {
-        Option::from(String::new())
+    fn unsupported_command(&self, command: String) -> Option<String> {
+        if self.debug {
+            eprintln!("Ignored unknown UCI command: {command}");
+        }
+        Some(String::new())
     }
 
-    fn unsupported_command(command: String) -> Option<String> {
-        Option::from(String::from(
-            format!("Unexpected command. The command {} might be unsupported by the current version of the engine or by the UCI standard.",
-                    command)))
-    }
-
-    fn info(engine: &mut Engine, move_list: &mut MoveList) -> Option<String> {
-        let transposition = engine.get_transposition(move_list.get_board()).unwrap();
-
-        //todo: add time
-        //todo: add nodes
-        //todo: add nps
-        //todo: add cpuload
+    fn info(engine: &Engine, nodes: u64, elapsed: Duration) -> String {
         let depth = engine.get_current_depth();
-        let score_cp = transposition.value;
-        Option::from(String::from(format!("info depth {} score cp {}", depth, score_cp)))
+        let score_cp = engine.get_last_root_score().unwrap_or(0);
+        let milliseconds = elapsed.as_millis().max(1);
+        let nps = u128::from(nodes).saturating_mul(1_000) / milliseconds;
+        format!(
+            "info depth {depth} score cp {score_cp} time {milliseconds} nodes {nodes} nps {nps}"
+        )
     }
 
     /// Implements the "best_move" UCI command.
     /// Retrieves what the engine currently deems the best move.
     /// Should not be used before doing any search.
-    fn best_move(engine: &mut Engine, move_list: &mut MoveList) -> Option<String> {
-        let mut response = Self::info(engine, move_list).unwrap();
+    fn best_move(
+        engine: &mut Engine,
+        move_list: &mut MoveList,
+        nodes: u64,
+        elapsed: Duration,
+        allowed_root_moves: Option<&[Move]>,
+    ) -> String {
+        let mut response = Self::info(engine, nodes, elapsed);
         response.push_str("\nbestmove ");
 
-        let best_move = engine.get_best_move(move_list.get_board());
+        let best_move = match engine.try_get_best_move(move_list.get_board()) {
+            Some(best_move)
+                if allowed_root_moves
+                    .map_or(true, |allowed| allowed.contains(&best_move)) => best_move,
+            _ => {
+                // If stop arrived before depth one completed, return the first
+                // legal root move rather than incorrectly reporting a null move.
+                move_list.generate_moves();
+                let candidates = move_list.get_moves().clone();
+                let mut fallback = None;
+                for candidate in candidates {
+                    if allowed_root_moves
+                        .map_or(false, |allowed| !allowed.contains(&candidate))
+                    {
+                        continue;
+                    }
+                    move_list.make_move(&candidate);
+                    let legal = !move_list.is_opponent_in_check();
+                    move_list.unmake_move(&candidate);
+                    if legal {
+                        fallback = Some(candidate);
+                        break;
+                    }
+                }
+                let Some(best_move) = fallback else {
+                    response.push_str("0000");
+                    return response;
+                };
+                best_move
+            }
+        };
         response.push_str(&*best_move.to_algebraic_notation());
 
         move_list.make_move(&best_move);
         let ponder_transposition = engine.get_transposition(move_list.get_board());
         move_list.unmake_move(&best_move);
 
-        if ponder_transposition.is_none() {
-            return Option::from(response)
-        }
-        let ponder_move = ponder_transposition.unwrap().best_moves[0];
-        if ponder_move.is_none() {
-            return Option::from(response)
-        }
+        let Some(ponder_move) = ponder_transposition
+            .and_then(|transposition| transposition.best_moves[0])
+        else {
+            return response;
+        };
 
         response.push_str(" ponder ");
-        response.push_str(&*ponder_move.unwrap().to_algebraic_notation());
+        response.push_str(&ponder_move.to_algebraic_notation());
 
-        Option::from(response)
+        response
     }
 
     /// Responds with the id of the engine: name, version, author
@@ -559,6 +716,11 @@ impl Bot<MainEvaluator> {
     /// Option is a setting that can be changed through the UCI.
     fn option() -> String {
         let mut response = StringBuilder::new();
+        response
+            .append_line(&format!(
+                "option name Move Overhead type spin default {DEFAULT_MOVE_OVERHEAD_MS} min 0 max {MAX_MOVE_OVERHEAD_MS}"
+            ))
+            .append_line(&"option name Clear Hash type button");
         response.build()
     }
 
