@@ -32,8 +32,6 @@ const DELTA_PRUNING_PHASE_LIMIT: i32 = 20;
 const STOP_CHECK_PERIOD: u32 = 1 << 12;
 const STOP_CHECK_MASK: u32 = STOP_CHECK_PERIOD - 1;
 
-static STOP_FLAG: AtomicBool = AtomicBool::new(false);
-
 /// Per-search state shared between the UCI control thread and the search worker.
 /// It deliberately lives outside `Engine`, so separate engine instances cannot
 /// accidentally stop one another.
@@ -146,22 +144,6 @@ impl Engine<MainEvaluator> {
     }
 }
 
-impl Engine {
-    /// Sets stop flag to a given boolean.
-    /// Stop flag is used by engine to
-    /// indicate whether further search should be aborted or not.
-    pub fn set_stop_flag(flag: bool) {
-        STOP_FLAG.store(flag, Ordering::Relaxed);
-    }
-
-    /// Gets stop flag.
-    /// Stop flag is used by engine to
-    /// indicate whether further search should be aborted or not.
-    pub fn get_stop_flag() -> bool {
-        STOP_FLAG.load(Ordering::Relaxed)
-    }
-}
-
 impl<T: Evaluator> Engine<T> {
     /// Constructs a new Engine<T> with a given Evaluator implementing object.
     pub fn with_evaluator(evaluator: T) -> Self {
@@ -238,10 +220,10 @@ impl<T: Evaluator> Engine<T> {
         self.transposition_table.get_from_zobrist(board.zobrist).clone()
     }
 
-    /// Retrieves what the engine thinks the best moves for the most recent board situation is.
-    pub fn get_current_best_moves(&self) -> &[Option<Move>; 3] {
-        &self.best_moves[0]
-    }
+    // /// Retrieves what the engine thinks the best moves for the most recent board situation is.
+    // pub fn get_current_best_moves(&self) -> &[Option<Move>; 3] {
+    //     &self.best_moves[0]
+    // }
 
     /// Retrieves the depth at which the engine is currently conducting a search
     /// or the depth at which the engine has conducted a search if the engine is idle
@@ -690,20 +672,9 @@ impl<T: Evaluator> Engine<T> {
         }
 
         let in_check = move_list.is_in_check();
-        let stand_pat = if !in_check {
-            let value = T::evaluate(move_list.get_board());
-            if value >= beta {
-                self.repetition_table.unvisit_position(zobrist);
-                return Some(beta);
-            }
-            alpha = alpha.max(value);
-            move_list.generate_noisy_moves();
-            Some(value)
-        } else {
-            // In check, quiet evasions are not optional; searching captures only
-            // can falsely report checkmate.
-            move_list.generate_moves();
-            None
+        let stand_pat = match self.compute_stand_pat(move_list, &mut alpha, beta, zobrist, in_check) {
+            Ok(value) => value,
+            Err(value) => return value,
         };
 
         if move_list.get_moves().len() == 0 {
@@ -800,6 +771,26 @@ impl<T: Evaluator> Engine<T> {
         Some(alpha)
     }
 
+    //todo: test stand_pat
+    //todo: add tests from chatgpt
+    fn compute_stand_pat(&mut self, mut move_list: &mut MoveList, alpha: &mut i32, beta: i32, zobrist: u64, in_check: bool) -> Result<Option<i32>, Option<i32>> {
+        Ok(if !in_check {
+            let value = T::evaluate(move_list.get_board());
+            if value >= beta {
+                self.repetition_table.unvisit_position(zobrist);
+                return Err(Some(beta));
+            }
+            *alpha = (*alpha).max(value);
+            move_list.generate_noisy_moves();
+            Some(value)
+        } else {
+            // In check, quiet evasions are not optional; searching captures only
+            // can falsely report checkmate.
+            move_list.generate_moves();
+            None
+        })
+    }
+
     /// Uses alpha-beta pruning to find the best possible move in the search tree.
     /// Searches up to the given depth.
     /// Uses the given move list to generate moves in-place and analyze the board situation.
@@ -867,6 +858,8 @@ impl<T: Evaluator> Engine<T> {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Add;
+    use std::thread::sleep;
     use std::time::Instant;
     use crate::board::START_POSITION;
     use crate::piece::Piece::{KING, KNIGHT, PAWN, QUEEN, ROOK};
@@ -1033,7 +1026,7 @@ mod tests {
         let search_control = SearchControl::new(None, None);
 
         assert_eq!(100, engine.search_naive(&mut move_list, 1));
-        
+
         //Stand-pat makes it 0, otherwise it is -700 (black is not forced to capture the pawn, which directly leads to promotion)
         assert_eq!(0, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control).unwrap());
         assert!(engine.repetition_table.is_empty());
@@ -1364,5 +1357,204 @@ mod tests {
 
         let diff = 1100;
         assert!(Engine::<MockMaterialEvaluator>::delta_pruning(&piece_move, &board, diff, game_phase));
+    }
+
+    #[test]
+    fn test_request_stop() {
+        let search_control = SearchControl::new(None, None);
+
+        assert!(!search_control.stop.load(Ordering::Relaxed));
+        search_control.request_stop();
+        assert!(search_control.stop.load(Ordering::Relaxed));
+        assert!(search_control.is_stopped(false));
+
+        search_control.request_stop();
+        assert!(search_control.stop.load(Ordering::Relaxed));
+        assert!(search_control.is_stopped(false));
+    }
+
+    #[test]
+    fn test_set_deadline_from_now() {
+        let search_control = SearchControl::new(None, None);
+
+        search_control.set_deadline_from_now(Duration::from_millis(500));
+        assert!(!search_control.is_stopped(true));
+        assert!(search_control.deadline.lock().unwrap().is_some());
+
+        sleep(Duration::from_millis(500));
+        assert!(search_control.is_stopped(true));
+    }
+
+    #[test]
+    fn test_inc_node() {
+        let search_control = SearchControl::new(Some(3), None);
+
+        assert_eq!(0, search_control.nodes.load(Ordering::Relaxed));
+
+        assert!(!search_control.inc_node(false));
+        assert!(!search_control.is_stopped(true));
+        assert_eq!(1, search_control.nodes.load(Ordering::Relaxed));
+
+        assert!(!search_control.inc_node(true));
+        assert!(!search_control.is_stopped(true));
+        assert_eq!(2, search_control.nodes.load(Ordering::Relaxed));
+
+        assert!(search_control.inc_node(true));
+        assert!(search_control.is_stopped(true));
+        assert_eq!(3, search_control.nodes.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn test_is_stopped_at() {
+        let search_control = SearchControl::new(None, None);
+
+        assert!(!search_control.is_stopped(false));
+        search_control.stop.store(true, Ordering::Relaxed);
+        assert!(search_control.is_stopped(false));
+
+        let search_control = SearchControl::new(Some(2137), None);
+
+        assert!(!search_control.is_stopped(false));
+        search_control.nodes.store(2137, Ordering::Relaxed);
+        assert!(search_control.is_stopped(false));
+
+        let search_control = SearchControl::new(None, Some(Instant::now().add(Duration::from_millis(400))));
+
+        assert!(!search_control.is_stopped(false));
+        assert!(!search_control.is_stopped(true));
+        sleep(Duration::from_millis(400));
+        assert!(search_control.is_stopped(true));
+        assert!(!search_control.is_stopped(false));
+    }
+
+    #[test]
+    fn check_stand_pat_non_check() {
+        let board = Board::from_fen(START_POSITION);
+        let mut move_list = MoveList::from_board(board);
+        move_list.generate_noisy_moves();
+        let moves = move_list.get_moves().clone();
+        move_list.clear();
+
+        let mut alpha = -200;
+        let beta = 300;
+
+        let mut engine = Engine::with_capacity(1024);
+        engine.repetition_table.visit_position(board.zobrist);
+
+        let stand_pat =
+            engine.compute_stand_pat(&mut move_list, &mut alpha, beta, board.zobrist, false);
+
+        assert_eq!(0, alpha);
+        assert!(stand_pat.is_ok());
+        assert!(stand_pat.unwrap().is_some());
+        assert_eq!(0, stand_pat.unwrap().unwrap());
+        assert_eq!(1, engine.repetition_table.get_repetition(board.zobrist));
+
+        assert_eq!(moves, *move_list.get_moves());
+    }
+
+    #[test]
+    fn check_stand_pat_check() {
+        let board = Board::from_fen(START_POSITION);
+        let mut move_list = MoveList::from_board(board);
+        move_list.generate_moves();
+        let moves = move_list.get_moves().clone();
+        move_list.clear();
+
+        let mut alpha = -200;
+        let beta = 300;
+
+        let mut engine = Engine::with_capacity(1024);
+        engine.repetition_table.visit_position(board.zobrist);
+
+        let stand_pat =
+            engine.compute_stand_pat(&mut move_list, &mut alpha, beta, board.zobrist, true);
+
+        assert_eq!(-200, alpha);
+        assert!(stand_pat.is_ok());
+        assert!(stand_pat.unwrap().is_none());
+        assert_eq!(1, engine.repetition_table.get_repetition(board.zobrist));
+
+        assert_eq!(moves, *move_list.get_moves());
+    }
+
+    #[test]
+    fn check_stand_pat_beta_exceeded() {
+        let board = Board::from_fen(START_POSITION);
+        let mut move_list = MoveList::from_board(board);
+        let moves = move_list.get_moves().clone();
+        move_list.clear();
+
+        let mut alpha = -200;
+        let beta = -100;
+
+        let mut engine = Engine::with_capacity(1024);
+        engine.repetition_table.visit_position(board.zobrist);
+
+        let stand_pat =
+            engine.compute_stand_pat(&mut move_list, &mut alpha, beta, board.zobrist, false);
+
+        assert_eq!(-200, alpha);
+        assert!(stand_pat.is_err());
+        assert!(stand_pat.err().unwrap().is_some());
+        assert_eq!(beta, stand_pat.err().unwrap().unwrap());
+        assert_eq!(0, engine.repetition_table.get_repetition(board.zobrist));
+
+        assert_eq!(moves, *move_list.get_moves());
+    }
+
+    const ROOT_RESULT_TEST_POSITION: &str =
+        "q3k3/8/8/8/8/8/8/R3K3 w - - 0 1";
+
+    #[test]
+    fn root_result_accessors_return_none_before_search() {
+        let board = Board::from_fen(ROOT_RESULT_TEST_POSITION);
+        let engine = Engine::with_evaluator_and_capacity(MockMaterialEvaluator {}, 1024);
+
+        assert_eq!(None, engine.try_get_best_move(&board));
+        assert_eq!(None, engine.get_last_root_score());
+    }
+
+    #[test]
+    fn root_result_accessors_return_last_completed_iteration() {
+        let mut move_list = MoveList::from_fen(ROOT_RESULT_TEST_POSITION);
+        let expected_move =
+            Move::from_algebraic_notation("a1a8", move_list.get_board());
+        let mut engine = Engine::with_evaluator_and_capacity(MockMaterialEvaluator {}, 1024);
+        let search_control = SearchControl::new(None, None);
+
+        // Rxa8 wins Black's queen. After the capture White has one rook
+        // against no material, so MockMaterialEvaluator scores the root +500.
+        let score = engine.search(&mut move_list, 1, &search_control, None);
+
+        assert_eq!(500, score);
+        assert_eq!(
+            Some(expected_move),
+            engine.try_get_best_move(move_list.get_board())
+        );
+        assert_eq!(Some(500), engine.get_last_root_score());
+    }
+
+    #[test]
+    fn try_get_best_move_falls_back_to_root_transposition() {
+        let mut move_list = MoveList::from_fen(ROOT_RESULT_TEST_POSITION);
+        let expected_move =
+            Move::from_algebraic_notation("a1a8", move_list.get_board());
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
+        let search_control = SearchControl::new(None, None);
+
+        engine.search(&mut move_list, 1, &search_control, None);
+
+        // Remove only the explicitly retained root result. The completed
+        // search also stored the same root move in the transposition table.
+        engine.last_root_best = None;
+
+        assert_eq!(
+            Some(expected_move),
+            engine.try_get_best_move(move_list.get_board())
+        );
+        // The score accessor intentionally reports only the retained root
+        // result; it does not manufacture a score from the TT fallback.
+        assert_eq!(None, engine.get_last_root_score());
     }
 }
