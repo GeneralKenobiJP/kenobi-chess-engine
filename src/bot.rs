@@ -234,9 +234,12 @@ impl Bot<MainEvaluator> {
                     }
                     fen_tokens.push(token);
                 }
-                if !fen_tokens.is_empty() {
-                    fen = Some(fen_tokens.join(" "));
+                if fen_tokens.is_empty() {
+                    return Some(Command::Invalid(
+                        "position fen requires a FEN string".to_owned(),
+                    ));
                 }
+                fen = Some(fen_tokens.join(" "));
             }
             _ => {
                 return Some(Command::Invalid(format!(
