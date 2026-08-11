@@ -24,7 +24,7 @@ const INFINITE_DEPTH: u32 = 256;
 const DEFAULT_MOVE_OVERHEAD_MS: u64 = 10;
 const MAX_MOVE_OVERHEAD_MS: u64 = 5_000;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     Uci,
     Debug(bool),
@@ -40,7 +40,7 @@ pub enum Command {
     Unknown(String),
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct SearchSettings {
     pub wtime: Option<u64>,
     pub btime: Option<u64>,
@@ -157,7 +157,9 @@ impl Bot<MainEvaluator> {
             "debug" => match iter.next() {
                 Some(value) if value.eq_ignore_ascii_case("on") => Some(Command::Debug(true)),
                 Some(value) if value.eq_ignore_ascii_case("off") => Some(Command::Debug(false)),
-                _ => Some(Command::Debug(true)),
+                _ => Some(Command::Invalid(
+                    "debug expects either 'on' or 'off'".to_owned(),
+                )),
             },
             "isready" => Some(Command::IsReady),
             "ucinewgame" => Some(Command::UciNewGame),
@@ -176,7 +178,12 @@ impl Bot<MainEvaluator> {
         let mut name_tokens: Vec<&str> = Vec::new();
         let mut value_tokens: Vec<&str> = Vec::new();
 
-        if !iter.next()?.eq_ignore_ascii_case("name") {
+        let Some(name_token) = iter.next() else {
+            return Some(Command::Invalid(
+                "setoption must contain the 'name' token".to_owned(),
+            ));
+        };
+        if !name_token.eq_ignore_ascii_case("name") {
             return Some(Command::Invalid(
                 "setoption must contain the 'name' token".to_owned(),
             ));
@@ -316,23 +323,6 @@ impl Bot<MainEvaluator> {
             Command::Unknown(message) => self.unsupported_command(message),
         }
     }
-
-    // /// Responds to a given message, according to the UCI standard.
-    // /// This function is the method used for manipulating the game state in the Bot object.
-    // /// Should a particular command or option not be implemented, it will notify about the fact
-    // /// with "Unexpected command. This command might be unsupported by the current version of the engine or by the UCI standard."
-    // /// Calls relevant response functions that use a StringBuilder to return a response String,
-    // /// which is printed out in this method.
-    // /// Returns Option from a response string if no error occurred.
-    // /// Returns None if the "quit" command was provided
-    // pub fn message(&mut self, message: &str) -> Option<String> {
-    //     let command = Self::parse(message);
-    //
-    //     match command {
-    //         Some(command) => self.process(command),
-    //         None => Some(String::new()),
-    //     }
-    // }
 
     /// Responds to a "uci" command.
     /// Returns the id of the engine (name, version, author) and available options.
@@ -735,356 +725,564 @@ impl Bot<MainEvaluator> {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use std::fmt::Debug;
-//     use std::ops::Deref;
-//     use std::thread;
-//     use std::time::Duration;
-//     use regex::Regex;
-//
-//     use crate::piece::Piece::PAWN;
-//
-//     use super::*;
-//
-//     #[test]
-//     fn check_id() {
-//         let expected = format!("id name Kenobi {}\nid author Jakub Pietrzak", env!("CARGO_PKG_VERSION"));
-//         assert_eq!(expected,  Bot::id());
-//     }
-//
-//     #[test]
-//     fn check_option() {
-//         let expected = "";
-//         assert_eq!(expected,  Bot::option());
-//     }
-//
-//     #[test]
-//     fn check_uci() {
-//         let expected = format!("id name Kenobi {}\nid author Jakub Pietrzak\nuciok", env!("CARGO_PKG_VERSION"));
-//         assert_eq!(Some(expected),  Bot::uci());
-//     }
-//
-//     #[test]
-//     fn check_new_game() {
-//         let mut bot = Bot::with_position(START_POSITION);
-//         bot.engine.lock().unwrap().search(&mut bot.move_list.lock().unwrap(), 1);
-//         bot.move_list.lock().unwrap().generate_moves();
-//         assert!(!bot.move_list.lock().unwrap().get_moves().is_empty());
-//
-//         assert_eq!(Some(String::from("")), bot.new_game());
-//
-//         assert!(bot.move_list.lock().unwrap().get_moves().is_empty());
-//         assert_eq!(Engine::new(), *bot.engine.lock().unwrap().deref());
-//     }
-//
-//     #[test]
-//     fn check_readyok() {
-//         assert_eq!(Some(String::from("readyok")),  Bot::readyok());
-//     }
-//
-//     #[test]
-//     fn check_input_moves() {
-//         let mut bot = Bot::with_position(START_POSITION);
-//         let mut tokens = vec!(String::from("e2e4"), String::from("e7e5")).iter();
-//         bot.input_moves(&mut tokens);
-//
-//         assert!(tokens.next().is_none());
-//
-//         let mut expected_bot = Bot::with_position(START_POSITION);
-//         expected_bot.move_list.lock().unwrap().make_move(&Move{origin: 11, target: 27, promotion: 0, piece: PAWN});
-//         expected_bot.move_list.lock().unwrap().make_move(&Move{origin: 51, target: 35, promotion: 0, piece: PAWN});
-//
-//         assert_eq!(expected_bot.move_list.lock().unwrap().get_board(), bot.move_list.lock().unwrap().get_board());
-//     }
-//
-//     #[test]
-//     fn check_input_position_start_position() {
-//         let mut bot = Bot::new();
-//         let mut tokens = vec!(String::from("startpos")).iter();
-//
-//         assert_eq!(Some(String::from("")), bot.input_position(&mut tokens));
-//
-//         assert!(tokens.next().is_none());
-//
-//         let mut expected_board = Board::new();
-//         expected_board.read_fen(START_POSITION);
-//
-//         assert_eq!(expected_board, *bot.move_list.lock().unwrap().get_board());
-//     }
-//
-//     #[test]
-//     fn check_input_position_fen() {
-//         let mut bot = Bot::new();
-//         let mut tokens = Bot::tokenize("fen 8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1").iter();
-//
-//         assert_eq!(Some(String::from("")), bot.input_position(&mut tokens));
-//
-//         assert!(tokens.next().is_none());
-//
-//         let mut expected_board = Board::new();
-//         expected_board.read_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
-//
-//         assert_eq!(expected_board, *bot.move_list.lock().unwrap().get_board());
-//     }
-//
-//     #[test]
-//     fn check_extract_fen() {
-//         let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 blabla yadayada";
-//         let mut tokens = Bot::tokenize(fen).iter();
-//
-//         assert_eq!(START_POSITION,  Bot::extract_fen(&mut tokens));
-//         assert_eq!(*tokens.next().unwrap(), String::from("blabla"));
-//     }
-//
-//     #[test]
-//     fn check_input_position_fen_moves() {
-//         let mut bot = Bot::new();
-//         let string = "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1 moves e2e4";
-//         let mut tokens = Bot::tokenize(string).iter();
-//
-//         assert_eq!(Some(String::from("")), bot.input_position(&mut tokens));
-//
-//         assert!(tokens.next().is_none());
-//
-//         let mut expected_board = Board::new();
-//         expected_board.read_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
-//         let mut expected_move_list = MoveList::from_board(expected_board);
-//         expected_move_list.make_move(&Move{origin: 11, target: 27, promotion: 0, piece: PAWN});
-//
-//         assert_eq!(expected_move_list.get_board(), bot.move_list.lock().unwrap().get_board());
-//     }
-//
-//     #[test]
-//     fn check_input_position_startpos_moves() {
-//         let mut bot = Bot::new();
-//         let string = "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1 moves e2e4";
-//         let mut tokens = Bot::tokenize(string).iter();
-//
-//         assert_eq!(Some(String::from("")), bot.input_position(&mut tokens));
-//
-//         assert!(tokens.next().is_none());
-//
-//         let mut expected_board = Board::new();
-//         expected_board.read_fen(START_POSITION);
-//         let mut expected_move_list = MoveList::from_board(expected_board);
-//         expected_move_list.make_move(&Move{origin: 11, target: 27, promotion: 0, piece: PAWN});
-//
-//         assert_eq!(expected_move_list.get_board(), bot.move_list.lock().unwrap().get_board());
-//     }
-//
-//     #[test]
-//     fn check_go_perft() {
-//         let mut bot = Bot::with_position(START_POSITION);
-//         let mut tokens = vec!(String::from("1")).iter();
-//
-//         let expected_regex = Regex::new(r"^perft 1 searched \d+ nodes in (\d+.\d+|\d+)(ns|µs|ms|s)$").unwrap();
-//
-//         let response = Bot::go_perft(&mut bot.move_list.lock().unwrap(), &mut tokens).unwrap();
-//         println!("{}", response);
-//
-//         assert!(expected_regex.is_match(&*response));
-//         assert!(tokens.next().is_none());
-//     }
-//
-//     #[test]
-//     fn check_go_depth() {
-//         let mut bot = Bot::with_position(START_POSITION);
-//         let mut tokens = vec!(String::from("1")).iter();
-//
-//         let expected_regex = Regex::new(r"^bestmove [a-h][1-8][a-h][1-8]$").unwrap();
-//
-//         let response = Bot::go_depth(&mut bot.engine.lock().unwrap(), &mut bot.move_list.lock().unwrap(), &mut tokens).unwrap();
-//         println!("{}", response);
-//
-//         assert!(expected_regex.is_match(&*response));
-//         assert!(tokens.next().is_none());
-//     }
-//
-//     #[test]
-//     fn check_go_infinite() {
-//         let mut bot = Bot::with_position(START_POSITION);
-//
-//         let expected_regex = Regex::new(r"^bestmove [a-h][1-8][a-h][1-8]$").unwrap();
-//
-//         let mut engine = bot.engine.clone();
-//         let mut move_list = bot.move_list.clone();
-//
-//         // finished flag: false until worker sets it to true
-//         let finished = Arc::new(Mutex::new(false));
-//         let finished_clone = Arc::clone(&finished);
-//
-//         let handle = spawn(move || {
-//             let response = Bot::go_infinite(&mut engine.lock().unwrap(), &mut move_list.lock().unwrap()).unwrap();
-//             println!("{}", response);
-//             assert!(expected_regex.is_match(&*response));
-//
-//             let mut done = finished_clone.lock().unwrap();
-//             *done = true;
-//         });
-//
-//         thread::sleep(Duration::from_secs(2));
-//         let response = Bot::stop();
-//
-//         assert!(response.unwrap().is_empty());
-//
-//         thread::sleep(Duration::from_secs(2));
-//         let done = *finished.lock().unwrap();
-//         if !done {
-//             // join the handle to clean up (ignore join result because we will panic anyway)
-//             let _ = handle.join();
-//             panic!("Spawned worker did not finish within the 2 second timeout");
-//         }
-//
-//     }
-//
-//     #[test]
-//     fn check_go() {
-//         let mut bot = Arc::new(Mutex::new(Bot::with_position(START_POSITION)));
-//         let expected_regex = Regex::new(r"^bestmove [a-h][1-8][a-h][1-8]$").unwrap();
-//
-//         let mut bot_binding = bot.lock().unwrap();
-//
-//         // go perft
-//         let mut tokens = Bot::tokenize("perft 1").iter();
-//
-//         let response = bot_binding.go(&mut tokens).unwrap();
-//         assert!(expected_regex.is_match(&*response));
-//         assert!(tokens.next().is_none());
-//
-//         // go depth
-//         let mut tokens = Bot::tokenize("depth 2").iter();
-//
-//         let response = bot_binding.go(&mut tokens);
-//         assert!(expected_regex.is_match(&*response));
-//         assert!(tokens.next().is_none());
-//
-//         thread::sleep(Duration::from_secs(1));
-//         let response = Bot::best_move(&mut bot_binding.engine.lock().unwrap(), &mut bot_binding.move_list.lock().unwrap());
-//         assert!(expected_regex.is_match(&*response));
-//
-//         // go Infinite
-//
-//         bot_binding.new_game();
-//         drop(bot_binding);
-//         let mut tokens = vec!(String::from("Infinite")).iter();
-//
-//         let handle = spawn(move || {
-//             let mut bot_binding = bot.lock().unwrap();
-//             let response = bot_binding.go(&mut tokens);
-//             assert!(expected_regex.is_match(&*response));
-//         });
-//
-//         thread::sleep(Duration::from_secs(1));
-//         Bot::stop();
-//         let response = Bot::best_move(&mut bot.engine.lock().unwrap(), &mut bot.move_list.lock().unwrap());
-//         assert!(expected_regex.is_match(&*response));
-//     }
-//
-//     #[test]
-//     fn check_stop() {
-//         let mut bot = Bot::with_position(START_POSITION);
-//
-//         bot.engine.lock().unwrap().search(&mut bot.move_list.lock().unwrap(), 1);
-//
-//         let expected_regex = Regex::new(r"^bestmove [a-h][1-8][a-h][1-8]$").unwrap();
-//
-//         let response = Bot::stop();
-//         assert!(expected_regex.is_match(&*response));
-//     }
-//
-//     #[test]
-//     fn check_best_move() {
-//         let mut bot = Bot::with_position(START_POSITION);
-//
-//         bot.engine.lock().unwrap().search(&mut bot.move_list.lock().unwrap(), 1);
-//
-//         let expected_regex = Regex::new(r"^bestmove [a-h][1-8][a-h][1-8]$").unwrap();
-//
-//         let response = Bot::best_move(&mut bot.engine.lock().unwrap(), &mut bot.move_list.lock().unwrap());
-//         assert!(expected_regex.is_match(&*response));
-//     }
-//
-//     #[test]
-//     fn test_message() {
-//         let mut bot = Bot::with_position(START_POSITION);
-//
-//         assert_eq!(None, bot.message("quit"));
-//         assert_eq!(Option::from(
-//             String::from("Unexpected command. This command might be unsupported by the current version of the engine or by the UCI standard.")),
-//                    bot.message("illegal command"));
-//         assert_eq!(Option::from(
-//             String::from(format!("id name Kenobi {}\nid author Jakub Pietrzak\nuciok", env!("CARGO_PKG_VERSION")))),
-//                    bot.message("uci"));
-//
-//         bot.engine.lock().unwrap().search(&mut bot.move_list.lock().unwrap(), 1);
-//         bot.move_list.lock().unwrap().generate_moves();
-//         assert_eq!(Option::from(
-//             String::from("")),
-//                    bot.message("ucinewgame"));
-//         assert!(bot.move_list.lock().unwrap().get_moves().is_empty());
-//         assert_eq!(Engine::new(), *bot.engine.lock().unwrap().deref());
-//
-//         assert_eq!(Option::from(
-//             String::from("readyok")),
-//                    bot.message("isready"));
-//
-//         assert_eq!(Option::from(
-//             String::from("")),
-//                    bot.message("position startpos moves e2e4 e7e5"));
-//         let mut expected_bot = Bot::with_position(START_POSITION);
-//         expected_bot.move_list.lock().unwrap().make_move(&Move{origin: 11, target: 27, promotion: 0, piece: PAWN});
-//         expected_bot.move_list.lock().unwrap().make_move(&Move{origin: 51, target: 35, promotion: 0, piece: PAWN});
-//         assert_eq!(expected_bot.move_list.lock().unwrap().get_board(), bot.move_list.lock().unwrap().get_board());
-//
-//         let response = bot.message("go perft 1").unwrap_or_default();
-//         assert!(response.is_empty());
-//
-//         let expected_regex = Regex::new(r"^bestmove [a-h][1-8][a-h][1-8]$").unwrap();
-//         let response = bot.message("go depth 2").unwrap_or_default();
-//         assert!(response.is_empty());
-//         thread::sleep(Duration::from_secs(1));
-//         let response = Bot::best_move(&mut bot.engine.lock().unwrap(), &mut bot.move_list.lock().unwrap());
-//         assert!(expected_regex.is_match(&*response));
-//
-//         let response = bot.message("go Infinite").unwrap_or_default();
-//         assert!(response.is_empty());
-//         thread::sleep(Duration::from_secs(2));
-//         let response = bot.stop();
-//         assert!(expected_regex.is_match(&*response));
-//
-//         let response = bot.message("quit");
-//         assert!(response.is_none());
-//     }
-//
-//     #[test]
-//     fn check_tokenize_empty_message() {
-//         let message = "";
-//         assert_eq!(Vec::<String>::new(), Bot::tokenize(message));
-//     }
-//
-//     #[test]
-//     fn check_tokenize_one_word() {
-//         let message = "uci";
-//         assert_eq!(vec!(String::from("uci")), Bot::tokenize(message));
-//     }
-//
-//     #[test]
-//     fn check_tokenize_long_message() {
-//         let message = "go wtime 59780 winc 0 btime 60000 binc 0";
-//         assert_eq!(vec!(
-//             String::from("go"), String::from("wtime"), String::from("59780"), String::from("winc"),
-//             String::from("0"), String::from("btime"), String::from("60000"), String::from("binc"),
-//             String::from("0")),
-//                    Bot::tokenize(message));
-//     }
-//
-//     #[test]
-//     fn check_tokenize_double_whitespace() {
-//         let message = "go  depth    7";
-//         assert_eq!(vec!(
-//             String::from("go"), String::from("depth"), String::from("7")),
-//                    Bot::tokenize(message));
-//     }
-//
-// }
+#[cfg(test)]
+mod tests {
+    use std::fmt::Debug;
+    use std::ops::Deref;
+    use std::thread;
+    use std::thread::sleep;
+    use std::time::Duration;
+    use regex::Regex;
+
+    use crate::piece::Piece::PAWN;
+
+    use super::*;
+
+    const SEARCH_TIMEOUT: Duration = Duration::from_secs(2);
+
+    fn process_message(bot: &mut Bot, message: &str) -> Option<String> {
+        match Bot::parse(message) {
+            Some(command) => bot.process(command),
+            None => Some(String::new()),
+        }
+    }
+
+    fn wait_for_search_to_start(bot: &Bot) -> Arc<SearchControl> {
+        let control = Arc::clone(
+            &bot.active_search
+                .as_ref()
+                .expect("go must register an active search")
+                .control,
+        );
+        let deadline = Instant::now() + SEARCH_TIMEOUT;
+
+        while control.get_nodes() == 0 && Instant::now() < deadline {
+            sleep(Duration::from_millis(1));
+        }
+
+        assert!(control.get_nodes() > 0, "search worker did not start");
+        control
+    }
+
+    fn wait_for_search_to_finish(bot: &Bot) {
+        let deadline = Instant::now() + SEARCH_TIMEOUT;
+
+        loop {
+            let finished = bot
+                .active_search
+                .as_ref()
+                .and_then(|search| search.handle.as_ref())
+                .map_or(true, |handle| handle.is_finished());
+            if finished {
+                return;
+            }
+            if Instant::now() >= deadline {
+                panic!("search worker did not finish within the timeout");
+            }
+            sleep(Duration::from_millis(1));
+        }
+    }
+
+    fn join_finished_search(bot: &mut Bot) {
+        wait_for_search_to_finish(bot);
+        let mut search = bot
+            .active_search
+            .take()
+            .expect("finished worker must still be registered");
+        let handle = search
+            .handle
+            .take()
+            .expect("active search must own a worker handle");
+        assert!(handle.join().is_ok(), "search worker panicked");
+        assert!(bot.active_search.is_none());
+    }
+
+    #[test]
+    fn check_id() {
+        let expected = format!("id name Kenobi {}\nid author Jakub Pietrzak", env!("CARGO_PKG_VERSION"));
+        assert_eq!(expected,  Bot::id());
+    }
+
+    #[test]
+    fn check_option() {
+        let expected = "option name Move Overhead type spin default 10 min 0 max 5000\noption name Clear Hash type button";
+        assert_eq!(expected,  Bot::option());
+    }
+
+    #[test]
+    fn check_uci() {
+        let expected = format!("id name Kenobi {}\nid author Jakub Pietrzak\n\
+        option name Move Overhead type spin default 10 min 0 max 5000\n\
+        option name Clear Hash type button\nuciok", env!("CARGO_PKG_VERSION"));
+        assert_eq!(Some(expected),  Bot::uci());
+    }
+
+    #[test]
+    fn check_new_game() {
+        let mut bot = Bot::with_position(START_POSITION);
+        let search_control = SearchControl::new(None, None);
+        bot.engine.lock().unwrap().search(&mut bot.move_list.lock().unwrap(), 1, &search_control, None);
+        bot.move_list.lock().unwrap().generate_moves();
+        assert!(!bot.move_list.lock().unwrap().get_moves().is_empty());
+
+        assert_eq!(Some(String::from("")), bot.new_game());
+
+        assert!(bot.move_list.lock().unwrap().get_moves().is_empty());
+        assert_eq!(Engine::new(), *bot.engine.lock().unwrap().deref());
+    }
+
+    #[test]
+    fn check_readyok() {
+        assert_eq!(Some(String::from("readyok")),  Bot::readyok());
+    }
+
+    #[test]
+    fn check_input_moves() {
+        let mut bot = Bot::with_position(START_POSITION);
+        let move_strings = vec!(String::from("e2e4"), String::from("e7e5"));
+        bot.input_moves(move_strings);
+
+        let mut expected_bot = Bot::with_position(START_POSITION);
+        expected_bot.move_list.lock().unwrap().make_move(&Move{origin: 11, target: 27, promotion: 0, piece: PAWN});
+        expected_bot.move_list.lock().unwrap().make_move(&Move{origin: 51, target: 35, promotion: 0, piece: PAWN});
+
+        assert_eq!(expected_bot.move_list.lock().unwrap().get_board(), bot.move_list.lock().unwrap().get_board());
+    }
+
+    #[test]
+    fn check_input_position_start_position() {
+        let mut bot = Bot::new();
+
+        assert_eq!(Some(String::from("")), bot.input_position(None, true, Vec::new()));
+
+        let mut expected_board = Board::new();
+        expected_board.read_fen(START_POSITION);
+
+        assert_eq!(expected_board, *bot.move_list.lock().unwrap().get_board());
+    }
+
+    #[test]
+    fn check_input_position_fen() {
+        let mut bot = Bot::new();
+        let position = "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1";
+
+        assert_eq!(Some(String::from("")), bot.input_position(Some(position.parse().unwrap()), false, Vec::new()));
+
+        let mut expected_board = Board::new();
+        expected_board.read_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
+
+        assert_eq!(expected_board, *bot.move_list.lock().unwrap().get_board());
+    }
+    //todo: add parser checks
+
+    // #[test]
+    // fn check_input_position_fen_moves() {
+    //     let mut bot = Bot::new();
+    //     let string = "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1 moves e2e4";
+    //
+    //     assert_eq!(Some(String::from("")), bot.input_position(Some(string.parse().unwrap()), false, Vec::new()));
+    //
+    //     assert!(tokens.next().is_none());
+    //
+    //     let mut expected_board = Board::new();
+    //     expected_board.read_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
+    //     let mut expected_move_list = MoveList::from_board(expected_board);
+    //     expected_move_list.make_move(&Move{origin: 11, target: 27, promotion: 0, piece: PAWN});
+    //
+    //     assert_eq!(expected_move_list.get_board(), bot.move_list.lock().unwrap().get_board());
+    // }
+
+    #[test]
+    fn check_input_position_fen_moves() {
+        let mut bot = Bot::new();
+        let string = "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1";
+        let moves = vec!(String::from("e2e4"));
+
+        assert_eq!(Some(String::from("")), bot.input_position(Some(string.parse().unwrap()), false, moves));
+
+        let mut expected_board = Board::new();
+        expected_board.read_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
+        let mut expected_move_list = MoveList::from_board(expected_board);
+        expected_move_list.make_move(&Move{origin: 11, target: 27, promotion: 0, piece: PAWN});
+
+        assert_eq!(expected_move_list.get_board(), bot.move_list.lock().unwrap().get_board());
+    }
+
+    #[test]
+    fn check_input_position_startpos_moves() {
+        let mut bot = Bot::new();
+        let moves = vec!(String::from("e2e4"));
+
+        assert_eq!(Some(String::from("")), bot.input_position(None, true, moves));
+
+        let mut expected_board = Board::new();
+        expected_board.read_fen(START_POSITION);
+        let mut expected_move_list = MoveList::from_board(expected_board);
+        expected_move_list.make_move(&Move { origin: 11, target: 27, promotion: 0, piece: PAWN });
+
+        assert_eq!(expected_move_list.get_board(), bot.move_list.lock().unwrap().get_board());
+    }
+
+    #[test]
+    fn check_parse_ignored_and_simple_commands() {
+        assert_eq!(None, Bot::parse(""));
+        assert_eq!(None, Bot::parse("   "));
+        assert_eq!(None, Bot::parse("# ignored UCI script comment"));
+
+        assert_eq!(Some(Command::Uci), Bot::parse("uci"));
+        assert_eq!(Some(Command::IsReady), Bot::parse("ISREADY"));
+        assert_eq!(Some(Command::UciNewGame), Bot::parse("ucinewgame"));
+        assert_eq!(Some(Command::Stop), Bot::parse("stop"));
+        assert_eq!(Some(Command::PonderHit), Bot::parse("ponderhit"));
+        assert_eq!(Some(Command::Quit), Bot::parse("quit"));
+        assert_eq!(Some(Command::Debug(true)), Bot::parse("debug on"));
+        assert_eq!(Some(Command::Debug(false)), Bot::parse("debug OFF"));
+    }
+
+    #[test]
+    fn check_parse_setoption() {
+        assert_eq!(
+            Some(Command::SetOption {
+                name: String::from("Move Overhead"),
+                value: Some(String::from("25")),
+            }),
+            Bot::parse("setoption name Move Overhead value 25")
+        );
+        assert_eq!(
+            Some(Command::SetOption {
+                name: String::from("Clear Hash"),
+                value: None,
+            }),
+            Bot::parse("setoption name Clear Hash")
+        );
+    }
+
+    #[test]
+    fn check_parse_position() {
+        let fen = "4K3/8/8/8/8/8/8/4k3 w - - 0 1";
+
+        assert_eq!(
+            Some(Command::Position {
+                fen: None,
+                startpos: true,
+                moves: vec!(String::from("e2e4"), String::from("e7e5")),
+            }),
+            Bot::parse("position startpos moves e2e4 e7e5")
+        );
+        assert_eq!(
+            Some(Command::Position {
+                fen: Some(String::from(fen)),
+                startpos: false,
+                moves: vec!(String::from("e1e2")),
+            }),
+            Bot::parse(&format!("position fen {fen} moves e1e2"))
+        );
+    }
+
+    #[test]
+    fn check_parse_go() {
+        assert_eq!(
+            Some(Command::Go(SearchSettings::default())),
+            Bot::parse("go")
+        );
+
+        let expected = SearchSettings {
+            wtime: Some(60_000),
+            btime: Some(59_000),
+            winc: Some(500),
+            binc: Some(250),
+            moves_to_go: Some(20),
+            depth: Some(12),
+            nodes: Some(123_456),
+            mate: Some(4),
+            move_time: Some(1_500),
+            infinite: true,
+            perft: Some(3),
+            ponder: true,
+            search_moves: vec!(String::from("e2e4"), String::from("d2d4")),
+        };
+
+        assert_eq!(
+            Some(Command::Go(expected)),
+            Bot::parse(
+                "go wtime 60000 btime 59000 winc 500 binc 250 movestogo 20 \
+                 depth 12 nodes 123456 mate 4 movetime 1500 infinite perft 3 \
+                 ponder searchmoves e2e4 d2d4"
+            )
+        );
+
+        assert_eq!(
+            Some(Command::Go(SearchSettings {
+                depth: Some(4),
+                ..SearchSettings::default()
+            })),
+            Bot::parse("go futureextension 99 depth 4")
+        );
+    }
+
+    #[test]
+    fn check_parse_invalid_and_unknown_commands() {
+        for message in [
+            "debug maybe",
+            "setoption",
+            "setoption value 10",
+            "setoption name value 10",
+            "position",
+            "position fen",
+            "go depth",
+            "go depth -1",
+            "go nodes invalid",
+        ] {
+            assert!(
+                matches!(Bot::parse(message), Some(Command::Invalid(_))),
+                "parser accepted invalid command: {message}"
+            );
+        }
+
+        assert_eq!(
+            Some(Command::Unknown(String::from("nonstandard command"))),
+            Bot::parse("nonstandard command")
+        );
+    }
+
+    #[test]
+    fn check_time_budget_search_settings() {
+        let bot = Bot::with_position(START_POSITION);
+        let move_list = bot.move_list.lock().unwrap();
+
+        let settings = SearchSettings {
+            move_time: Some(250),
+            infinite: true,
+            ..SearchSettings::default()
+        };
+        assert_eq!(
+            Some(Duration::from_millis(250)),
+            bot.time_budget(&settings, &move_list)
+        );
+
+        let settings = SearchSettings {
+            infinite: true,
+            ..SearchSettings::default()
+        };
+        assert_eq!(None, bot.time_budget(&settings, &move_list));
+
+        let settings = SearchSettings {
+            wtime: Some(60_000),
+            winc: Some(1_000),
+            moves_to_go: Some(30),
+            ..SearchSettings::default()
+        };
+        assert_eq!(
+            Some(Duration::from_millis(2_750)),
+            bot.time_budget(&settings, &move_list)
+        );
+    }
+
+    #[test]
+    fn check_go_depth() {
+        let mut bot = Bot::with_position(START_POSITION);
+        let settings = SearchSettings {
+            depth: Some(1),
+            ..SearchSettings::default()
+        };
+
+        assert_eq!(Some(String::new()), bot.go(settings));
+        wait_for_search_to_start(&bot);
+        join_finished_search(&mut bot);
+
+        assert_eq!(Some(String::from("1")), bot.depth());
+        let engine = bot.engine.lock().unwrap();
+        let move_list = bot.move_list.lock().unwrap();
+        assert!(engine.try_get_best_move(move_list.get_board()).is_some());
+    }
+
+    #[test]
+    fn check_go_nodes() {
+        let mut bot = Bot::with_position(START_POSITION);
+        let settings = SearchSettings {
+            nodes: Some(1),
+            ..SearchSettings::default()
+        };
+
+        assert_eq!(Some(String::new()), bot.go(settings));
+        let control = wait_for_search_to_start(&bot);
+        join_finished_search(&mut bot);
+
+        assert!(control.get_nodes() >= 1);
+    }
+
+    #[test]
+    fn check_go_searchmoves() {
+        let mut bot = Bot::with_position(START_POSITION);
+        let expected_move = {
+            let move_list = bot.move_list.lock().unwrap();
+            Move::from_algebraic_notation("e2e4", move_list.get_board())
+        };
+        let settings = SearchSettings {
+            depth: Some(1),
+            search_moves: vec!(String::from("e2e4")),
+            ..SearchSettings::default()
+        };
+
+        assert_eq!(Some(String::new()), bot.go(settings));
+        wait_for_search_to_start(&bot);
+        join_finished_search(&mut bot);
+
+        let engine = bot.engine.lock().unwrap();
+        let move_list = bot.move_list.lock().unwrap();
+        assert_eq!(
+            Some(expected_move),
+            engine.try_get_best_move(move_list.get_board())
+        );
+    }
+
+    #[test]
+    fn check_go_ponder() {
+        let mut bot = Bot::with_position(START_POSITION);
+        let settings = SearchSettings {
+            // The one-node limit makes the actual search finish immediately;
+            // only the ponder gate should keep the worker alive.
+            nodes: Some(1),
+            ponder: true,
+            ..SearchSettings::default()
+        };
+
+        assert_eq!(Some(String::new()), bot.go(settings));
+        wait_for_search_to_start(&bot);
+        sleep(Duration::from_millis(25));
+
+        let worker_finished = bot
+            .active_search
+            .as_ref()
+            .and_then(|search| search.handle.as_ref())
+            .map_or(true, |handle| handle.is_finished());
+        assert!(!worker_finished, "ponder search published bestmove before ponderhit");
+
+        assert_eq!(Some(String::new()), bot.ponder_hit());
+        join_finished_search(&mut bot);
+    }
+
+    #[test]
+    fn check_go_perft() {
+        let mut bot = Bot::with_position(START_POSITION);
+        let depth = 1;
+
+        let expected_regex = Regex::new(r"^info string perft 1 searched \d+ nodes in (\d+.\d+|\d+)(ns|µs|ms|s)$").unwrap();
+
+        let response = Bot::go_perft(&mut bot.move_list.lock().unwrap(), Some(depth)).unwrap();
+        println!("{}", response);
+
+        assert!(expected_regex.is_match(&*response));
+    }
+
+    #[test]
+    fn check_stop() {
+        let mut bot = Bot::with_position(START_POSITION);
+        let settings = SearchSettings {
+            infinite: true,
+            ..SearchSettings::default()
+        };
+
+        assert_eq!(Some(String::new()), bot.go(settings));
+        wait_for_search_to_start(&bot);
+        assert_eq!(Some(String::new()), bot.stop());
+        join_finished_search(&mut bot);
+    }
+
+    #[test]
+    fn check_best_move() {
+        let mut bot = Bot::with_position(START_POSITION);
+        let search_control = Arc::new(SearchControl::new(None, None));
+        let mut engine = bot.engine.lock().unwrap();
+        let mut move_list = bot.move_list.lock().unwrap();
+
+        engine.search(&mut move_list, 2, &search_control, None);
+        let response = Bot::best_move(
+            &mut engine,
+            &mut move_list,
+            search_control.get_nodes(),
+            Duration::from_millis(300),
+            None,
+        );
+
+        let expected_regex = Regex::new(
+            r"^info depth \d+ score cp -?\d+ time \d+ nodes \d+ nps \d+\nbestmove [a-h][1-8][a-h][1-8]( ponder [a-h][1-8][a-h][1-8])?$"
+        ).unwrap();
+
+        assert!(expected_regex.is_match(&response));
+    }
+
+    #[test]
+    fn test_engine_pipeline() {
+        let mut bot = Bot::new();
+
+        assert_eq!(Bot::uci(), process_message(&mut bot, "uci"));
+        assert_eq!(Some(String::new()), process_message(&mut bot, "debug on"));
+        assert!(bot.debug);
+        assert_eq!(
+            Some(String::new()),
+            process_message(&mut bot, "setoption name Move Overhead value 25")
+        );
+        assert_eq!(25, bot.move_overhead_ms);
+        assert_eq!(
+            Some(String::from("readyok")),
+            process_message(&mut bot, "isready")
+        );
+        assert_eq!(
+            Some(String::from(
+                "info string go depth requires a valid non-negative integer"
+            )),
+            process_message(&mut bot, "go depth invalid")
+        );
+
+        assert_eq!(
+            Some(String::new()),
+            process_message(&mut bot, "ucinewgame")
+        );
+        assert_eq!(
+            Some(String::new()),
+            process_message(&mut bot, "position startpos moves e2e4 e7e5")
+        );
+
+        let mut expected_bot = Bot::with_position(START_POSITION);
+        expected_bot.input_moves(vec!(String::from("e2e4"), String::from("e7e5")));
+        assert_eq!(
+            expected_bot.move_list.lock().unwrap().get_board(),
+            bot.move_list.lock().unwrap().get_board()
+        );
+
+        assert_eq!(
+            Some(String::new()),
+            process_message(&mut bot, "go depth 1 searchmoves g1f3")
+        );
+        wait_for_search_to_start(&bot);
+        join_finished_search(&mut bot);
+
+        {
+            let engine = bot.engine.lock().unwrap();
+            let move_list = bot.move_list.lock().unwrap();
+            let expected_move =
+                Move::from_algebraic_notation("g1f3", move_list.get_board());
+            assert_eq!(
+                Some(expected_move),
+                engine.try_get_best_move(move_list.get_board())
+            );
+        }
+
+        assert_eq!(
+            Some(String::new()),
+            process_message(&mut bot, "go infinite")
+        );
+        wait_for_search_to_start(&bot);
+        assert_eq!(
+            Some(String::from("readyok")),
+            process_message(&mut bot, "isready")
+        );
+        assert_eq!(Some(String::new()), process_message(&mut bot, "stop"));
+        join_finished_search(&mut bot);
+
+        assert_eq!(None, process_message(&mut bot, "quit"));
+        assert!(bot.active_search.is_none());
+    }
+
+}

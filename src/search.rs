@@ -771,8 +771,6 @@ impl<T: Evaluator> Engine<T> {
         Some(alpha)
     }
 
-    //todo: test stand_pat
-    //todo: add tests from chatgpt
     fn compute_stand_pat(&mut self, mut move_list: &mut MoveList, alpha: &mut i32, beta: i32, zobrist: u64, in_check: bool) -> Result<Option<i32>, Option<i32>> {
         Ok(if !in_check {
             let value = T::evaluate(move_list.get_board());
