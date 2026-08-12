@@ -24,6 +24,7 @@ const INFINITE_DEPTH: u32 = 256;
 const DEFAULT_MOVE_OVERHEAD_MS: u64 = 10;
 const MAX_MOVE_OVERHEAD_MS: u64 = 5_000;
 
+/// Command parsing enum
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     Uci,
@@ -40,6 +41,7 @@ pub enum Command {
     Unknown(String),
 }
 
+/// Settings provided with the `go` command.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct SearchSettings {
     pub wtime: Option<u64>,
@@ -57,13 +59,19 @@ pub struct SearchSettings {
     pub search_moves: Vec<String>
 }
 
+/// Search handle & state
 struct ActiveSearch {
+    // Per-search state shared between the UCI control thread and the search worker.
     control: Arc<SearchControl>,
+    // Minimal ponder budget.
     ponder_budget: Option<Duration>,
+    // Ponder thread control
     ponder_gate: Option<Arc<PonderGate>>,
+    // Search thread handle
     handle: Option<JoinHandle<()>>,
 }
 
+/// Ponder thread control
 struct PonderGate {
     pondering: Mutex<bool>,
     changed: Condvar,
@@ -77,6 +85,7 @@ impl PonderGate {
         }
     }
 
+    /// Sends the signal that allows the engine to stop the pondering as soon as the minimal limit is reached
     fn release(&self) {
         if let Ok(mut pondering) = self.pondering.lock() {
             *pondering = false;
@@ -84,6 +93,8 @@ impl PonderGate {
         }
     }
 
+    /// Wait for the pondering mutex release, i.e. for `ponderhit` or `stop` commands.
+    /// The pondering should not be aborted beforehand, even if the minimal budget is reached.
     fn wait_until_released(&self) {
         let Ok(mut pondering) = self.pondering.lock() else {
             return;
@@ -141,6 +152,9 @@ impl Bot<MainEvaluator> {
         }
     }
 
+    /// Parses the message received from the UCI.
+    /// Returns an option of the structured Command enum.
+    /// None is returned if empty command or a comment was supplied.
     pub fn parse(message: &str) -> Option<Command> {
         let message = message.trim();
 
@@ -167,14 +181,19 @@ impl Bot<MainEvaluator> {
             "ponderhit" => Some(Command::PonderHit),
             "quit" => Some(Command::Quit),
 
-            "setoption" => Self::parse_set_option(&mut iter, &message),
-            "position" => Self::parse_position(&mut iter, &message),
-            "go" => Self::parse_go(&mut iter, &message),
+            "setoption" => Self::parse_set_option(&mut iter),
+            "position" => Self::parse_position(&mut iter),
+            "go" => Self::parse_go(&mut iter),
             _ => Some(Command::Unknown(message.to_owned())),
         }
     }
 
-    fn parse_set_option(iter: &mut Peekable<SplitWhitespace>, _message: &str) -> Option<Command> {
+    /// Parses the `setoption` command.
+    /// * iter - peekable iterator of the further command
+    ///
+    /// Returns Some(Command::SetOption) for valid options.
+    /// Returns Some(Command::Invalid) for invalid options.
+    fn parse_set_option(iter: &mut Peekable<SplitWhitespace>) -> Option<Command> {
         let mut name_tokens: Vec<&str> = Vec::new();
         let mut value_tokens: Vec<&str> = Vec::new();
 
@@ -211,7 +230,12 @@ impl Bot<MainEvaluator> {
         Some(Command::SetOption { name, value })
     }
 
-    fn parse_position(iter: &mut Peekable<SplitWhitespace>, message: &str) -> Option<Command> {
+    /// Parses the `position` command.
+    /// * iter - peekable iterator of the further command
+    ///
+    /// Returns Some(Command::Position) for valid position.
+    /// Returns Some(Command::Invalid) for invalid position.
+    fn parse_position(iter: &mut Peekable<SplitWhitespace>) -> Option<Command> {
         let mut startpos = false;
         let mut fen: Option<String> = None;
         let mut moves: Vec<String> = Vec::new();
@@ -242,9 +266,9 @@ impl Bot<MainEvaluator> {
                 fen = Some(fen_tokens.join(" "));
             }
             _ => {
-                return Some(Command::Invalid(format!(
-                    "invalid position command: {message}"
-                )))
+                return Some(Command::Invalid(
+                    "invalid position command".to_owned(),
+                ))
             }
         }
 
@@ -255,7 +279,12 @@ impl Bot<MainEvaluator> {
         Some(Command::Position { fen, startpos, moves })
     }
 
-    fn parse_go(iter: &mut Peekable<SplitWhitespace>, _message: &str) -> Option<Command> {
+    /// Parses the `go` command.
+    /// * iter - peekable iterator of the further command
+    ///
+    /// Returns Some(Command::Go) for valid search options.
+    /// Returns Some(Command::Invalid) for invalid search options.
+    fn parse_go(iter: &mut Peekable<SplitWhitespace>) -> Option<Command> {
         let mut settings = SearchSettings::default();
 
         macro_rules! parse_number {
@@ -303,6 +332,7 @@ impl Bot<MainEvaluator> {
         Some(Command::Go(settings))
     }
 
+    /// Processes the parsed UCI command and executes it.
     pub fn process(&mut self, command: Command) -> Option<String> {
         match command {
             Command::Uci => Self::uci(),
@@ -355,6 +385,7 @@ impl Bot<MainEvaluator> {
         Option::from(String::new())
     }
 
+    /// Builds the given position on the board and returns the response, which is empty for successful operation.
     fn input_position(&mut self, fen: Option<String>, startpos: bool, moves: Vec<String>) -> Option<String> {
         let response = String::new();
 
@@ -393,15 +424,11 @@ impl Bot<MainEvaluator> {
     }
 
     /// Responds to a "go" command, which requests position analysis.
-    /// Supports following options:
-    ///     "perft" - calls perft_log, outputting the number of nodes searched, the duration time,
-    /// and the number of nodes from each immediate response
-    ///     "Infinite" - starts an Infinite search, which can conclude with the "stop" command
-    ///     "depth" - starts a search up to a given depth
-    /// The calls are done on a separate thread, so the CLI can resume its work without
+    /// The call is done on a separate thread, so the CLI can resume its work without
     /// waiting for the time-consuming computations.
     /// It responds with an empty string, as it returns before the computing threads conclude their work.
     /// Prints directly the responses of the computation thread.
+    /// Implements various settings like `ponder`, `infinite`, `nodes`, time controls, `perft`.
     fn go(&mut self, settings: SearchSettings) -> Option<String> {
         self.stop_and_join_search();
 
@@ -411,7 +438,7 @@ impl Bot<MainEvaluator> {
 
         let budget = {
             let move_list = self.move_list.lock().unwrap();
-            self.time_budget(&settings, &move_list)
+            self.compute_time_budget(&settings, &move_list)
         };
         let deadline = if settings.ponder {
             None
@@ -518,7 +545,20 @@ impl Bot<MainEvaluator> {
         Option::from(response)
     }
 
-    fn time_budget(&self, settings: &SearchSettings, move_list: &MoveList) -> Option<Duration> {
+    /// Computes the time budget for the search, given the search settings and the current move list.
+    /// Returns a `Duration` object wrapped in an Option.
+    ///
+    /// The formula is:
+    /// * movetime if `movetime` option is supplied (forcing exact duration of search)
+    /// * None if infinite search
+    /// * otherwise:
+    ///     budget = Math.min(p, Math.max(0, r - m_o)), where:
+    ///         p = r/m + 3/4 * i,
+    ///         r - time remaining on the clock,
+    ///         m - moves to the next time control,
+    ///         i - time increment,
+    ///         m_o - non-search related overhead per each move
+    fn compute_time_budget(&self, settings: &SearchSettings, move_list: &MoveList) -> Option<Duration> {
         if let Some(milliseconds) = settings.move_time {
             return Some(Duration::from_millis(milliseconds));
         }
@@ -547,6 +587,7 @@ impl Bot<MainEvaluator> {
         Some(Duration::from_millis(budget))
     }
 
+    /// Send the stop signal and wait for the search thread to finish.
     fn stop_and_join_search(&mut self) {
         let Some(mut search) = self.active_search.take() else {
             return;
@@ -561,6 +602,7 @@ impl Bot<MainEvaluator> {
         }
     }
 
+    /// Writes the response to the stdout channel. Ignores an empty response.
     fn write_uci_response(response: &str) {
         if response.is_empty() {
             return;
@@ -584,6 +626,8 @@ impl Bot<MainEvaluator> {
         Option::from(String::new())
     }
 
+    /// Sends a `ponderhit` command - allows the ponder search to stop if the minimal budget is reached.
+    /// Returns an empty string.
     fn ponder_hit(&mut self) -> Option<String> {
         if let Some(search) = &mut self.active_search {
             if let Some(budget) = search.ponder_budget.take() {
@@ -596,6 +640,13 @@ impl Bot<MainEvaluator> {
         Some(String::new())
     }
 
+    /// Sets an option given its name and value.
+    ///
+    /// Currently supported options:
+    /// * Move Overhead - non-search related overhead per each move
+    /// * Clear Hash - clears the transposition table and all caches/
+    ///
+    /// Returns an empty string if successful, otherwise a string with an error message.
     fn set_option(&mut self, name: String, value: Option<String>) -> Option<String> {
         if name.eq_ignore_ascii_case("Move Overhead") {
             let Some(value) = value.and_then(|value| value.parse::<u64>().ok()) else {
@@ -617,6 +668,7 @@ impl Bot<MainEvaluator> {
         Some(String::new())
     }
 
+    /// Returns an empty string if debug statements are not allowed, and a problem description otherwise.
     fn unsupported_command(&self, command: String) -> Option<String> {
         if self.debug {
             eprintln!("Ignored unknown UCI command: {command}");
@@ -624,6 +676,13 @@ impl Bot<MainEvaluator> {
         Some(String::new())
     }
 
+    /// Returns a string containing info on the search,
+    /// given the `Engine` object, the number of nodes visited, and the search duration:
+    /// * depth
+    /// * score evaluation in centipawns
+    /// * time in miliseconds
+    /// * number of nodes visited
+    /// * nodes per second visited
     fn info(engine: &Engine, nodes: u64, elapsed: Duration) -> String {
         let depth = engine.get_current_depth();
         let score_cp = engine.get_last_root_score().unwrap_or(0);
@@ -717,11 +776,13 @@ impl Bot<MainEvaluator> {
         response.build()
     }
 
+    /// Outputs a string containing the information on the current player.
     fn current_player(&self) -> Option<String> {
         let list = self.move_list.lock().unwrap();
         Option::from((list.get_board().active_player as u32).to_string())
     }
 
+    /// Outputs a string containing the information on the depth of the current search.
     fn depth(&self) -> Option<String> {
         let engine_binding = self.engine.lock().unwrap();
         Option::from(engine_binding.get_current_depth().to_string())
@@ -1060,14 +1121,14 @@ mod tests {
         };
         assert_eq!(
             Some(Duration::from_millis(250)),
-            bot.time_budget(&settings, &move_list)
+            bot.compute_time_budget(&settings, &move_list)
         );
 
         let settings = SearchSettings {
             infinite: true,
             ..SearchSettings::default()
         };
-        assert_eq!(None, bot.time_budget(&settings, &move_list));
+        assert_eq!(None, bot.compute_time_budget(&settings, &move_list));
 
         let settings = SearchSettings {
             wtime: Some(60_000),
@@ -1077,7 +1138,7 @@ mod tests {
         };
         assert_eq!(
             Some(Duration::from_millis(2_750)),
-            bot.time_budget(&settings, &move_list)
+            bot.compute_time_budget(&settings, &move_list)
         );
     }
 

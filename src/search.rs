@@ -1,6 +1,6 @@
 //! Best move search algorithm
 //! Builds a search tree to find the best possible move according to the evaluation algorithm
-//! Uses negamax convention, alpha-beta pruning, quiescence search.
+//! Uses negamax convention, alpha-beta pruning, quiescence search, and various heuristics.
 
 mod ordering;
 
@@ -53,27 +53,45 @@ impl SearchControl {
         }
     }
 
+    /// Sets the `stop` flag to `true` to send the signal to the engine to stop the search.
     pub fn request_stop(&self) {
         self.stop.store(true, Ordering::Relaxed);
     }
 
+    /// Sets the search deadline to the time specified by duration from now.
     pub fn set_deadline_from_now(&self, duration: Duration) {
         *self.deadline.lock().unwrap() = Some(Instant::now() + duration);
     }
 
+    /// Retrieves the number of nodes the search has visited so far.
     pub fn get_nodes(&self) -> u64 {
         self.nodes.load(Ordering::Relaxed)
     }
 
+    /// Increment the node visits counter and check if any stopping criterion is met.
+    /// * check_clock - should we check the clock? Mask present for the sake of optimization.
+    ///     We arbitrarily decrease the precision to avoid checking the clock every node.
     fn inc_node(&self, check_clock: bool) -> bool {
         let nodes = self.nodes.fetch_add(1, Ordering::Relaxed) + 1;
         self.is_stopped_at(nodes, check_clock)
     }
 
+    /// Checks if any stopping criterion is met.
+    /// * check_clock - should we check the clock? Mask present for the sake of optimization.
+    ///     We arbitrarily decrease the precision to avoid checking the clock every node.
     fn is_stopped(&self, check_clock: bool) -> bool {
         self.is_stopped_at(self.nodes.load(Ordering::Relaxed), check_clock)
     }
 
+    /// Given the number of nodes visited so far and the check_clock mask, is any stopping criterion met?
+    /// * nodes - the number of nodes visited by the search so far.
+    /// * check_clock - should we check the clock? Mask present for the sake of optimization.
+    ///     We arbitrarily decrease the precision to avoid checking the clock every node.
+    ///
+    /// Potential stopping criteria:
+    /// - external search abortion
+    /// - reaching the node limit
+    /// - reaching the clock limit
     fn is_stopped_at(&self, nodes: u64, check_clock: bool) -> bool {
         let externally_stopped = self.stop.load(Ordering::Relaxed);
         let node_limit_reached = self.node_limit.map_or(false, |limit| nodes >= limit);
@@ -183,7 +201,6 @@ impl<T: Evaluator> Engine<T> {
     }
 
     /// Given a move and its evaluation, insert into a given array of best moves and array of best moves evaluation at a proper position
-    // #[inline(never)]
     fn insert_into_best_moves(&mut self, piece_move: Move, move_evaluation: i32, depth: usize) {
         if move_evaluation > self.best_moves_evaluation[depth][0] {
             self.best_moves_evaluation[depth][2] = self.best_moves_evaluation[depth][1];
@@ -212,18 +229,15 @@ impl<T: Evaluator> Engine<T> {
         })
     }
 
+    /// Returns the score of the last root evaluated.
     pub fn get_last_root_score(&self) -> Option<i32> {
         self.last_root_best.map(|_| self.last_root_score)
     }
 
+    /// Retrieves the `Transposition` data for the given board position from the engine's transposition table.
     pub fn get_transposition(&self, board: &Board) -> Option<Transposition> {
         self.transposition_table.get_from_zobrist(board.zobrist).clone()
     }
-
-    // /// Retrieves what the engine thinks the best moves for the most recent board situation is.
-    // pub fn get_current_best_moves(&self) -> &[Option<Move>; 3] {
-    //     &self.best_moves[0]
-    // }
 
     /// Retrieves the depth at which the engine is currently conducting a search
     /// or the depth at which the engine has conducted a search if the engine is idle
@@ -771,6 +785,23 @@ impl<T: Evaluator> Engine<T> {
         Some(alpha)
     }
 
+    /// In order to allow the quiescence search to stabilize, we need to be able to stop searching without necessarily searching all available captures.
+    /// In addition, we need a score to return in case there are no captures available to be played.
+    /// This is done by a using the static evaluation as a "stand-pat" score.
+    /// If the lower bound from the stand pat score is already greater than or equal to beta, we can return the stand pat score (fail-soft) or beta (fail-hard) as a lower bound.
+    /// Otherwise, the search continues, keeping the evaluated "stand-pat" score as an lower bound if it exceeds alpha, to see if any tactical moves can increase alpha.
+    /// /// https://chessprogramming.org/Quiescence_Search#standing-pat
+    ///
+    /// * move_list - currently available moves
+    /// * alpha - current lower bound of the quiescence search (mutable, as the stand pat computation can raise it)
+    /// * beta - current upper bound of the quiescence search
+    /// * zobrist - the zobrist hash of the current board position
+    /// * in_check - are we currently in check? If yes, we have to evaluate all quiet moves, as well.
+    ///
+    /// Returns:
+    /// * Ok(Some(score)) if the stand-pat did not fail hard and we are not in check. `move_list` is populated with noisy moves.
+    /// * Ok(None) if we are in check. `move_list` is populated with all legal moves.
+    /// * Err(Some(beta)) if we failed hard (the value exceeded the beta).
     fn compute_stand_pat(&mut self, mut move_list: &mut MoveList, alpha: &mut i32, beta: i32, zobrist: u64, in_check: bool) -> Result<Option<i32>, Option<i32>> {
         Ok(if !in_check {
             let value = T::evaluate(move_list.get_board());

@@ -14,6 +14,8 @@ use std::io::{self, BufRead, Write};
 
 use crate::bot::{Bot, Command};
 
+/// Writes the response to the stdout channel.
+/// Returns Ok if writing was successful, Err - otherwise.
 fn send_response(response: &str) -> io::Result<()> {
     if response.is_empty() {
         return Ok(());
@@ -25,6 +27,12 @@ fn send_response(response: &str) -> io::Result<()> {
     out.flush()
 }
 
+/// UCI stands for the Universal Chess Interface
+/// https://gist.github.com/DOBRO/2592c6dad754ba67e6dcaec8c90165bf
+/// This loop is in charge of handling all UCI requests and responses.
+/// It owns the engine bot.
+/// Returns Ok if the program was exited gracefully.
+/// Returns Err if a breaking error occurred.
 fn run_uci_loop() -> io::Result<()> {
     // The control loop is the sole owner of Bot. Bot::go must start search in
     // the background
