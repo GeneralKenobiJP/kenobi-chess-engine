@@ -1,11 +1,13 @@
 //! Best move search algorithm
 //! Builds a search tree to find the best possible move according to the evaluation algorithm
-//! Uses negamax convention, alpha-beta prunning, quiescence search.
+//! Uses negamax convention, alpha-beta pruning, quiescence search, and various heuristics.
 
 mod ordering;
 
 use std::cmp::max;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use num_traits::real::Real;
 use crate::board::Board;
 use crate::evaluation::{compute_game_phase_factor, DRAW, Evaluator, MainEvaluator, PIECE_WORTH};
@@ -27,13 +29,87 @@ const NULL_MOVE_DEPTH_SCALING_FACTOR: u32 = 4;
 const NULL_MOVE_PHASE_LIMIT: i32 = 20;
 const DELTA_MARGIN: i32 = 200;
 const DELTA_PRUNING_PHASE_LIMIT: i32 = 20;
+const STOP_CHECK_PERIOD: u32 = 1 << 12;
+const STOP_CHECK_MASK: u32 = STOP_CHECK_PERIOD - 1;
 
-static STOP_FLAG: AtomicBool = AtomicBool::new(false);
+/// Per-search state shared between the UCI control thread and the search worker.
+/// It deliberately lives outside `Engine`, so separate engine instances cannot
+/// accidentally stop one another.
+#[derive(Debug)]
+pub struct SearchControl {
+    stop: AtomicBool,
+    nodes: AtomicU64,
+    node_limit: Option<u64>,
+    deadline: Mutex<Option<Instant>>,
+}
+
+impl SearchControl {
+    pub fn new(node_limit: Option<u64>, deadline: Option<Instant>) -> Self {
+        Self {
+            stop: AtomicBool::new(false),
+            nodes: AtomicU64::new(0),
+            node_limit,
+            deadline: Mutex::new(deadline),
+        }
+    }
+
+    /// Sets the `stop` flag to `true` to send the signal to the engine to stop the search.
+    pub fn request_stop(&self) {
+        self.stop.store(true, Ordering::Relaxed);
+    }
+
+    /// Sets the search deadline to the time specified by duration from now.
+    pub fn set_deadline_from_now(&self, duration: Duration) {
+        *self.deadline.lock().unwrap() = Some(Instant::now() + duration);
+    }
+
+    /// Retrieves the number of nodes the search has visited so far.
+    pub fn get_nodes(&self) -> u64 {
+        self.nodes.load(Ordering::Relaxed)
+    }
+
+    /// Increment the node visits counter and check if any stopping criterion is met.
+    /// * check_clock - should we check the clock? Mask present for the sake of optimization.
+    ///     We arbitrarily decrease the precision to avoid checking the clock every node.
+    fn inc_node(&self, check_clock: bool) -> bool {
+        let nodes = self.nodes.fetch_add(1, Ordering::Relaxed) + 1;
+        self.is_stopped_at(nodes, check_clock)
+    }
+
+    /// Checks if any stopping criterion is met.
+    /// * check_clock - should we check the clock? Mask present for the sake of optimization.
+    ///     We arbitrarily decrease the precision to avoid checking the clock every node.
+    fn is_stopped(&self, check_clock: bool) -> bool {
+        self.is_stopped_at(self.nodes.load(Ordering::Relaxed), check_clock)
+    }
+
+    /// Given the number of nodes visited so far and the check_clock mask, is any stopping criterion met?
+    /// * nodes - the number of nodes visited by the search so far.
+    /// * check_clock - should we check the clock? Mask present for the sake of optimization.
+    ///     We arbitrarily decrease the precision to avoid checking the clock every node.
+    ///
+    /// Potential stopping criteria:
+    /// - external search abortion
+    /// - reaching the node limit
+    /// - reaching the clock limit
+    fn is_stopped_at(&self, nodes: u64, check_clock: bool) -> bool {
+        let externally_stopped = self.stop.load(Ordering::Relaxed);
+        let node_limit_reached = self.node_limit.map_or(false, |limit| nodes >= limit);
+        let deadline_reached = check_clock
+            && self
+                .deadline
+                .lock()
+                .unwrap()
+                .map_or(false, |deadline| Instant::now() >= deadline);
+
+        externally_stopped || node_limit_reached || deadline_reached
+    }
+}
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Engine<T: Evaluator = MainEvaluator> {
     evaluator: T,
-    pub transposition_table: TranspositionTable,
+    transposition_table: TranspositionTable,
     repetition_table: RepetitionTable,
     killer_moves: [[Option<Move>; 2]; KILLER_MOVES_CAPACITY],
     depth: u32,
@@ -41,7 +117,10 @@ pub struct Engine<T: Evaluator = MainEvaluator> {
     current_ply: u32,
     moves_buffer: [Vec<Move>; DEPTH_LIMIT],
     best_moves: [[Option<Move>; 3]; DEPTH_LIMIT],
-    best_moves_evaluation: [[i32; 3]; DEPTH_LIMIT]
+    best_moves_evaluation: [[i32; 3]; DEPTH_LIMIT],
+    guard_counter: u32,
+    last_root_best: Option<Move>,
+    last_root_score: i32,
 }
 
 impl Engine<MainEvaluator> {
@@ -57,7 +136,10 @@ impl Engine<MainEvaluator> {
             current_ply: 0,
             moves_buffer: core::array::from_fn(|_i| Vec::with_capacity(MAX_MOVES_IN_POSITION)),
             best_moves: [[None; 3]; DEPTH_LIMIT],
-            best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT]
+            best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT],
+            guard_counter: 0,
+            last_root_best: None,
+            last_root_score: 0,
         }
     }
 
@@ -72,24 +154,11 @@ impl Engine<MainEvaluator> {
             current_ply: 0,
             moves_buffer: core::array::from_fn(|_i| Vec::with_capacity(MAX_MOVES_IN_POSITION)),
             best_moves: [[None; 3]; DEPTH_LIMIT],
-            best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT]
+            best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT],
+            guard_counter: 0,
+            last_root_best: None,
+            last_root_score: 0,
         }
-    }
-}
-
-impl Engine {
-    /// Sets stop flag to a given boolean.
-    /// Stop flag is used by engine to
-    /// indicate whether further search should be aborted or not.
-    pub fn set_stop_flag(flag: bool) {
-        STOP_FLAG.store(flag, Ordering::SeqCst);
-    }
-
-    /// Gets stop flag.
-    /// Stop flag is used by engine to
-    /// indicate whether further search should be aborted or not.
-    pub fn get_stop_flag() -> bool {
-        STOP_FLAG.load(Ordering::SeqCst)
     }
 }
 
@@ -106,7 +175,10 @@ impl<T: Evaluator> Engine<T> {
             current_ply: 0,
             moves_buffer: core::array::from_fn(|_i| Vec::with_capacity(MAX_MOVES_IN_POSITION)),
             best_moves: [[None; 3]; DEPTH_LIMIT],
-            best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT]
+            best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT],
+            guard_counter: 0,
+            last_root_best: None,
+            last_root_score: 0,
         }
     }
 
@@ -121,12 +193,14 @@ impl<T: Evaluator> Engine<T> {
             current_ply: 0,
             moves_buffer: core::array::from_fn(|_i| Vec::with_capacity(MAX_MOVES_IN_POSITION)),
             best_moves: [[None; 3]; DEPTH_LIMIT],
-            best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT]
+            best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT],
+            guard_counter: 0,
+            last_root_best: None,
+            last_root_score: 0,
         }
     }
 
     /// Given a move and its evaluation, insert into a given array of best moves and array of best moves evaluation at a proper position
-    // #[inline(never)]
     fn insert_into_best_moves(&mut self, piece_move: Move, move_evaluation: i32, depth: usize) {
         if move_evaluation > self.best_moves_evaluation[depth][0] {
             self.best_moves_evaluation[depth][2] = self.best_moves_evaluation[depth][1];
@@ -146,15 +220,23 @@ impl<T: Evaluator> Engine<T> {
         }
     }
 
-    /// Retrieves what the engine thinks the best move for a given board situation is,
-    /// as stored in the transposition table.
-    pub fn get_best_move(&self, board: &Board) -> Move {
-        self.transposition_table.get_from_zobrist(board.zobrist).clone().unwrap().best_moves[0].unwrap()
+    /// Returns a move only after at least one root iteration completed.
+    pub fn try_get_best_move(&self, board: &Board) -> Option<Move> {
+        self.last_root_best.or_else(|| {
+            self.transposition_table
+                .get_from_zobrist(board.zobrist).clone()
+                .and_then(|entry| entry.best_moves[0])
+        })
     }
 
-    /// Retrieves what the engine thinks the best moves for the most recent board situation is.
-    pub fn get_current_best_moves(&self) -> &[Option<Move>; 3] {
-        &self.best_moves[0]
+    /// Returns the score of the last root evaluated.
+    pub fn get_last_root_score(&self) -> Option<i32> {
+        self.last_root_best.map(|_| self.last_root_score)
+    }
+
+    /// Retrieves the `Transposition` data for the given board position from the engine's transposition table.
+    pub fn get_transposition(&self, board: &Board) -> Option<Transposition> {
+        self.transposition_table.get_from_zobrist(board.zobrist).clone()
     }
 
     /// Retrieves the depth at which the engine is currently conducting a search
@@ -162,11 +244,11 @@ impl<T: Evaluator> Engine<T> {
     pub fn get_current_depth(&self) -> u32 {
         self.depth
     }
-    
+
     /// Calls search algorithm to find the best possible moves in the current situation.
     /// Searches up to the given depth.
     /// Uses the given move list to generate moves in-place and analyze the board situation.
-    /// Calls the algorithm using alpha-beta prunning and quiescence search.
+    /// Calls the algorithm using alpha-beta pruning and quiescence search.
     ///
     /// Uses aspiration window to limit the search space.
     /// Aspiration window works as follows: we act on the assumption that the evaluation at depth x
@@ -176,18 +258,32 @@ impl<T: Evaluator> Engine<T> {
     /// We retry up to ASPIRATION_LIMIT times, afterwards - we abandon the window and take infinities.
     /// The aspiration window is turned off before the ASPIRATION_START_DEPTH.
     // #[inline(never)]
-    pub fn search(&mut self, move_list: &mut MoveList, depth: u32) -> i32 {
+    pub fn search(
+        &mut self, 
+        move_list: &mut MoveList,
+        depth: u32, 
+        control: &SearchControl, 
+        root_moves: Option<&[Move]>
+    ) -> i32 {
+        let depth = depth.min((DEPTH_LIMIT - 2) as u32);
         let board = move_list.get_board();
         let transposition_entry = self.transposition_table.get_from_zobrist(board.zobrist);
 
         // Check if we have a proper entry in the transposition table
-        if let Some(transposition) = transposition_entry {
-            if transposition.depth >= depth && transposition.node_type == EXACT {
-                return transposition.value;
+        if root_moves.is_none() {
+            if let Some(transposition) = transposition_entry {
+                if transposition.depth >= depth && transposition.node_type == EXACT {
+                    self.last_root_best = transposition.best_moves[0];
+                    self.last_root_score = transposition.value;
+                    return transposition.value;
+                }
             }
         }
 
         self.current_ply = board.plies;
+        self.guard_counter = 0;
+        self.last_root_best = None;
+        self.last_root_score = T::evaluate(board);
 
         // Clear best moves (and evaluations) that were used up in the previous search
         for i in 0..self.max_depth as usize {
@@ -197,39 +293,60 @@ impl<T: Evaluator> Engine<T> {
 
         self.max_depth = depth;
 
-        let mut value = 0;
-        for current_depth in 1..depth+1 {
+        let mut value = self.last_root_score;
+        for current_depth in 1..=depth {
             self.depth = current_depth;
 
-            // Check if we should use an aspiration window
-            let (mut alpha, mut beta) = if current_depth < ASPIRATION_START_DEPTH {
-                (NEGATIVE_INFINITY, POSITIVE_INFINITY)
-            } else {
-                let delta = ASPIRATION_MARGIN;
-                (value - delta, value + delta)
-            };
+            let previous_value = value;
+            let mut delta = ASPIRATION_MARGIN;
+            let mut retries = 0;
 
-            value = self.search_alpha_beta_prunning(move_list, current_depth, alpha, beta);
+            loop {
+                let (alpha, beta) = if current_depth < ASPIRATION_START_DEPTH {
+                    (NEGATIVE_INFINITY, POSITIVE_INFINITY)
+                } else {
+                    (
+                        previous_value.saturating_sub(delta),
+                        previous_value.saturating_add(delta),
+                    )
+                };
 
-            // Increase the aspiration window
-            let mut idx = 0;
-            while (value <= alpha || value >= beta) && idx < ASPIRATION_LIMIT {
-                value = self.search_alpha_beta_prunning(move_list, current_depth, alpha, beta);
-                alpha = alpha.saturating_mul(2);
-                beta = beta.saturating_mul(2);
-                idx += 1;
+                let Some(candidate) = self.search_alpha_beta_pruning(
+                    move_list,
+                    current_depth,
+                    alpha,
+                    beta,
+                    control,
+                    root_moves,
+                ) else {
+                    return value;
+                };
+
+                if candidate > alpha && candidate < beta {
+                    value = candidate;
+                    break;
+                }
+
+                retries += 1;
+                if retries > ASPIRATION_LIMIT || current_depth < ASPIRATION_START_DEPTH {
+                    let Some(candidate) = self.search_alpha_beta_pruning(
+                        move_list,
+                        current_depth,
+                        NEGATIVE_INFINITY,
+                        POSITIVE_INFINITY,
+                        control,
+                        root_moves,
+                    ) else {
+                        return value;
+                    };
+                    value = candidate;
+                    break;
+                }
+                delta = delta.saturating_mul(2);
             }
 
-            // Abandon the aspiration window
-            value = if value <= alpha || value >= beta {
-                self.search_alpha_beta_prunning(move_list, current_depth, NEGATIVE_INFINITY, POSITIVE_INFINITY)
-            } else {
-                value
-            };
-
-            if STOP_FLAG.load(Ordering::SeqCst) {
-                return value;
-            }
+            self.last_root_best = self.best_moves[0][0];
+            self.last_root_score = value;
         }
 
         value
@@ -253,14 +370,14 @@ impl<T: Evaluator> Engine<T> {
     /// Calls search algorithm to find the best possible moves in the current situation.
     /// Searches up to the given depth.
     /// Uses the given move list to generate moves in-place and analyze the board situation.
-    /// Calls the algorithm using alpha-beta prunning.
+    /// Calls the algorithm using alpha-beta pruning.
     /// NOTE: Does NOT use quiescence search and therefore is inferior to the search() function
     ///     Should be used mainly for testing.
     pub fn search_no_quiescence(&mut self, move_list: &mut MoveList, depth: u32) -> i32 {
-        self.search_alpha_beta_prunning_naive(move_list, depth, NEGATIVE_INFINITY, POSITIVE_INFINITY)
+        self.search_alpha_beta_pruning_naive(move_list, depth, NEGATIVE_INFINITY, POSITIVE_INFINITY)
     }
 
-    /// Uses alpha-beta prunning to find the best possible move in the search tree.
+    /// Uses alpha-beta pruning to find the best possible move in the search tree.
     /// Searches up to the given depth.
     /// Uses the given move list to generate moves in-place and analyze the board situation.
     /// Calls quiescence search if depth is zero
@@ -276,12 +393,25 @@ impl<T: Evaluator> Engine<T> {
     /// Implements late move reduction - the later the move is in the heuristically ordered list
     /// of moves, the lesser the depth of search at this node.
     // #[inline(never)]
-    fn search_alpha_beta_prunning(&mut self, move_list: &mut MoveList, depth: u32, mut alpha: i32, beta: i32) -> i32 {
+    fn search_alpha_beta_pruning(
+        &mut self,
+        move_list: &mut MoveList,
+        depth: u32,
+        mut alpha: i32,
+        beta: i32,
+        control: &SearchControl,
+        root_moves: Option<&[Move]>,
+    ) -> Option<i32> {
+        self.guard_counter = self.guard_counter.wrapping_add(1);
+        if control.inc_node((self.guard_counter & STOP_CHECK_MASK) == 0) {
+            return None;
+        }
+
         let zobrist = move_list.get_board().zobrist;
 
         if self.repetition_table.visit_position(zobrist) {
             self.repetition_table.unvisit_position(zobrist);
-            return DRAW;
+            return Some(DRAW);
         }
 
         let original_alpha=  alpha;
@@ -290,21 +420,23 @@ impl<T: Evaluator> Engine<T> {
         let mut skip_null = false;
 
         // Check if we have a proper entry in the transposition table
-        if let Some(transposition) = transposition_entry {
-            if transposition.depth >= depth {
-                if transposition.node_type == EXACT { self.repetition_table.unvisit_position(zobrist); return transposition.value; }
-                if transposition.node_type == ALPHA && transposition.value <= alpha { self.repetition_table.unvisit_position(zobrist); return transposition.value; } // Our alpha cut-off is even bigger than it was for the put operation
-                if /*transposition.node_type == BETA*/ transposition.value >= beta { self.repetition_table.unvisit_position(zobrist); return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
-            }
-            else {
-                // We do not want to perform null move pruning on an EXACT or BETA node
-                if transposition.node_type == EXACT || transposition.node_type == BETA { skip_null = true; }
+        if root_moves.is_none() {
+            if let Some(transposition) = transposition_entry {
+                if transposition.depth >= depth {
+                    if transposition.node_type == EXACT { self.repetition_table.unvisit_position(zobrist); return Some(transposition.value); }
+                    if transposition.node_type == ALPHA && transposition.value <= alpha { self.repetition_table.unvisit_position(zobrist); return Some(transposition.value); } // Our alpha cut-off is even bigger than it was for the put operation
+                    if /*transposition.node_type == BETA*/ transposition.value >= beta { self.repetition_table.unvisit_position(zobrist); return Some(transposition.value); } // Our beta cut-off is even smaller than it was for the put operation
+                }
+                else {
+                    // We do not want to perform null move pruning on an EXACT or BETA node
+                    if transposition.node_type == EXACT || transposition.node_type == BETA { skip_null = true; }
+                }
             }
         }
 
         if depth == 0 {
             self.repetition_table.unvisit_position(zobrist);
-            return self.quiescence_search(move_list, -beta, -alpha);
+            return self.quiescence_search(move_list, -beta, -alpha, control);
         }
 
         // Index for the best moves buffer.
@@ -313,6 +445,12 @@ impl<T: Evaluator> Engine<T> {
         // (This is not entirely a true description due to lmr and null move pruning,
         // but serves as a good intuition)
         let buffer_index = (move_list.get_board().plies - self.current_ply) as usize;
+        if buffer_index >= DEPTH_LIMIT - 1 {
+            self.repetition_table.unvisit_position(zobrist);
+            return Some(T::evaluate(move_list.get_board()));
+        }
+        self.best_moves[buffer_index] = [None; 3];
+        self.best_moves_evaluation[buffer_index] = [NEGATIVE_INFINITY; 3];
 
         // Null move pruning
         // The assumption is that usually doing anything is better than (hypothetically) doing nothing,
@@ -336,13 +474,32 @@ impl<T: Evaluator> Engine<T> {
             let reduced_depth = depth.saturating_sub(1 + NULL_MOVE_REDUCTION + depth / NULL_MOVE_DEPTH_SCALING_FACTOR);
 
             move_list.make_null_move();
-            let value = -self.search_alpha_beta_prunning(move_list, reduced_depth, -beta, -beta + 1);
+            let child = self.search_alpha_beta_pruning(
+                move_list,
+                reduced_depth,
+                -beta,
+                -beta + 1,
+                control,
+                None,
+            );
             move_list.unmake_null_move();
+            let value = match child {
+                Some(value) => -value,
+                None => {
+                    self.repetition_table.unvisit_position(zobrist);
+                    return None;
+                }
+            };
+
+            if control.is_stopped(false) {
+                self.repetition_table.unvisit_position(zobrist);
+                return None;
+            }
 
             if value >= beta {
                 self.repetition_table.unvisit_position(zobrist);
                 self.transposition_table.put_transposition_with_validation(&Transposition::from_zobrist(zobrist, reduced_depth, value, &self.best_moves[buffer_index], BETA));
-                return beta;
+                return Some(beta);
             }
         }
 
@@ -352,61 +509,94 @@ impl<T: Evaluator> Engine<T> {
         // Efficient copying of move list
         self.moves_buffer[buffer_index].clear();
         self.moves_buffer[buffer_index].extend_from_slice(&move_list.get_moves());
+        if buffer_index == 0 {
+            if let Some(allowed) = root_moves {
+                self.moves_buffer[buffer_index].retain(|piece_move| allowed.contains(piece_move));
+            }
+        }
 
         let mut cutoff_move = Move::empty();
-        let mut used_depth = depth;
 
         for i in 0..self.moves_buffer[buffer_index].len()
         {
             let piece_move = { let current_buffer = &self.moves_buffer[buffer_index];  current_buffer[i]};
 
             move_list.make_move(&piece_move);
-            if !move_list.is_opponent_in_check() {
-
-                // Do we want to apply late move reduction
-                let move_evaluation = if depth < LMR_DEPTH_LIMIT || i < LMR_MOVE_NUMBER_LIMIT {
-                    -self.search_alpha_beta_prunning(move_list, depth - 1, -beta, -alpha)
-                } else {
-                    // Late Move Reduction
-                    let lmr_depth = Self::apply_late_move_reduction(depth, i + 1);
-                    let move_evaluation = -self.search_alpha_beta_prunning(move_list, lmr_depth, -alpha-1, -alpha);
-                    if move_evaluation > alpha {
-                        // LMR failed high - apply full window instead
-                        used_depth = depth;
-                        -self.search_alpha_beta_prunning(move_list, depth - 1, -beta, -alpha)
+            let legal = !move_list.is_opponent_in_check();
+            let child_result = if !legal {
+                Some(0)
+            } else if depth < LMR_DEPTH_LIMIT || i < LMR_MOVE_NUMBER_LIMIT {
+                self.search_alpha_beta_pruning(
+                    move_list,
+                    depth - 1,
+                    -beta,
+                    -alpha,
+                    control,
+                    None,
+                )
+                .map(|value| -value)
+            } else {
+                let lmr_depth = Self::apply_late_move_reduction(depth, i + 1);
+                match self.search_alpha_beta_pruning(
+                    move_list,
+                    lmr_depth,
+                    -alpha - 1,
+                    -alpha,
+                    control,
+                    None,
+                ) {
+                    Some(reduced_value) if -reduced_value > alpha => {
+                        self.search_alpha_beta_pruning(
+                            move_list,
+                            depth - 1,
+                            -beta,
+                            -alpha,
+                            control,
+                            None,
+                        )
+                        .map(|value| -value)
                     }
-                    else {
-                        used_depth = lmr_depth + 1;
-                        move_evaluation
+                    Some(reduced_value) => {
+                        Some(-reduced_value)
+                    }
+                    None => None,
+                }
+            };
+            move_list.unmake_move(&piece_move);
+
+            if legal {
+                let move_evaluation = match child_result {
+                    Some(value) => value,
+                    None => {
+                        self.repetition_table.unvisit_position(zobrist);
+                        return None;
                     }
                 };
-
-                // Update the best moves record
                 self.insert_into_best_moves(piece_move, move_evaluation, buffer_index);
             }
-            move_list.unmake_move(&piece_move);
+
+            if control.is_stopped(false) {
+                self.repetition_table.unvisit_position(zobrist);
+                return None;
+            }
 
             alpha = alpha.max(self.best_moves_evaluation[buffer_index][0]);
             if alpha >= beta { cutoff_move = piece_move; break; }
-
-            if STOP_FLAG.load(Ordering::SeqCst) {
-                break;
-            }
         }
 
         if self.best_moves[buffer_index][0] == None {
             self.repetition_table.unvisit_position(zobrist);
-            return if move_list.is_in_check() { NEGATIVE_INFINITY } else { DRAW }
+            return if move_list.is_in_check() { Some(NEGATIVE_INFINITY) } else { Some(DRAW) }
         }
 
         // update the transposition table
         let node_type = if self.best_moves_evaluation[buffer_index][0] <= original_alpha { ALPHA }
-            else if self.best_moves_evaluation[buffer_index][0] >= beta { self.store_killer_move(&cutoff_move, move_list.get_board().plies as usize); BETA } else { EXACT };
-        self.transposition_table.put_transposition_with_validation(&Transposition::from_zobrist(zobrist, used_depth, self.best_moves_evaluation[buffer_index][0], &self.best_moves[buffer_index], node_type));
+            else if self.best_moves_evaluation[buffer_index][0] >= beta { self.store_killer_move(&cutoff_move, buffer_index); BETA } else { EXACT };
+        self.transposition_table.put_transposition_with_validation(&Transposition::from_zobrist(zobrist, depth, self.best_moves_evaluation[buffer_index][0], &self.best_moves[buffer_index], node_type));
 
         self.repetition_table.unvisit_position(zobrist);
 
-        self.best_moves_evaluation[buffer_index][0]
+        Some(self.best_moves_evaluation[buffer_index][0])
     }
 
     /// Stores a killer move in the killer moves array
@@ -425,41 +615,6 @@ impl<T: Evaluator> Engine<T> {
             self.killer_moves[ply][1] = self.killer_moves[ply][0];
             self.killer_moves[ply][0] = Option::from(*killer_move);
         }
-    }
-
-    /// Uses alpha-beta prunning to find the best possible move in the search tree.
-    /// Searches up to the given depth.
-    /// Uses the given move list to generate moves in-place and analyze the board situation.
-    /// Alpha - minimum score the current player is assured of (we found a move of at least this value earlier at this depth)
-    /// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
-    /// NOTE: Does NOT use quiescence search and therefore is inferior to the search_alpha_beta_prunning() function
-    ///     Should be used mainly for testing.
-    fn search_alpha_beta_prunning_naive(&mut self, move_list: &mut MoveList, depth: u32, mut alpha: i32, beta: i32) -> i32 {
-        let mut value: i32 = T::evaluate(move_list.get_board());
-
-        if depth == 0 {
-            return value;
-        }
-
-        move_list.generate_moves();
-
-        let moves = move_list.get_moves().clone();
-
-        for piece_move in moves
-        {
-            move_list.make_move(&piece_move);
-            if !move_list.is_opponent_in_check() {
-                value = value.max(
-                    -self.search_alpha_beta_prunning_naive(move_list, depth - 1, -beta, -alpha)
-                );
-            }
-            move_list.unmake_move(&piece_move);
-
-            alpha = alpha.max(value);
-            if alpha >= beta { break; }
-        }
-
-        value
     }
 
     /// Delta pruning checks if it is worth at all to examine this particular node
@@ -489,24 +644,35 @@ impl<T: Evaluator> Engine<T> {
         let target_piece = board.get_piece_from_square_by_player(
             target_square, board.inactive_player as usize);
 
-        if target_piece.is_none() { return false; }
+        let Some(target_piece) = target_piece else { return false; };
 
-        return PIECE_WORTH[target_piece.unwrap() as usize - 1] + DELTA_MARGIN <= diff;
+        PIECE_WORTH[target_piece as usize - 1] + DELTA_MARGIN <= diff
     }
 
-    /// Uses alpha-beta prunning to find the best possible move in the search tree.
+    /// Uses alpha-beta pruning to find the best possible move in the search tree.
     /// Searches until it finds a 'quiet' position, where no captures, promotions or checks can be made.
     /// It avoids the horizon effect by not ignoring threats at depth zero.
     /// Uses the given move list to generate moves in-place and analyze the board situation.
     /// Alpha - minimum score the current player is assured of (we found a move of at least this value earlier at this depth)
     /// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
     // #[inline(never)]
-    fn quiescence_search(&mut self, move_list: &mut MoveList, mut alpha: i32, beta: i32) -> i32 {
+    fn quiescence_search(
+        &mut self,
+        move_list: &mut MoveList,
+        mut alpha: i32,
+        beta: i32,
+        control: &SearchControl,
+    ) -> Option<i32> {
+        self.guard_counter = self.guard_counter.wrapping_add(1);
+        if control.inc_node((self.guard_counter & STOP_CHECK_MASK) == 0) {
+            return None;
+        }
+
         let zobrist = move_list.get_board().zobrist;
-        
+
         if self.repetition_table.visit_position(zobrist) {
             self.repetition_table.unvisit_position(zobrist);
-            return DRAW;
+            return Some(DRAW);
         }
 
         let original_alpha = alpha;
@@ -514,16 +680,24 @@ impl<T: Evaluator> Engine<T> {
         let transposition_entry = self.transposition_table.get_from_zobrist(zobrist);
         // Check if we have a proper entry in the transposition table
         if let Some(transposition) = transposition_entry {
-            if transposition.node_type == EXACT { self.repetition_table.unvisit_position(zobrist); return transposition.value; }
-            if transposition.node_type == ALPHA && transposition.value <= alpha { self.repetition_table.unvisit_position(zobrist); return transposition.value; } // Our alpha cut-off is even bigger than it was for the put operation
-            if /*transposition.node_type == BETA*/ transposition.value >= beta { self.repetition_table.unvisit_position(zobrist); return transposition.value; } // Our beta cut-off is even smaller than it was for the put operation
+            if transposition.node_type == EXACT { self.repetition_table.unvisit_position(zobrist); return Some(transposition.value); }
+            if transposition.node_type == ALPHA && transposition.value <= alpha { self.repetition_table.unvisit_position(zobrist); return Some(transposition.value); } // Our alpha cut-off is even bigger than it was for the put operation
+            if /*transposition.node_type == BETA*/ transposition.value >= beta { self.repetition_table.unvisit_position(zobrist); return Some(transposition.value); } // Our beta cut-off is even smaller than it was for the put operation
         }
 
-        move_list.generate_noisy_moves();
+        let in_check = move_list.is_in_check();
+        let stand_pat = match self.compute_stand_pat(move_list, &mut alpha, beta, zobrist, in_check) {
+            Ok(value) => value,
+            Err(value) => return value,
+        };
 
         if move_list.get_moves().len() == 0 {
             self.repetition_table.unvisit_position(zobrist);
-            return T::evaluate(move_list.get_board());
+            return if in_check {
+                Some(NEGATIVE_INFINITY)
+            } else {
+                Some(alpha)
+            };
         }
 
         self.order_moves(move_list);
@@ -531,7 +705,13 @@ impl<T: Evaluator> Engine<T> {
         // Index for the best moves buffer.
         // We subtract the difference between the board's ply and the original ply.
         let buffer_index = (move_list.get_board().plies - self.current_ply) as usize;
+        if buffer_index >= DEPTH_LIMIT - 1 {
+            self.repetition_table.unvisit_position(zobrist);
+            return Some(alpha);
+        }
         self.max_depth = max(self.max_depth, buffer_index as u32);
+        self.best_moves[buffer_index] = [None; 3];
+        self.best_moves_evaluation[buffer_index] = [NEGATIVE_INFINITY; 3];
 
         // Efficient copying of the move list
         self.moves_buffer[buffer_index].clear();
@@ -545,44 +725,140 @@ impl<T: Evaluator> Engine<T> {
         {
             let piece_move = { let current_buffer = &self.moves_buffer[buffer_index];  current_buffer[i]};
 
-            if Self::delta_pruning(&piece_move, move_list.get_board(),
-                                   alpha.saturating_sub(self.best_moves_evaluation[buffer_index][0]), game_phase) {
+            if !in_check && Self::delta_pruning(&piece_move, move_list.get_board(),
+                                   alpha.saturating_sub(stand_pat.unwrap()), game_phase) {
                 continue;
             }
 
             move_list.make_move(&piece_move);
-            if !move_list.is_opponent_in_check() {
-                let move_evaluation = -self.quiescence_search(move_list, -beta, -alpha);
+            let legal = !move_list.is_opponent_in_check();
+            let child = if legal {
+                self.quiescence_search(move_list, -beta, -alpha, control)
+            } else {
+                Some(0)
+            };
+            move_list.unmake_move(&piece_move);
 
+            if legal {
+                let move_evaluation = match child {
+                    Some(value) => -value,
+                    None => {
+                        self.repetition_table.unvisit_position(zobrist);
+                        return None;
+                    }
+                };
                 self.insert_into_best_moves(piece_move, move_evaluation, buffer_index);
             }
-            move_list.unmake_move(&piece_move);
+
+            if control.is_stopped(false) {
+                self.repetition_table.unvisit_position(zobrist);
+                return None;
+            }
 
             alpha = alpha.max(self.best_moves_evaluation[buffer_index][0]);
             if alpha >= beta { break; }
-            if STOP_FLAG.load(Ordering::SeqCst) {
-                break;
-            }
         }
 
         if self.best_moves[buffer_index][0] == None {
             self.repetition_table.unvisit_position(zobrist);
-            return if move_list.is_in_check() { NEGATIVE_INFINITY } else { DRAW }
+            return if in_check { Some(NEGATIVE_INFINITY) } else { Some(alpha) }
         }
 
         // update the transposition table
-        let node_type = if self.best_moves_evaluation[buffer_index][0] <= original_alpha { ALPHA } else if self.best_moves_evaluation[buffer_index][0] >= beta { BETA } else { NOISY_ONLY };
-        self.transposition_table.put_transposition_with_validation(&Transposition::from_zobrist(zobrist, 0, self.best_moves_evaluation[buffer_index][0], &self.best_moves[buffer_index], node_type));
+        let node_type = if alpha <= original_alpha {
+            ALPHA
+        } else if alpha >= beta {
+            BETA
+        } else {
+            NOISY_ONLY
+        };
+        self.transposition_table.put_transposition_with_validation(&Transposition::from_zobrist(
+            zobrist,
+            0,
+            alpha,
+            &self.best_moves[buffer_index],
+            node_type,
+        ));
 
         self.repetition_table.unvisit_position(zobrist);
 
-        self.best_moves_evaluation[buffer_index][0]
+        Some(alpha)
+    }
+
+    /// In order to allow the quiescence search to stabilize, we need to be able to stop searching without necessarily searching all available captures.
+    /// In addition, we need a score to return in case there are no captures available to be played.
+    /// This is done by a using the static evaluation as a "stand-pat" score.
+    /// If the lower bound from the stand pat score is already greater than or equal to beta, we can return the stand pat score (fail-soft) or beta (fail-hard) as a lower bound.
+    /// Otherwise, the search continues, keeping the evaluated "stand-pat" score as an lower bound if it exceeds alpha, to see if any tactical moves can increase alpha.
+    /// /// https://chessprogramming.org/Quiescence_Search#standing-pat
+    ///
+    /// * move_list - currently available moves
+    /// * alpha - current lower bound of the quiescence search (mutable, as the stand pat computation can raise it)
+    /// * beta - current upper bound of the quiescence search
+    /// * zobrist - the zobrist hash of the current board position
+    /// * in_check - are we currently in check? If yes, we have to evaluate all quiet moves, as well.
+    ///
+    /// Returns:
+    /// * Ok(Some(score)) if the stand-pat did not fail hard and we are not in check. `move_list` is populated with noisy moves.
+    /// * Ok(None) if we are in check. `move_list` is populated with all legal moves.
+    /// * Err(Some(beta)) if we failed hard (the value exceeded the beta).
+    fn compute_stand_pat(&mut self, mut move_list: &mut MoveList, alpha: &mut i32, beta: i32, zobrist: u64, in_check: bool) -> Result<Option<i32>, Option<i32>> {
+        Ok(if !in_check {
+            let value = T::evaluate(move_list.get_board());
+            if value >= beta {
+                self.repetition_table.unvisit_position(zobrist);
+                return Err(Some(beta));
+            }
+            *alpha = (*alpha).max(value);
+            move_list.generate_noisy_moves();
+            Some(value)
+        } else {
+            // In check, quiet evasions are not optional; searching captures only
+            // can falsely report checkmate.
+            move_list.generate_moves();
+            None
+        })
+    }
+
+    /// Uses alpha-beta pruning to find the best possible move in the search tree.
+    /// Searches up to the given depth.
+    /// Uses the given move list to generate moves in-place and analyze the board situation.
+    /// Alpha - minimum score the current player is assured of (we found a move of at least this value earlier at this depth)
+    /// Beta - maximum score the opponent is assured of (the best value the parent node recorded)
+    /// NOTE: Does NOT use quiescence search and therefore is inferior to the search_alpha_beta_pruning() function
+    ///     Should be used mainly for testing.
+    fn search_alpha_beta_pruning_naive(&mut self, move_list: &mut MoveList, depth: u32, mut alpha: i32, beta: i32) -> i32 {
+        let mut value: i32 = T::evaluate(move_list.get_board());
+
+        if depth == 0 {
+            return value;
+        }
+
+        move_list.generate_moves();
+
+        let moves = move_list.get_moves().clone();
+
+        for piece_move in moves
+        {
+            move_list.make_move(&piece_move);
+            if !move_list.is_opponent_in_check() {
+                value = value.max(
+                    -self.search_alpha_beta_pruning_naive(move_list, depth - 1, -beta, -alpha)
+                );
+            }
+            move_list.unmake_move(&piece_move);
+
+            alpha = alpha.max(value);
+            if alpha >= beta { break; }
+        }
+
+        value
     }
 
     /// Finds the best possible move in the search tree.
     /// Searches up to the given depth.
     /// Uses the given move list to generate moves in-place and analyze the board situation.
-    /// NOTE: Uses NEITHER quiescence search NOR alpha-beta prunning
+    /// NOTE: Uses NEITHER quiescence search NOR alpha-beta pruning
     ///     Should be used only for testing.
     fn search_naive(&mut self, move_list: &mut MoveList, depth: u32) -> i32 {
         let mut value: i32 = T::evaluate(move_list.get_board());
@@ -611,6 +887,8 @@ impl<T: Evaluator> Engine<T> {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Add;
+    use std::thread::sleep;
     use std::time::Instant;
     use crate::board::START_POSITION;
     use crate::piece::Piece::{KING, KNIGHT, PAWN, QUEEN, ROOK};
@@ -631,10 +909,12 @@ mod tests {
         assert_eq!(0, engine.search_naive(&mut move_list, 2));
         assert_eq!(0, engine.search_naive(&mut move_list, 3));
 
+        let search_control = SearchControl::new(None, None);
+
         // assert_eq!(0, engine.search(&mut move_list, 0));
-        assert_eq!(0, engine.search(&mut move_list, 1));
-        assert_eq!(0, engine.search(&mut move_list, 2));
-        assert_eq!(0, engine.search(&mut move_list, 3));
+        assert_eq!(0, engine.search(&mut move_list, 1, &search_control, None));
+        assert_eq!(0, engine.search(&mut move_list, 2, &search_control, None));
+        assert_eq!(0, engine.search(&mut move_list, 3, &search_control, None));
     }
 
     #[test]
@@ -651,17 +931,18 @@ mod tests {
         assert_eq!(0, engine.search_naive(&mut move_list, 2));
 
         engine = Engine::with_evaluator(MockMaterialEvaluator {});
+        let search_control = SearchControl::new(None, None);
 
         println!("depth 0");
-        assert_eq!(0, engine.search(&mut move_list, 0));
+        assert_eq!(0, engine.search(&mut move_list, 0, &search_control, None));
         println!("depth 1");
-        assert_eq!(0, engine.search(&mut move_list, 1));
+        assert_eq!(0, engine.search(&mut move_list, 1, &search_control, None));
         println!("depth 2");
-        assert_eq!(0, engine.search(&mut move_list, 2));
+        assert_eq!(0, engine.search(&mut move_list, 2, &search_control, None));
     }
 
     #[test]
-    fn test_alpha_beta_prunning_best_move_first() {
+    fn test_alpha_beta_pruning_best_move_first() {
         let mut board = Board::new();
         let fen = "4k3/8/8/8/8/5PP1/1q6/P3K3 w - - 0 1";
         board.read_fen(fen);
@@ -674,7 +955,7 @@ mod tests {
     }
 
     #[test]
-    fn test_alpha_beta_prunning_best_move_last() {
+    fn test_alpha_beta_pruning_best_move_last() {
         let mut board = Board::new();
         let fen = "4k3/8/6q1/7P/8/8/PP6/4K3 w - - 0 1";
         board.read_fen(fen);
@@ -695,8 +976,9 @@ mod tests {
 
         let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
         engine.depth = 1;
+        let search_control = SearchControl::new(None, None);
 
-        assert_eq!(DRAW, engine.search_alpha_beta_prunning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert_eq!(DRAW, engine.search_alpha_beta_pruning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, None).unwrap());
         assert!(engine.repetition_table.is_empty());
         // assert_eq!(DRAW, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY)); // might want to solve this or might not bother at all
     }
@@ -710,8 +992,9 @@ mod tests {
 
         let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
         engine.depth = 1;
+        let search_control = SearchControl::new(None, None);
 
-        assert_eq!(NEGATIVE_INFINITY, engine.search_alpha_beta_prunning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert_eq!(NEGATIVE_INFINITY, engine.search_alpha_beta_pruning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, None).unwrap());
         assert!(engine.repetition_table.is_empty());
 
         let mut board = Board::new();
@@ -721,8 +1004,9 @@ mod tests {
 
         let mut engine = Engine::new();
         engine.depth = 1;
+        let search_control = SearchControl::new(None, None);
 
-        assert_eq!(POSITIVE_INFINITY, engine.search_alpha_beta_prunning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert_eq!(POSITIVE_INFINITY, engine.search_alpha_beta_pruning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, None).unwrap());
         assert!(engine.repetition_table.is_empty());
     }
 
@@ -734,9 +1018,10 @@ mod tests {
         let mut move_list = MoveList::from_board(board);
 
         let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
+        let search_control = SearchControl::new(None, None);
 
         assert_eq!(0, engine.search_naive(&mut move_list, 1));
-        assert_eq!(-100, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert_eq!(-100, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control).unwrap());
         assert!(engine.repetition_table.is_empty());
     }
 
@@ -748,9 +1033,10 @@ mod tests {
         let mut move_list = MoveList::from_board(board);
 
         let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
+        let search_control = SearchControl::new(None, None);
 
         assert_eq!(0, engine.search_naive(&mut move_list, 1));
-        assert_eq!(-100, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert_eq!(-100, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control).unwrap());
         assert!(engine.repetition_table.is_empty());
     }
 
@@ -766,9 +1052,12 @@ mod tests {
         assert_eq!(100, engine.search_naive(&mut move_list, 1));
 
         move_list.make_move(&Move{origin: 40, target: 48, promotion: 0, piece: PAWN});
+        let search_control = SearchControl::new(None, None);
 
         assert_eq!(100, engine.search_naive(&mut move_list, 1));
-        assert_eq!(-700, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+
+        //Stand-pat makes it 0, otherwise it is -700 (black is not forced to capture the pawn, which directly leads to promotion)
+        assert_eq!(0, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control).unwrap());
         assert!(engine.repetition_table.is_empty());
     }
 
@@ -799,7 +1088,9 @@ mod tests {
         let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
         engine.depth = 0;
 
-        assert_ne!(DRAW, engine.search_alpha_beta_prunning(&mut move_list, 0, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        let search_control = SearchControl::new(None, None);
+
+        assert_ne!(DRAW, engine.search_alpha_beta_pruning(&mut move_list, 0, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, None).unwrap());
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
         assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
@@ -807,7 +1098,7 @@ mod tests {
         engine = Engine::with_evaluator(MockMaterialEvaluator{});
         engine.repetition_table.visit_position(move_list.get_board().zobrist);
 
-        assert_ne!(DRAW, engine.search_alpha_beta_prunning(&mut move_list, 0, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert_ne!(DRAW, engine.search_alpha_beta_pruning(&mut move_list, 0, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, None).unwrap());
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
         assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
 
@@ -815,7 +1106,7 @@ mod tests {
         engine.repetition_table.visit_position(move_list.get_board().zobrist);
         engine.repetition_table.visit_position(move_list.get_board().zobrist);
 
-        assert_eq!(DRAW, engine.search_alpha_beta_prunning(&mut move_list, 0, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert_eq!(DRAW, engine.search_alpha_beta_pruning(&mut move_list, 0, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, None).unwrap());
         assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
 
         engine.repetition_table.unvisit_position(move_list.get_board().zobrist);
@@ -832,8 +1123,9 @@ mod tests {
         let mut move_list = MoveList::from_board(board);
 
         let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
+        let search_control = SearchControl::new(None, None);
 
-        assert_ne!(DRAW, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert_ne!(DRAW, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control).unwrap());
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
         assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
@@ -841,7 +1133,7 @@ mod tests {
         engine = Engine::with_evaluator(MockMaterialEvaluator {});
         engine.repetition_table.visit_position(move_list.get_board().zobrist);
 
-        assert_ne!(DRAW, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert_ne!(DRAW, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control).unwrap());
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
         assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
 
@@ -849,7 +1141,7 @@ mod tests {
         engine.repetition_table.visit_position(move_list.get_board().zobrist);
         engine.repetition_table.visit_position(move_list.get_board().zobrist);
 
-        assert_eq!(DRAW, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY));
+        assert_eq!(DRAW, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control).unwrap());
         assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
 
         engine.repetition_table.unvisit_position(move_list.get_board().zobrist);
@@ -959,13 +1251,15 @@ mod tests {
         let mut engine = Engine::new();
         let mut move_list = MoveList::from_fen(START_POSITION);
 
-        engine.search(&mut move_list, 7);
+        let search_control = SearchControl::new(None, None);
+
+        engine.search(&mut move_list, 7, &search_control, None);
         move_list.make_move(&Move::new(1, 18, 0, KNIGHT));
-        engine.search(&mut move_list, 7);
+        engine.search(&mut move_list, 7, &search_control, None);
         move_list.make_move(&Move::new(48, 40, 0, PAWN));
         let board = move_list.get_board().clone();
-        engine.search(&mut move_list, 7);
-        assert!(engine.get_best_move(&board).origin < 24);
+        engine.search(&mut move_list, 7, &search_control, None);
+        assert!(engine.try_get_best_move(&board).unwrap().origin < 24);
     }
 
     // #[test]
@@ -1060,9 +1354,10 @@ mod tests {
         let mut move_list = MoveList::from_board(board);
 
         let mut engine = Engine::with_evaluator_and_capacity(MockMaterialEvaluator {}, 1024);
+        let search_control = SearchControl::new(None, None);
 
         engine.depth = 3;
-        engine.search_alpha_beta_prunning(&mut move_list, 3, NEGATIVE_INFINITY, POSITIVE_INFINITY);
+        engine.search_alpha_beta_pruning(&mut move_list, 3, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, None);
         // There are obvious killer moves when we try to move our queen so that it can be captured by a pawn
         assert!(!engine.killer_moves[1][0].is_none());
         assert!(!engine.killer_moves[1][1].is_none());
@@ -1091,5 +1386,204 @@ mod tests {
 
         let diff = 1100;
         assert!(Engine::<MockMaterialEvaluator>::delta_pruning(&piece_move, &board, diff, game_phase));
+    }
+
+    #[test]
+    fn test_request_stop() {
+        let search_control = SearchControl::new(None, None);
+
+        assert!(!search_control.stop.load(Ordering::Relaxed));
+        search_control.request_stop();
+        assert!(search_control.stop.load(Ordering::Relaxed));
+        assert!(search_control.is_stopped(false));
+
+        search_control.request_stop();
+        assert!(search_control.stop.load(Ordering::Relaxed));
+        assert!(search_control.is_stopped(false));
+    }
+
+    #[test]
+    fn test_set_deadline_from_now() {
+        let search_control = SearchControl::new(None, None);
+
+        search_control.set_deadline_from_now(Duration::from_millis(500));
+        assert!(!search_control.is_stopped(true));
+        assert!(search_control.deadline.lock().unwrap().is_some());
+
+        sleep(Duration::from_millis(500));
+        assert!(search_control.is_stopped(true));
+    }
+
+    #[test]
+    fn test_inc_node() {
+        let search_control = SearchControl::new(Some(3), None);
+
+        assert_eq!(0, search_control.nodes.load(Ordering::Relaxed));
+
+        assert!(!search_control.inc_node(false));
+        assert!(!search_control.is_stopped(true));
+        assert_eq!(1, search_control.nodes.load(Ordering::Relaxed));
+
+        assert!(!search_control.inc_node(true));
+        assert!(!search_control.is_stopped(true));
+        assert_eq!(2, search_control.nodes.load(Ordering::Relaxed));
+
+        assert!(search_control.inc_node(true));
+        assert!(search_control.is_stopped(true));
+        assert_eq!(3, search_control.nodes.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn test_is_stopped_at() {
+        let search_control = SearchControl::new(None, None);
+
+        assert!(!search_control.is_stopped(false));
+        search_control.stop.store(true, Ordering::Relaxed);
+        assert!(search_control.is_stopped(false));
+
+        let search_control = SearchControl::new(Some(2137), None);
+
+        assert!(!search_control.is_stopped(false));
+        search_control.nodes.store(2137, Ordering::Relaxed);
+        assert!(search_control.is_stopped(false));
+
+        let search_control = SearchControl::new(None, Some(Instant::now().add(Duration::from_millis(400))));
+
+        assert!(!search_control.is_stopped(false));
+        assert!(!search_control.is_stopped(true));
+        sleep(Duration::from_millis(400));
+        assert!(search_control.is_stopped(true));
+        assert!(!search_control.is_stopped(false));
+    }
+
+    #[test]
+    fn check_stand_pat_non_check() {
+        let board = Board::from_fen(START_POSITION);
+        let mut move_list = MoveList::from_board(board);
+        move_list.generate_noisy_moves();
+        let moves = move_list.get_moves().clone();
+        move_list.clear();
+
+        let mut alpha = -200;
+        let beta = 300;
+
+        let mut engine = Engine::with_capacity(1024);
+        engine.repetition_table.visit_position(board.zobrist);
+
+        let stand_pat =
+            engine.compute_stand_pat(&mut move_list, &mut alpha, beta, board.zobrist, false);
+
+        assert_eq!(0, alpha);
+        assert!(stand_pat.is_ok());
+        assert!(stand_pat.unwrap().is_some());
+        assert_eq!(0, stand_pat.unwrap().unwrap());
+        assert_eq!(1, engine.repetition_table.get_repetition(board.zobrist));
+
+        assert_eq!(moves, *move_list.get_moves());
+    }
+
+    #[test]
+    fn check_stand_pat_check() {
+        let board = Board::from_fen(START_POSITION);
+        let mut move_list = MoveList::from_board(board);
+        move_list.generate_moves();
+        let moves = move_list.get_moves().clone();
+        move_list.clear();
+
+        let mut alpha = -200;
+        let beta = 300;
+
+        let mut engine = Engine::with_capacity(1024);
+        engine.repetition_table.visit_position(board.zobrist);
+
+        let stand_pat =
+            engine.compute_stand_pat(&mut move_list, &mut alpha, beta, board.zobrist, true);
+
+        assert_eq!(-200, alpha);
+        assert!(stand_pat.is_ok());
+        assert!(stand_pat.unwrap().is_none());
+        assert_eq!(1, engine.repetition_table.get_repetition(board.zobrist));
+
+        assert_eq!(moves, *move_list.get_moves());
+    }
+
+    #[test]
+    fn check_stand_pat_beta_exceeded() {
+        let board = Board::from_fen(START_POSITION);
+        let mut move_list = MoveList::from_board(board);
+        let moves = move_list.get_moves().clone();
+        move_list.clear();
+
+        let mut alpha = -200;
+        let beta = -100;
+
+        let mut engine = Engine::with_capacity(1024);
+        engine.repetition_table.visit_position(board.zobrist);
+
+        let stand_pat =
+            engine.compute_stand_pat(&mut move_list, &mut alpha, beta, board.zobrist, false);
+
+        assert_eq!(-200, alpha);
+        assert!(stand_pat.is_err());
+        assert!(stand_pat.err().unwrap().is_some());
+        assert_eq!(beta, stand_pat.err().unwrap().unwrap());
+        assert_eq!(0, engine.repetition_table.get_repetition(board.zobrist));
+
+        assert_eq!(moves, *move_list.get_moves());
+    }
+
+    const ROOT_RESULT_TEST_POSITION: &str =
+        "q3k3/8/8/8/8/8/8/R3K3 w - - 0 1";
+
+    #[test]
+    fn root_result_accessors_return_none_before_search() {
+        let board = Board::from_fen(ROOT_RESULT_TEST_POSITION);
+        let engine = Engine::with_evaluator_and_capacity(MockMaterialEvaluator {}, 1024);
+
+        assert_eq!(None, engine.try_get_best_move(&board));
+        assert_eq!(None, engine.get_last_root_score());
+    }
+
+    #[test]
+    fn root_result_accessors_return_last_completed_iteration() {
+        let mut move_list = MoveList::from_fen(ROOT_RESULT_TEST_POSITION);
+        let expected_move =
+            Move::from_algebraic_notation("a1a8", move_list.get_board());
+        let mut engine = Engine::with_evaluator_and_capacity(MockMaterialEvaluator {}, 1024);
+        let search_control = SearchControl::new(None, None);
+
+        // Rxa8 wins Black's queen. After the capture White has one rook
+        // against no material, so MockMaterialEvaluator scores the root +500.
+        let score = engine.search(&mut move_list, 1, &search_control, None);
+
+        assert_eq!(500, score);
+        assert_eq!(
+            Some(expected_move),
+            engine.try_get_best_move(move_list.get_board())
+        );
+        assert_eq!(Some(500), engine.get_last_root_score());
+    }
+
+    #[test]
+    fn try_get_best_move_falls_back_to_root_transposition() {
+        let mut move_list = MoveList::from_fen(ROOT_RESULT_TEST_POSITION);
+        let expected_move =
+            Move::from_algebraic_notation("a1a8", move_list.get_board());
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
+        let search_control = SearchControl::new(None, None);
+
+        engine.search(&mut move_list, 1, &search_control, None);
+
+        // Remove only the explicitly retained root result. The completed
+        // search also stored the same root move in the transposition table.
+        engine.last_root_best = None;
+
+        assert_eq!(
+            Some(expected_move),
+            engine.try_get_best_move(move_list.get_board())
+        );
+        // The score accessor intentionally reports only the retained root
+        // result; it does not manufacture a score from the TT fallback.
+        assert_eq!(None, engine.get_last_root_score());
     }
 }

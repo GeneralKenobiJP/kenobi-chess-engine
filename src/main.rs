@@ -10,34 +10,69 @@ mod transposition_table;
 mod bot;
 mod string_builder;
 
-use std::{io, thread};
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
-use crate::bot::Bot;
-use crate::evaluation::MainEvaluator;
+use std::io::{self, BufRead, Write};
 
-fn main() {
+use crate::bot::{Bot, Command};
+
+/// Writes the response to the stdout channel.
+/// Returns Ok if writing was successful, Err - otherwise.
+fn send_response(response: &str) -> io::Result<()> {
+    if response.is_empty() {
+        return Ok(());
+    }
+
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    writeln!(out, "{response}")?;
+    out.flush()
+}
+
+/// UCI stands for the Universal Chess Interface
+/// https://gist.github.com/DOBRO/2592c6dad754ba67e6dcaec8c90165bf
+/// This loop is in charge of handling all UCI requests and responses.
+/// It owns the engine bot.
+/// Returns Ok if the program was exited gracefully.
+/// Returns Err if a breaking error occurred.
+fn run_uci_loop() -> io::Result<()> {
+    // The control loop is the sole owner of Bot. Bot::go must start search in
+    // the background
     let mut bot = Bot::new();
-    let loop_flag = Arc::new(AtomicBool::new(true));
+    let stdin = io::stdin();
+    let mut input = stdin.lock();
+    let mut line = String::new();
 
-    // Handling of UCI <=> the game loop
+    loop {
+        line.clear();
 
-    while loop_flag.load(Ordering::SeqCst) {
-        let mut message = String::new();
+        // EOF is equivalent to a shutdown. Calling Quit first leaves one place
+        // for Bot to stop and join its search worker during cleanup.
+        if input.read_line(&mut line)? == 0 {
+            let _ = bot.process(Command::Quit);
+            break;
+        }
 
-        io::stdin().read_line(&mut message)
-            .expect("Failed to read line");
+        // Blank lines and comments are intentionally ignored. They are not
+        // parse errors and must not produce protocol noise on stdout.
+        let Some(command) = Bot::parse(&line) else {
+            continue;
+        };
 
-        let response = bot.message(&message);
-        match response {
-            Some(output) => {
-                if !output.is_empty() {
-                    println!("{}", output);
-                }
-            },
-            None => { loop_flag.store(false, Ordering::SeqCst); }
+        if matches!(&command, Command::Quit) {
+            let _ = bot.process(command);
+            break;
+        }
+
+        if let Some(response) = bot.process(command) {
+            send_response(&response)?;
         }
     }
 
-    // drop(bot);
+    Ok(())
+}
+
+fn main() {
+    if let Err(error) = run_uci_loop() {
+        // Diagnostics belong on stderr; stdout is reserved for UCI traffic.
+        eprintln!("UCI I/O error: {error}");
+    }
 }
