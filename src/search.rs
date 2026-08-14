@@ -245,6 +245,16 @@ impl<T: Evaluator> Engine<T> {
         self.depth
     }
 
+    /// Retrieves a mutable reference to the repetition table.
+    pub fn get_mut_repetition_table(&mut self) -> &mut RepetitionTable {
+        &mut self.repetition_table
+    }
+
+    /// Retrieves an immutable reference to the repetition table.
+    pub fn get_repetition_table(&mut self) -> &RepetitionTable {
+        &self.repetition_table
+    }
+
     /// Calls search algorithm to find the best possible moves in the current situation.
     /// Searches up to the given depth.
     /// Uses the given move list to generate moves in-place and analyze the board situation.
@@ -409,6 +419,9 @@ impl<T: Evaluator> Engine<T> {
 
         let zobrist = move_list.get_board().zobrist;
 
+        if move_list.get_board().half_moves >= 100 {
+            return Some(DRAW);
+        }
         if self.repetition_table.visit_position(zobrist) {
             self.repetition_table.unvisit_position(zobrist);
             return Some(DRAW);
@@ -425,7 +438,7 @@ impl<T: Evaluator> Engine<T> {
                 if transposition.depth >= depth {
                     if transposition.node_type == EXACT { self.repetition_table.unvisit_position(zobrist); return Some(transposition.value); }
                     if transposition.node_type == ALPHA && transposition.value <= alpha { self.repetition_table.unvisit_position(zobrist); return Some(transposition.value); } // Our alpha cut-off is even bigger than it was for the put operation
-                    if /*transposition.node_type == BETA*/ transposition.value >= beta { self.repetition_table.unvisit_position(zobrist); return Some(transposition.value); } // Our beta cut-off is even smaller than it was for the put operation
+                    if transposition.node_type == BETA && transposition.value >= beta { self.repetition_table.unvisit_position(zobrist); return Some(transposition.value); } // Our beta cut-off is even smaller than it was for the put operation
                 }
                 else {
                     // We do not want to perform null move pruning on an EXACT or BETA node
@@ -436,7 +449,7 @@ impl<T: Evaluator> Engine<T> {
 
         if depth == 0 {
             self.repetition_table.unvisit_position(zobrist);
-            return self.quiescence_search(move_list, -beta, -alpha, control);
+            return self.quiescence_search(move_list, alpha, beta, control);
         }
 
         // Index for the best moves buffer.
@@ -670,6 +683,9 @@ impl<T: Evaluator> Engine<T> {
 
         let zobrist = move_list.get_board().zobrist;
 
+        if move_list.get_board().half_moves >= 100 {
+            return Some(DRAW);
+        }
         if self.repetition_table.visit_position(zobrist) {
             self.repetition_table.unvisit_position(zobrist);
             return Some(DRAW);
@@ -682,7 +698,7 @@ impl<T: Evaluator> Engine<T> {
         if let Some(transposition) = transposition_entry {
             if transposition.node_type == EXACT { self.repetition_table.unvisit_position(zobrist); return Some(transposition.value); }
             if transposition.node_type == ALPHA && transposition.value <= alpha { self.repetition_table.unvisit_position(zobrist); return Some(transposition.value); } // Our alpha cut-off is even bigger than it was for the put operation
-            if /*transposition.node_type == BETA*/ transposition.value >= beta { self.repetition_table.unvisit_position(zobrist); return Some(transposition.value); } // Our beta cut-off is even smaller than it was for the put operation
+            if transposition.node_type == BETA && transposition.value >= beta { self.repetition_table.unvisit_position(zobrist); return Some(transposition.value); } // Our beta cut-off is even smaller than it was for the put operation
         }
 
         let in_check = move_list.is_in_check();
@@ -1536,7 +1552,7 @@ mod tests {
         "q3k3/8/8/8/8/8/8/R3K3 w - - 0 1";
 
     #[test]
-    fn root_result_accessors_return_none_before_search() {
+    fn check_root_result_accessors_return_none_before_search() {
         let board = Board::from_fen(ROOT_RESULT_TEST_POSITION);
         let engine = Engine::with_evaluator_and_capacity(MockMaterialEvaluator {}, 1024);
 
@@ -1545,7 +1561,7 @@ mod tests {
     }
 
     #[test]
-    fn root_result_accessors_return_last_completed_iteration() {
+    fn check_root_result_accessors_return_last_completed_iteration() {
         let mut move_list = MoveList::from_fen(ROOT_RESULT_TEST_POSITION);
         let expected_move =
             Move::from_algebraic_notation("a1a8", move_list.get_board());
@@ -1565,7 +1581,7 @@ mod tests {
     }
 
     #[test]
-    fn try_get_best_move_falls_back_to_root_transposition() {
+    fn check_try_get_best_move_falls_back_to_root_transposition() {
         let mut move_list = MoveList::from_fen(ROOT_RESULT_TEST_POSITION);
         let expected_move =
             Move::from_algebraic_notation("a1a8", move_list.get_board());
@@ -1585,5 +1601,21 @@ mod tests {
         // The score accessor intentionally reports only the retained root
         // result; it does not manufacture a score from the TT fallback.
         assert_eq!(None, engine.get_last_root_score());
+    }
+
+    #[test]
+    fn check_draw() {
+        let fen = "rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b K - 100 2";
+        let board = Board::from_fen(fen);
+        let mut move_list = MoveList::from_board(board);
+        let mut engine = Engine::with_capacity(1024);
+        let value = engine.search(&mut move_list, 1, &SearchControl::new(None, None), None);
+        assert_eq!(DRAW, value);
+
+        let fen = "rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b K - 101 2";
+        let board = Board::from_fen(fen);
+        let mut move_list = MoveList::from_board(board);
+        let value = engine.search(&mut move_list, 1, &SearchControl::new(None, None), None);
+        assert_eq!(DRAW, value);
     }
 }
