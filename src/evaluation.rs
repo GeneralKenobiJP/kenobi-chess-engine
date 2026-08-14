@@ -210,7 +210,7 @@ impl Evaluator for MainEvaluator {
     fn evaluate(board: &Board) -> i32 {
         let mut value = 0;
 
-        if board.half_moves == 100 { return DRAW; }
+        if board.half_moves >= 100 { return DRAW; }
 
         let phase_factor = compute_game_phase_factor(&board.piece_counter);
 
