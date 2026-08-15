@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use num_traits::real::Real;
 use crate::board::Board;
-use crate::evaluation::{compute_game_phase_factor, DRAW, Evaluator, MainEvaluator, PIECE_WORTH};
+use crate::evaluation::{compute_game_phase_factor, DRAW, Evaluator, MainEvaluator, PIECE_WORTH, PROMOTION_MATERIAL_DIFFERENCE};
 use crate::move_generator::{MAX_MOVES_IN_POSITION, Move, MoveList};
 use crate::evaluation::{POSITIVE_INFINITY, NEGATIVE_INFINITY};
 use crate::transposition_table::{RepetitionTable, Transposition, TranspositionTable};
@@ -640,7 +640,7 @@ impl<T: Evaluator> Engine<T> {
     /// Parameters:
     ///     - piece_move - the move we are evaluating
     ///     - board - the board object
-    ///     - alpha - difference between the alpha (lower bound) we are trying to raise and
+    ///     - diff - difference between the alpha (lower bound) we are trying to raise and
     /// the current value of the node
     ///     - game_phase - the metric of the midgame vs. endgame heuristic. Precomputed for
     /// the sake of speed. We do NOT want to perform delta pruning in the endgame, as it may
@@ -659,7 +659,7 @@ impl<T: Evaluator> Engine<T> {
 
         let Some(target_piece) = target_piece else { return false; };
 
-        PIECE_WORTH[target_piece as usize - 1] + DELTA_MARGIN <= diff
+        PIECE_WORTH[target_piece as usize - 1] + PROMOTION_MATERIAL_DIFFERENCE[piece_move.promotion as usize] + DELTA_MARGIN <= diff
     }
 
     /// Uses alpha-beta pruning to find the best possible move in the search tree.
@@ -1402,6 +1402,19 @@ mod tests {
 
         let diff = 1100;
         assert!(Engine::<MockMaterialEvaluator>::delta_pruning(&piece_move, &board, diff, game_phase));
+    }
+
+    #[test]
+    fn test_delta_pruning_promotion_capture() {
+        let mut board = Board::new();
+        let fen = "p2k4/1P6/8/8/8/8/8/4K3 w - - 0 1";
+        board.read_fen(fen);
+
+        let game_phase = 80;
+        let piece_move = Move::new(54, 63, 2, PAWN);
+        let diff = 400;
+
+        assert!(!Engine::<MockMaterialEvaluator>::delta_pruning(&piece_move, &board, diff, game_phase));
     }
 
     #[test]

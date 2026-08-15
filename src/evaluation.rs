@@ -9,6 +9,7 @@ use crate::board::Board;
 
 // We omit the king
 pub const PIECE_WORTH: [i32; 5] = [100, 900, 500, 300, 300];
+pub const PROMOTION_MATERIAL_DIFFERENCE: [i32; 6] = [0, 0, 800, 400, 200, 200];
 pub const NEGATIVE_INFINITY: i32 = i32::MIN + 1;
 pub const POSITIVE_INFINITY: i32 = i32::MAX;
 pub const DRAW: i32 = 0;
