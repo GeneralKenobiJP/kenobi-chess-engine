@@ -3,6 +3,7 @@
 //! Currently considers material advantage.
 //! Value is measured in centipanws, i.e. 1 pawn = 100 centipawns
 
+use std::cmp::min;
 use std::fmt::Debug;
 use num_traits::WrappingNeg;
 use crate::board::Board;
@@ -339,6 +340,7 @@ pub fn compute_game_phase_factor(piece_count: &[u8; 12]) -> i32 {
         }
     }
     factor = (factor * 100) / TOTAL_START_VALUE;
+    factor = min(100, factor);
 
     factor
 }
