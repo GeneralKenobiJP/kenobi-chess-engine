@@ -300,7 +300,6 @@ impl MoveList {
                 self.handle_en_passant(target, inactive_player);
                 self.board.piece_counter[6 * inactive_player + piece] -= 1;
                 self.capture_history.push(NO_CAPTURE);
-                self.halfmoves_history.push(self.board.half_moves as u8);
                 self.board.half_moves = 0;
                 self.board.en_passant_possibility = NO_PASSANT;
                 self.board.switch_active_player();
@@ -1733,6 +1732,7 @@ mod tests {
     use std::time::Instant;
     use crate::board::{Board, START_POSITION};
     use crate::piece::Piece::PAWN;
+    use crate::zobrist::zobrist_hash;
     use super::*;
 
     fn compare_vecs<Move: PartialEq + Eq + std::hash::Hash + Clone>
@@ -4238,5 +4238,185 @@ mod tests {
         assert_eq!(Move::new(11, 27, 0, PAWN), move_list.moves[1]);
         assert_eq!(Move::new(12, 28, 0, PAWN), move_list.moves[2]);
         assert_eq!(Move::new(8, 16, 0, PAWN), move_list.moves[3]);
+    }
+
+    fn assert_board_invariants(board: &Board) {
+        assert_eq!(
+            0,
+            board.colour_bitboards[WHITE as usize]
+                & board.colour_bitboards[BLACK as usize],
+            "white and black occupancy overlap"
+        );
+
+        let mut all_pieces = 0u64;
+
+        for player in [WHITE, BLACK] {
+            let mut player_pieces = 0u64;
+
+            for piece in 0..6 {
+                let index = 6 * player as usize + piece;
+                let piece_bitboard = board.piece_bitboards[index];
+
+                assert_eq!(
+                    0,
+                    player_pieces & piece_bitboard,
+                    "two piece types overlap for player {player:?}"
+                );
+                assert_eq!(
+                    piece_bitboard.count_ones() as u8,
+                    board.piece_counter[index],
+                    "piece counter disagrees with bitboard at index {index}"
+                );
+
+                player_pieces |= piece_bitboard;
+            }
+
+            assert_eq!(
+                player_pieces,
+                board.colour_bitboards[player as usize],
+                "colour occupancy disagrees with piece occupancy for {player:?}"
+            );
+            all_pieces |= player_pieces;
+        }
+
+        assert_eq!(all_pieces, board.main_bitboard);
+        assert_eq!(!board.main_bitboard, board.empty_bitboard);
+        assert_eq!(board.active_player.switch_player(), board.inactive_player);
+        assert_eq!(
+            zobrist_hash(board),
+            board.zobrist,
+            "incremental Zobrist key disagrees with a full recomputation"
+        );
+    }
+
+    fn assert_make_unmake_round_trip(fen: &str) {
+        let mut move_list = MoveList::from_fen(fen);
+        assert_board_invariants(move_list.get_board());
+
+        move_list.generate_moves();
+        let generated_moves = move_list.moves.clone();
+
+        assert!(
+            !generated_moves.is_empty(),
+            "test position unexpectedly generated no moves: {fen}"
+        );
+
+        for piece_move in generated_moves {
+            let board_before = move_list.board;
+            let moves_before = move_list.moves.clone();
+            let capture_history_len = move_list.capture_history.len();
+            let en_passant_history_len = move_list.en_passant_history.len();
+            let castling_history_len = move_list.castling_rights_history.len();
+            let halfmove_history_len = move_list.halfmoves_history.len();
+
+            let target_tile = 1u64 << piece_move.target;
+            let was_en_passant = piece_move.piece == PAWN
+                && piece_move.target == board_before.en_passant_possibility;
+            let was_capture = board_before.main_bitboard & target_tile != 0
+                || was_en_passant;
+
+            move_list.make_move(&piece_move);
+
+            assert_board_invariants(move_list.get_board());
+            assert_eq!(board_before.plies + 1, move_list.board.plies);
+            assert_eq!(board_before.active_player, move_list.board.inactive_player);
+            assert_eq!(board_before.inactive_player, move_list.board.active_player);
+            assert_eq!(capture_history_len + 1, move_list.capture_history.len());
+            assert_eq!(
+                en_passant_history_len + 1,
+                move_list.en_passant_history.len()
+            );
+            assert_eq!(
+                castling_history_len + 1,
+                move_list.castling_rights_history.len()
+            );
+            assert_eq!(
+                halfmove_history_len + 1,
+                move_list.halfmoves_history.len()
+            );
+
+            if piece_move.piece == PAWN || was_capture {
+                assert_eq!(
+                    0,
+                    move_list.board.half_moves,
+                    "pawn moves and captures must reset the halfmove clock: {piece_move:?} in {fen}"
+                );
+            } else {
+                assert_eq!(
+                    board_before.half_moves + 1,
+                    move_list.board.half_moves,
+                    "quiet non-pawn move must increment the halfmove clock"
+                );
+            }
+
+            move_list.unmake_move(&piece_move);
+
+            assert_eq!(
+                board_before,
+                move_list.board,
+                "make/unmake failed for {piece_move:?} in {fen}"
+            );
+            assert_eq!(moves_before, move_list.moves);
+            assert_eq!(capture_history_len, move_list.capture_history.len());
+            assert_eq!(en_passant_history_len, move_list.en_passant_history.len());
+            assert_eq!(castling_history_len, move_list.castling_rights_history.len());
+            assert_eq!(halfmove_history_len, move_list.halfmoves_history.len());
+            assert_board_invariants(move_list.get_board());
+        }
+    }
+
+    #[test]
+    fn check_make_unmake_invariants_for_special_moves() {
+        const POSITIONS: [&str; 7] = [
+            // Quiet moves and double pawn pushes.
+            START_POSITION,
+            // Ordinary pawn and piece captures.
+            "4k3/8/8/3p4/4P3/8/8/R3K3 w - - 7 1",
+            // En passant with a nonzero halfmove clock catches a missing reset.
+            "4k3/8/8/3pP3/8/8/8/4K3 w - d6 17 1",
+            // White castling in both directions.
+            "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 23 1",
+            // Black castling in both directions.
+            "r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 23 1",
+            // Quiet promotion.
+            "4k3/P7/8/8/8/8/8/4K3 w - - 11 1",
+            // Capture-promotions in both directions plus a quiet promotion.
+            "r1r1k3/1P6/8/8/8/8/8/4K3 w - - 9 1",
+        ];
+
+        for fen in POSITIONS {
+            assert_make_unmake_round_trip(fen);
+        }
+    }
+
+    #[test]
+    fn check_null_move_round_trip() {
+        const POSITIONS: [&str; 3] = [
+            START_POSITION,
+            "4k3/8/8/3pP3/8/8/8/4K3 w - d6 17 1",
+            "r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 23 1",
+        ];
+
+        for fen in POSITIONS {
+            let mut move_list = MoveList::from_fen(fen);
+            let board_before = move_list.board;
+            let en_passant_history_len = move_list.en_passant_history.len();
+
+            move_list.make_null_move();
+
+            assert_board_invariants(move_list.get_board());
+            assert_eq!(board_before.plies + 1, move_list.board.plies);
+            assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
+            assert_eq!(
+                en_passant_history_len + 1,
+                move_list.en_passant_history.len()
+            );
+
+            move_list.unmake_null_move();
+
+            assert_eq!(board_before, move_list.board);
+            assert_eq!(en_passant_history_len, move_list.en_passant_history.len());
+            assert_board_invariants(move_list.get_board());
+        }
     }
 }

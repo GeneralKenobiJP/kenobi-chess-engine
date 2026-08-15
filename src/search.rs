@@ -697,6 +697,7 @@ impl<T: Evaluator> Engine<T> {
         // Check if we have a proper entry in the transposition table
         if let Some(transposition) = transposition_entry {
             if transposition.node_type == EXACT { self.repetition_table.unvisit_position(zobrist); return Some(transposition.value); }
+            if transposition.node_type == NOISY_ONLY { self.repetition_table.unvisit_position(zobrist); return Some(transposition.value); }
             if transposition.node_type == ALPHA && transposition.value <= alpha { self.repetition_table.unvisit_position(zobrist); return Some(transposition.value); } // Our alpha cut-off is even bigger than it was for the put operation
             if transposition.node_type == BETA && transposition.value >= beta { self.repetition_table.unvisit_position(zobrist); return Some(transposition.value); } // Our beta cut-off is even smaller than it was for the put operation
         }
@@ -910,6 +911,7 @@ mod tests {
     use crate::piece::Piece::{KING, KNIGHT, PAWN, QUEEN, ROOK};
     use super::*;
     use crate::evaluation::MockMaterialEvaluator;
+    use crate::transposition_table::NodeType;
 
     #[test]
     fn search_initial_position() {
@@ -1630,5 +1632,499 @@ mod tests {
         let mut move_list = MoveList::from_board(board);
         let value = engine.search(&mut move_list, 1, &SearchControl::new(None, None), None);
         assert_eq!(DRAW, value);
+    }
+
+    fn search_with_tt_entry(
+        fen: &str,
+        depth: u32,
+        node_type: NodeType,
+        stored_value: i32,
+        alpha: i32,
+        beta: i32,
+    ) -> i32 {
+        let mut move_list = MoveList::from_fen(fen);
+        let board = *move_list.get_board();
+        let mut engine =
+            Engine::with_evaluator_and_capacity(MockMaterialEvaluator {}, 1024);
+        let control = SearchControl::new(None, None);
+
+        engine.current_ply = board.plies;
+        engine.depth = depth;
+        engine.max_depth = depth;
+        engine.transposition_table.put_transposition(
+            &Transposition::from_zobrist(
+                board.zobrist,
+                depth,
+                stored_value,
+                &[None; 3],
+                node_type,
+            ),
+        );
+
+        let result = engine
+            .search_alpha_beta_pruning(
+                &mut move_list,
+                depth,
+                alpha,
+                beta,
+                &control,
+                None,
+            )
+            .unwrap();
+
+        assert!(engine.repetition_table.is_empty());
+        result
+    }
+
+    fn quiescence_with_tt_entry(
+        fen: &str,
+        node_type: NodeType,
+        stored_value: i32,
+        alpha: i32,
+        beta: i32,
+    ) -> i32 {
+        let mut move_list = MoveList::from_fen(fen);
+        let board = *move_list.get_board();
+        let mut engine =
+            Engine::with_evaluator_and_capacity(MockMaterialEvaluator {}, 1024);
+        let control = SearchControl::new(None, None);
+
+        engine.current_ply = board.plies;
+        engine.transposition_table.put_transposition(
+            &Transposition::from_zobrist(
+                board.zobrist,
+                0,
+                stored_value,
+                &[None; 3],
+                node_type,
+            ),
+        );
+
+        let result = engine
+            .quiescence_search(&mut move_list, alpha, beta, &control)
+            .unwrap();
+
+        assert!(engine.repetition_table.is_empty());
+        result
+    }
+
+    /// TT-free quiescence oracle used by the differential tests below.
+    ///
+    /// This deliberately omits delta pruning, move ordering and transposition
+    /// lookups. It is small and slow, but mathematically straightforward.
+    fn reference_quiescence(
+        move_list: &mut MoveList,
+        mut alpha: i32,
+        beta: i32,
+    ) -> i32 {
+        let in_check = move_list.is_in_check();
+
+        if !in_check {
+            let stand_pat =
+                <MockMaterialEvaluator as Evaluator>::evaluate(move_list.get_board());
+
+            if stand_pat >= beta {
+                return beta;
+            }
+
+            alpha = alpha.max(stand_pat);
+            move_list.generate_noisy_moves();
+        } else {
+            move_list.generate_moves();
+        }
+
+        let moves = move_list.get_moves().clone();
+        let mut legal_move_found = false;
+
+        for piece_move in moves {
+            move_list.make_move(&piece_move);
+            let legal = !move_list.is_opponent_in_check();
+
+            if legal {
+                legal_move_found = true;
+                let value = -reference_quiescence(move_list, -beta, -alpha);
+                alpha = alpha.max(value);
+            }
+
+            move_list.unmake_move(&piece_move);
+
+            if alpha >= beta {
+                break;
+            }
+        }
+
+        if in_check && !legal_move_found {
+            NEGATIVE_INFINITY
+        } else {
+            alpha
+        }
+    }
+
+    /// TT-free fixed-depth negamax oracle. It intentionally excludes every
+    /// selective optimization so the production search has an independent
+    /// correctness reference.
+    fn reference_search(
+        move_list: &mut MoveList,
+        depth: u32,
+        mut alpha: i32,
+        beta: i32,
+    ) -> i32 {
+        if depth == 0 {
+            return reference_quiescence(move_list, alpha, beta);
+        }
+
+        move_list.generate_moves();
+        let moves = move_list.get_moves().clone();
+        let mut legal_move_found = false;
+        let mut best = NEGATIVE_INFINITY;
+
+        for piece_move in moves {
+            move_list.make_move(&piece_move);
+            let legal = !move_list.is_opponent_in_check();
+
+            if legal {
+                legal_move_found = true;
+                let value = -reference_search(move_list, depth - 1, -beta, -alpha);
+                best = best.max(value);
+                alpha = alpha.max(value);
+            }
+
+            move_list.unmake_move(&piece_move);
+
+            if alpha >= beta {
+                break;
+            }
+        }
+
+        if !legal_move_found {
+            if move_list.is_in_check() {
+                NEGATIVE_INFINITY
+            } else {
+                DRAW
+            }
+        } else {
+            best
+        }
+    }
+
+    fn reference_root_moves(
+        move_list: &mut MoveList,
+        depth: u32,
+    ) -> (i32, Vec<Move>) {
+        assert!(depth > 0);
+
+        move_list.generate_moves();
+        let moves = move_list.get_moves().clone();
+        let mut best_score = NEGATIVE_INFINITY;
+        let mut best_moves = Vec::new();
+
+        for piece_move in moves {
+            move_list.make_move(&piece_move);
+            let legal = !move_list.is_opponent_in_check();
+
+            if legal {
+                let score = -reference_search(
+                    move_list,
+                    depth - 1,
+                    NEGATIVE_INFINITY,
+                    POSITIVE_INFINITY,
+                );
+
+                if score > best_score {
+                    best_score = score;
+                    best_moves.clear();
+                    best_moves.push(piece_move);
+                } else if score == best_score {
+                    best_moves.push(piece_move);
+                }
+            }
+
+            move_list.unmake_move(&piece_move);
+        }
+
+        if best_moves.is_empty() {
+            best_score = if move_list.is_in_check() {
+                NEGATIVE_INFINITY
+            } else {
+                DRAW
+            };
+        }
+
+        (best_score, best_moves)
+    }
+
+    #[test]
+    fn check_quiescence_boundary_preserves_window_and_position() {
+        const CASES: [(&str, i32, i32); 3] = [
+            // White is materially ahead. The direct qsearch fails high.
+            ("4k3/8/8/8/8/8/8/3QK3 w - - 0 1", 100, 200),
+            // White is materially behind. The direct qsearch fails low.
+            ("3rk3/8/8/8/8/8/8/4K3 w - - 0 1", -200, -100),
+            // An in-window result ensures the test is not limited to cutoffs.
+            ("4k3/8/8/8/8/8/8/4K3 w - - 0 1", -50, 50),
+        ];
+
+        for (fen, alpha, beta) in CASES {
+            let mut direct_moves = MoveList::from_fen(fen);
+            let direct_board = *direct_moves.get_board();
+            let mut direct_engine =
+                Engine::with_evaluator_and_capacity(MockMaterialEvaluator {}, 1024);
+            let direct_control = SearchControl::new(None, None);
+            direct_engine.current_ply = direct_board.plies;
+
+            let direct = direct_engine
+                .quiescence_search(&mut direct_moves, alpha, beta, &direct_control)
+                .unwrap();
+
+            let mut boundary_moves = MoveList::from_fen(fen);
+            let boundary_board = *boundary_moves.get_board();
+            let mut boundary_engine =
+                Engine::with_evaluator_and_capacity(MockMaterialEvaluator {}, 1024);
+            let boundary_control = SearchControl::new(None, None);
+            boundary_engine.current_ply = boundary_board.plies;
+
+            let through_alpha_beta = boundary_engine
+                .search_alpha_beta_pruning(
+                    &mut boundary_moves,
+                    0,
+                    alpha,
+                    beta,
+                    &boundary_control,
+                    None,
+                )
+                .unwrap();
+
+            assert_eq!(
+                direct,
+                through_alpha_beta,
+                "depth-zero search changed the qsearch window for FEN {fen}"
+            );
+            assert_eq!(direct_board, *direct_moves.get_board());
+            assert_eq!(boundary_board, *boundary_moves.get_board());
+            assert!(direct_engine.repetition_table.is_empty());
+            assert!(boundary_engine.repetition_table.is_empty());
+        }
+    }
+
+    #[test]
+    fn check_main_search_respects_tt_bound_types() {
+        const FEN: &str = "4k3/8/8/8/8/8/8/4K3 w - - 0 1";
+        const ALPHA_VALUE: i32 = -500;
+        const BETA_VALUE: i32 = 500;
+        const ALPHA_WINDOW: i32 = -100;
+        const BETA_WINDOW: i32 = 100;
+
+        let mut baseline_moves = MoveList::from_fen(FEN);
+        let baseline_board = *baseline_moves.get_board();
+        let mut baseline_engine =
+            Engine::with_evaluator_and_capacity(MockMaterialEvaluator {}, 1024);
+        let baseline_control = SearchControl::new(None, None);
+        baseline_engine.current_ply = baseline_board.plies;
+        baseline_engine.depth = 1;
+        baseline_engine.max_depth = 1;
+        let baseline = baseline_engine
+            .search_alpha_beta_pruning(
+                &mut baseline_moves,
+                1,
+                ALPHA_WINDOW,
+                BETA_WINDOW,
+                &baseline_control,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(0, baseline);
+
+        // Exact entries are unconditional when their stored depth is sufficient.
+        assert_eq!(
+            37,
+            search_with_tt_entry(FEN, 1, EXACT, 37, ALPHA_WINDOW, BETA_WINDOW)
+        );
+
+        // A valid upper bound may produce a fail-low cutoff.
+        assert_eq!(
+            ALPHA_VALUE,
+            search_with_tt_entry(
+                FEN,
+                1,
+                ALPHA,
+                ALPHA_VALUE,
+                ALPHA_WINDOW,
+                BETA_WINDOW,
+            )
+        );
+
+        // A valid lower bound may produce a fail-high cutoff.
+        assert_eq!(
+            BETA_VALUE,
+            search_with_tt_entry(
+                FEN,
+                1,
+                BETA,
+                BETA_VALUE,
+                ALPHA_WINDOW,
+                BETA_WINDOW,
+            )
+        );
+
+        // An upper bound is not proof of fail-high, even when its numeric value
+        // happens to be greater than beta.
+        assert_eq!(
+            baseline,
+            search_with_tt_entry(
+                FEN,
+                1,
+                ALPHA,
+                BETA_VALUE,
+                ALPHA_WINDOW,
+                BETA_WINDOW,
+            )
+        );
+
+        // A lower bound is not proof of fail-low.
+        assert_eq!(
+            baseline,
+            search_with_tt_entry(
+                FEN,
+                1,
+                BETA,
+                ALPHA_VALUE,
+                ALPHA_WINDOW,
+                BETA_WINDOW,
+            )
+        );
+
+        // A qsearch-only exact value must not be treated as a full-depth value.
+        assert_eq!(
+            baseline,
+            search_with_tt_entry(
+                FEN,
+                1,
+                NOISY_ONLY,
+                BETA_VALUE,
+                ALPHA_WINDOW,
+                BETA_WINDOW,
+            )
+        );
+    }
+
+    #[test]
+    fn check_quiescence_respects_tt_bound_types() {
+        const FEN: &str = "4k3/8/8/8/8/8/8/4K3 w - - 0 1";
+        const ALPHA_VALUE: i32 = -500;
+        const BETA_VALUE: i32 = 500;
+        const ALPHA_WINDOW: i32 = -100;
+        const BETA_WINDOW: i32 = 100;
+
+        assert_eq!(
+            37,
+            quiescence_with_tt_entry(
+                FEN,
+                NOISY_ONLY,
+                37,
+                ALPHA_WINDOW,
+                BETA_WINDOW,
+            )
+        );
+        assert_eq!(
+            ALPHA_VALUE,
+            quiescence_with_tt_entry(
+                FEN,
+                ALPHA,
+                ALPHA_VALUE,
+                ALPHA_WINDOW,
+                BETA_WINDOW,
+            )
+        );
+        assert_eq!(
+            BETA_VALUE,
+            quiescence_with_tt_entry(
+                FEN,
+                BETA,
+                BETA_VALUE,
+                ALPHA_WINDOW,
+                BETA_WINDOW,
+            )
+        );
+
+        // These two entries have numerically tempting values but the wrong
+        // logical bound direction, so neither may cause a cutoff.
+        assert_eq!(
+            0,
+            quiescence_with_tt_entry(
+                FEN,
+                ALPHA,
+                BETA_VALUE,
+                ALPHA_WINDOW,
+                BETA_WINDOW,
+            )
+        );
+        assert_eq!(
+            0,
+            quiescence_with_tt_entry(
+                FEN,
+                BETA,
+                ALPHA_VALUE,
+                ALPHA_WINDOW,
+                BETA_WINDOW,
+            )
+        );
+    }
+
+    #[test]
+    fn check_tt_search_matches_tt_free_reference() {
+        const CASES: [(&str, u32); 4] = [
+            ("4k3/8/8/8/8/8/8/4K3 w - - 0 1", 2),
+            ("q3k3/8/8/8/8/8/8/R3K3 w - - 0 1", 2),
+            ("4k3/8/3p4/2P5/8/8/8/4K3 w - - 0 1", 2),
+            ("4k3/8/8/3r4/3Q4/8/8/4K3 w - - 0 1", 2),
+        ];
+
+        for (fen, depth) in CASES {
+            let mut reference_moves = MoveList::from_fen(fen);
+            let reference_board = *reference_moves.get_board();
+            let (expected_score, expected_best_moves) =
+                reference_root_moves(&mut reference_moves, depth);
+
+            assert_eq!(reference_board, *reference_moves.get_board());
+
+            let mut tt_moves = MoveList::from_fen(fen);
+            let tt_board = *tt_moves.get_board();
+            let mut tt_engine =
+                Engine::with_evaluator_and_capacity(MockMaterialEvaluator {}, 4096);
+            let control = SearchControl::new(None, None);
+            tt_engine.current_ply = tt_board.plies;
+            tt_engine.depth = depth;
+            tt_engine.max_depth = depth;
+
+            let actual_score = tt_engine
+                .search_alpha_beta_pruning(
+                    &mut tt_moves,
+                    depth,
+                    NEGATIVE_INFINITY,
+                    POSITIVE_INFINITY,
+                    &control,
+                    None,
+                )
+                .unwrap();
+
+            assert_eq!(
+                expected_score,
+                actual_score,
+                "TT-enabled search disagreed with the reference search for FEN {fen}"
+            );
+            assert_eq!(tt_board, *tt_moves.get_board());
+            assert!(tt_engine.repetition_table.is_empty());
+
+            if !expected_best_moves.is_empty() {
+                let actual_best = tt_engine.best_moves[0][0]
+                    .expect("a nonterminal root must produce a best move");
+
+                assert!(
+                    expected_best_moves.contains(&actual_best),
+                    "TT search selected {actual_best:?}, but the reference-optimal moves were {expected_best_moves:?} for FEN {fen}"
+                );
+            }
+        }
     }
 }
