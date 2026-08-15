@@ -1311,10 +1311,12 @@ mod tests {
         );
 
         let mut expected_bot = Bot::with_position(START_POSITION);
-        let mut engine_binding = expected_bot.engine.lock().unwrap();
-        let mut repetition_table = engine_binding.get_mut_repetition_table();
-        let mut move_list_binding = expected_bot.move_list.lock().unwrap();
-        Bot::input_moves(&mut move_list_binding, vec!(String::from("e2e4"), String::from("e7e5")), repetition_table);
+        {
+            let mut engine_binding = expected_bot.engine.lock().unwrap();
+            let mut repetition_table = engine_binding.get_mut_repetition_table();
+            let mut move_list_binding = expected_bot.move_list.lock().unwrap();
+            Bot::input_moves(&mut move_list_binding, vec!(String::from("e2e4"), String::from("e7e5")), repetition_table);
+        }
         assert_eq!(
             expected_bot.move_list.lock().unwrap().get_board(),
             bot.move_list.lock().unwrap().get_board()
