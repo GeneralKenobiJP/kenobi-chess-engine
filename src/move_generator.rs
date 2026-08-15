@@ -300,12 +300,23 @@ impl MoveList {
                 self.handle_en_passant(target, inactive_player);
                 self.board.piece_counter[6 * inactive_player + piece] -= 1;
                 self.capture_history.push(NO_CAPTURE);
+                self.halfmoves_history.push(self.board.half_moves as u8);
+                self.board.half_moves = 0;
                 self.board.en_passant_possibility = NO_PASSANT;
                 self.board.switch_active_player();
                 return;
             }
             if piece_move.target.abs_diff(piece_move.origin) == 16 {
                 // We pushed the pawn by 2 squares and therefore allowed en passant
+                //todo
+                // let en_passant_target = (piece_move.target + piece_move.origin) / 2;
+                // self.board.en_passant_possibility =
+                //     if self.board.is_en_passant_possible(en_passant_target) {
+                //         en_passant_target
+                //     }
+                //     else {
+                //         NO_PASSANT
+                //     };
                 self.board.en_passant_possibility = (piece_move.target + piece_move.origin)/2;
                 self.board.zobrist ^= ZOBRIST_TABLE.en_passant[piece_move.target as usize % 8];
             }
@@ -330,7 +341,12 @@ impl MoveList {
         self.board.switch_active_player();
     }
 
-    /// Handles en passant.
+    //todo
+    // fn is_en_passant_possible(&self, en_passant_tile: u64) -> bool {
+    //     if self
+    // }
+
+    /// Handles an en passant capture/uncapture.
     /// Adjusts the board and the zobrist accordingly.
     /// Parameters:
     ///     - target_tile - 1u64 << target
