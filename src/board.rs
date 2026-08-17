@@ -5,6 +5,7 @@
 //! Defines some methods for board
 //! Implements FEN utility that allows to convert input FEN string into attributes of Board
 
+use std::cmp::max;
 use num_traits::FromPrimitive;
 use scanner_rust::ScannerStr;
 use crate::evaluation::{NEGATIVE_INFINITY, POSITIVE_INFINITY};
@@ -120,8 +121,9 @@ impl Board {
         self.zobrist ^= ZOBRIST_TABLE.active_player;
     }
 
-    /// Calculates distance between two given squares
+    /// Calculates Manhattan distance between two given squares
     /// The squares are given as their number in the order (not bit)
+    /// NOTE: corners are NOT treated as connections
     pub fn distance(square1: u8, square2: u8) -> u8 {
         let file1 = square1 % 8;
         let rank1 = square1 / 8;
@@ -130,6 +132,19 @@ impl Board {
         let rank2 = square2 / 8;
 
         u8::abs_diff(file1, file2) + u8::abs_diff(rank1, rank2)
+    }
+
+    /// Calculates Chebyshev distance between two given squares
+    /// The squares are given as their number in the order (not bit)
+    /// NOTE: Chebyshev distance treats corners as rightful connections
+    pub fn chebyshev_distance(square1: u8, square2: u8) -> u8 {
+        let file1 = square1 % 8;
+        let rank1 = square1 / 8;
+
+        let file2 = square2 % 8;
+        let rank2 = square2 / 8;
+
+        max(u8::abs_diff(file1, file2), u8::abs_diff(rank1, rank2))
     }
 
     /// Read in the FEN (Forsyth-Edwards Notation) and adjust the board's attributes accordingly
@@ -451,6 +466,17 @@ mod tests {
         assert_eq!(3, Board::distance(0,10));
         assert_eq!(7, Board::distance(0, 56));
         assert_eq!(14, Board::distance(0, 63));
+    }
+
+    #[test]
+    fn check_chebyshev_distance() {
+        assert_eq!(1, Board::chebyshev_distance(0,8));
+        assert_eq!(1, Board::chebyshev_distance(0,9));
+        assert_eq!(0, Board::chebyshev_distance(0,0));
+        assert_eq!(1, Board::chebyshev_distance(0,1));
+        assert_eq!(2, Board::chebyshev_distance(0,10));
+        assert_eq!(7, Board::chebyshev_distance(0, 56));
+        assert_eq!(7, Board::chebyshev_distance(0, 63));
     }
 
     #[test]

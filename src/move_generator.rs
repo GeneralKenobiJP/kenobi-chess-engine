@@ -86,7 +86,7 @@ impl Move {
             }
         }
         else {
-            if piece == KING && Board::distance(origin, target) > 1 {
+            if piece == KING && Board::chebyshev_distance(origin, target) > 1 {
                 promotion = 1;
             }
             else {
