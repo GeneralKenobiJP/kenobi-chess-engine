@@ -235,8 +235,8 @@ impl<T: Evaluator> Engine<T> {
     }
 
     /// Retrieves the `Transposition` data for the given board position from the engine's transposition table.
-    pub fn get_transposition(&self, board: &Board) -> Option<Transposition> {
-        self.transposition_table.get_from_zobrist(board.zobrist).clone()
+    pub fn get_transposition(&self, board: &Board) -> Option<&Transposition> {
+        self.transposition_table.get_from_zobrist(board.zobrist).clone() //todo: do we really need to clone this one?
     }
 
     /// Retrieves the depth at which the engine is currently conducting a search
@@ -254,6 +254,10 @@ impl<T: Evaluator> Engine<T> {
     pub fn get_repetition_table(&mut self) -> &RepetitionTable {
         &self.repetition_table
     }
+
+    // pub fn get_tt_len(&self) -> usize {
+    //     self.transposition_table.len
+    // }
 
     /// Calls search algorithm to find the best possible moves in the current situation.
     /// Searches up to the given depth.
@@ -312,10 +316,18 @@ impl<T: Evaluator> Engine<T> {
             let mut retries = 0;
 
             loop {
-                let (alpha, beta) = if current_depth < ASPIRATION_START_DEPTH {
+                if control.is_stopped(true) {
+                    return value;
+                }
+
+                //Do not use aspiration window around mate scores
+                let is_mate = value.abs() >= POSITIVE_INFINITY;
+
+                let (alpha, beta) = if current_depth < ASPIRATION_START_DEPTH || is_mate {
                     (NEGATIVE_INFINITY, POSITIVE_INFINITY)
                 } else {
                     (
+                        // Aspiration window
                         previous_value.saturating_sub(delta),
                         previous_value.saturating_add(delta),
                     )
@@ -357,6 +369,11 @@ impl<T: Evaluator> Engine<T> {
 
             self.last_root_best = self.best_moves[0][0];
             self.last_root_score = value;
+
+            // If mate found, don't look further
+            if value.abs() >= POSITIVE_INFINITY {
+                break;
+            }
         }
 
         value
@@ -599,7 +616,8 @@ impl<T: Evaluator> Engine<T> {
 
         if self.best_moves[buffer_index][0] == None {
             self.repetition_table.unvisit_position(zobrist);
-            return if move_list.is_in_check() { Some(NEGATIVE_INFINITY) } else { Some(DRAW) }
+            let mate_plies = self.depth as i32;
+            return if move_list.is_in_check() { Some(NEGATIVE_INFINITY - mate_plies) } else { Some(DRAW) }
         }
 
         // update the transposition table
@@ -711,7 +729,8 @@ impl<T: Evaluator> Engine<T> {
         if move_list.get_moves().len() == 0 {
             self.repetition_table.unvisit_position(zobrist);
             return if in_check {
-                Some(NEGATIVE_INFINITY)
+                let mate_plies = self.depth as i32;
+                Some(NEGATIVE_INFINITY - mate_plies)
             } else {
                 Some(alpha)
             };
@@ -778,7 +797,8 @@ impl<T: Evaluator> Engine<T> {
 
         if self.best_moves[buffer_index][0] == None {
             self.repetition_table.unvisit_position(zobrist);
-            return if in_check { Some(NEGATIVE_INFINITY) } else { Some(alpha) }
+            let mate_plies = self.depth as i32;
+            return if in_check { Some(NEGATIVE_INFINITY - mate_plies) } else { Some(alpha) }
         }
 
         // update the transposition table
@@ -1012,7 +1032,7 @@ mod tests {
         engine.depth = 1;
         let search_control = SearchControl::new(None, None);
 
-        assert_eq!(NEGATIVE_INFINITY, engine.search_alpha_beta_pruning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, None).unwrap());
+        assert_eq!(NEGATIVE_INFINITY - 1, engine.search_alpha_beta_pruning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, None).unwrap());
         assert!(engine.repetition_table.is_empty());
 
         let mut board = Board::new();

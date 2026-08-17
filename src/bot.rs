@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use scanner_rust::ScannerStr;
 
 use crate::board::{Board, START_POSITION};
-use crate::evaluation::{Evaluator, MainEvaluator};
+use crate::evaluation::{Evaluator, MainEvaluator, POSITIVE_INFINITY};
 use crate::move_generator::{Move, MoveList};
 use crate::perft::perft_log;
 use crate::search::{Engine, SearchControl};
@@ -608,7 +608,9 @@ impl Bot<MainEvaluator> {
             gate.release();
         }
         if let Some(handle) = search.handle.take() {
-            let _ = handle.join();
+            if let Err(payload) = handle.join() {
+                eprintln!("search worker panicked: {payload:?}");
+            }
         }
     }
 
@@ -698,9 +700,19 @@ impl Bot<MainEvaluator> {
         let score_cp = engine.get_last_root_score().unwrap_or(0);
         let milliseconds = elapsed.as_millis().max(1);
         let nps = u128::from(nodes).saturating_mul(1_000) / milliseconds;
-        format!(
-            "info depth {depth} score cp {score_cp} time {milliseconds} nodes {nodes} nps {nps}"
-        )
+
+        if score_cp.abs() < POSITIVE_INFINITY {
+            format!(
+                "info depth {depth} score cp {score_cp} time {milliseconds} nodes {nodes} nps {nps}"
+            )
+        }
+        else {
+            let mate_plies = score_cp.abs() - POSITIVE_INFINITY;
+            let mate_moves = score_cp.signum() * (mate_plies + 3) / 2;
+            format!(
+                "info depth {depth} score mate {mate_moves} time {milliseconds} nodes {nodes} nps {nps}"
+            )
+        }
     }
 
     /// Implements the "best_move" UCI command.
