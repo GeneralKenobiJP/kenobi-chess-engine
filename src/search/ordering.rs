@@ -34,7 +34,7 @@ impl<T: Evaluator> Engine<T> {
             self.apply_mvv_lva_with_recapture(&mut order_table, move_list, ((*recapture.unwrap() & CAPTURE_SQUARE_MASK) >> 8) as u8);
         }
 
-        self.apply_killer_moves(&mut order_table);
+        self.apply_killer_moves(&mut order_table, move_list);
 
         move_list.order_moves(&order_table);
     }
@@ -164,13 +164,13 @@ impl<T: Evaluator> Engine<T> {
     /// Therefore, we store the old killer move so that we can still refer to it, since it is
     /// likely to stay a good response, thus preventing the engine from forgetting a good move
     /// because of occasional noise.
-    fn apply_killer_moves(&self, order_table: &mut OrderTable) {
-        let ply = self.current_ply as usize;
+    fn apply_killer_moves(&self, order_table: &mut OrderTable, move_list: &MoveList) {
+        let idx = (move_list.get_board().plies - self.current_ply) as usize;
         for i in 0..2 {
-            if self.killer_moves[ply][i].is_none() {
+            if self.killer_moves[idx][i].is_none() {
                 return;
             }
-            let killer_move = &self.killer_moves[ply][i].unwrap();
+            let killer_move = &self.killer_moves[idx][i].unwrap();
             if !order_table.contains_key(killer_move) {
                 return;
             }

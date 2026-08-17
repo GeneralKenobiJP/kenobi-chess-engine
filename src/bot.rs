@@ -392,7 +392,10 @@ impl Bot<MainEvaluator> {
 
         self.stop_and_join_search();
 
-        // we lock the move_list before using it
+        let mut move_list_binding = self.move_list.lock().unwrap();
+        move_list_binding.clear();
+        drop(move_list_binding);
+
         let mut move_list_binding = self.move_list.lock().unwrap();
         let mut board = move_list_binding.get_mutable_board();
         let mut engine_binding = self.engine.lock().unwrap();
@@ -562,7 +565,7 @@ impl Bot<MainEvaluator> {
     ///     budget = Math.min(p, Math.max(0, r - m_o)), where:
     ///         p = r/m + 3/4 * i,
     ///         r - time remaining on the clock,
-    ///         m - moves to the next time control,
+    ///         m - moves to the next time control (min. 1),
     ///         i - time increment,
     ///         m_o - non-search related overhead per each move
     fn compute_time_budget(&self, settings: &SearchSettings, move_list: &MoveList) -> Option<Duration> {
@@ -713,6 +716,8 @@ impl Bot<MainEvaluator> {
         let mut response = Self::info(engine, nodes, elapsed);
         response.push_str("\nbestmove ");
 
+        // Self::tt_entries(&engine);
+
         let best_move = match engine.try_get_best_move(move_list.get_board()) {
             Some(best_move)
                 if allowed_root_moves
@@ -794,6 +799,11 @@ impl Bot<MainEvaluator> {
         let engine_binding = self.engine.lock().unwrap();
         Option::from(engine_binding.get_current_depth().to_string())
     }
+
+    // /// Outputs a string containing the information on the depth of the current search.
+    // fn tt_entries(engine: &Engine) {
+    //     println!("{}", engine.get_tt_len());
+    // }
 }
 
 #[cfg(test)]
