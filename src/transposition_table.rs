@@ -11,6 +11,7 @@ use crate::zobrist::zobrist_hash;
 const INITIAL_CAPACITY: usize = 1024 * 1024 * 64; // 67 108 864 entries => 2 147 483 648 Bytes
 const REPETITION_CAPACITY: usize = 1024 * 2; // 2048 entries => 65 536 Bytes
 const THREEFOLD_REPETITION: u8 = 3;
+const HASH_SEARCH_LIMIT: usize = 4096 * 4;
 
 // 24 Bytes => 24 Bytes (must be a multiple of 8)
 // Option of Transposition: 24 Bytes
@@ -55,48 +56,57 @@ impl Transposition {
 
 #[derive(Eq, PartialEq, Debug)]
 pub struct TranspositionTable {
-    table: Vec<Option<Transposition>>
+    table: Vec<Option<Transposition>>,
+    // pub(crate) len: usize
 }
 
 impl TranspositionTable {
 
     pub fn new() -> Self {
         TranspositionTable {
-            table: vec![None; INITIAL_CAPACITY]
+            table: vec![None; INITIAL_CAPACITY],
+            // len: 0
         }
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
         TranspositionTable {
-            table: vec![None; capacity]
+            table: vec![None; capacity],
+            // len: 0
         }
     }
 
     /// Hashes the key by implementing linear probing
     /// Should be called for a zobrist-hashed key
-    fn hash(&self, key: u64) -> usize {
+    /// Returns:
+    /// * Ok(hash) if it managed to find an empty spot or zobrist-matching entry within
+    ///     the HASH_SEARCH_LIMIT from the ideal initial hash
+    /// * Err(initial_hash) otherwise (suggesting to overwrite the zobrist-differing entry at the
+    ///     ideal initial hash
+    fn hash(&self, key: u64) -> Result<usize,usize> {
         let initial_hash = key as usize % self.table.len();
         let mut hash = initial_hash;
+        let final_hash = (initial_hash + HASH_SEARCH_LIMIT) % self.table.len();
 
         loop {
             let entry = &self.table[hash];
 
             match entry {
-                None => { return hash; },
+                None => { return Ok(hash); },
                 Some(transposition) => {
                     if transposition.zobrist == key {
-                        return hash;
+                        return Ok(hash);
                     }
                     hash = ( hash + 1 ) % self.table.len();
                 }
             }
 
-            if hash == initial_hash {
+            if hash == final_hash {
                 break;
             }
         }
 
-        initial_hash
+        Err(initial_hash)
     }
 
     /// Put a position in a transposition table, given a board situation, depth, best move evaluation,
@@ -104,13 +114,21 @@ impl TranspositionTable {
     /// (exact / alpha / beta)
     pub fn put_position(&mut self, board: &Board, depth: u32, value: i32, best_moves: &[Option<Move>; 3], node_type: NodeType) {
         let zobrist = zobrist_hash(board);
-        let hash = self.hash(zobrist);
+        let hash = self.hash(zobrist).unwrap_or_else(|e| e);
+
+        // if self.table[hash].is_none() {
+        //     self.len+=1;
+        // }
         self.table[hash] = Option::from(Transposition::from_zobrist(zobrist, depth, value, best_moves, node_type));
     }
 
     /// Put a transposition in a transposition table, given a transposition object
     pub fn put_transposition(&mut self, transposition: &Transposition) {
-        let hash = self.hash(transposition.zobrist);
+        let hash = self.hash(transposition.zobrist).unwrap_or_else(|e| e);
+
+        // if self.table[hash].is_none() {
+        //     self.len+=1;
+        // }
         self.table[hash] = Option::from(transposition.clone());
     }
 
@@ -127,7 +145,15 @@ impl TranspositionTable {
     /// 3. If both nodes are of the same type, prefer the deeper one.
     ///     (If of equal depth, prefer the newer one)
     pub fn put_transposition_with_validation(&mut self, transposition: &Transposition) {
-        let hash = self.hash(transposition.zobrist);
+        let hash_result = self.hash(transposition.zobrist);
+        let hash;
+        match hash_result {
+            Ok(val) => { hash = val; }
+            Err(val) => {
+                self.table[val] = Option::from(transposition.clone());
+                return;
+            }
+        }
 
         let old = &self.table[hash];
         match old {
@@ -157,18 +183,27 @@ impl TranspositionTable {
             }
             None => {
                 self.table[hash] = Option::from(transposition.clone());
+                // self.len+=1;
             }
         }
     }
 
     /// Fetches a position from a transposition table, given a board situation
-    pub fn get_from_position(&self, board: &Board) -> &Option<Transposition> {
-        &self.table[self.hash(zobrist_hash(board))]
+    pub fn get_from_position(&self, board: &Board) -> Option<&Transposition> {
+        let hash = self.hash(zobrist_hash(board));
+        match hash {
+            Ok(hash) => self.table[hash].as_ref(),
+            Err(_) => None
+        }
     }
 
     /// Fetches a position from a transposition table, given a zobrist hash of a board position
-    pub fn get_from_zobrist(&self, zobrist: u64) -> &Option<Transposition> {
-        &self.table[self.hash(zobrist)]
+    pub fn get_from_zobrist(&self, zobrist: u64) -> Option<&Transposition> {
+        let hash = self.hash(zobrist);
+        match hash {
+            Ok(hash) => self.table[hash].as_ref(),
+            Err(_) => None
+        }
     }
 }
 
@@ -284,6 +319,8 @@ mod tests {
         let zobrist = zobrist_hash(&board);
         let start = Instant::now();
         let hash = transposition_table.hash(zobrist);
+        assert!(hash.is_ok());
+        let hash = hash.unwrap();
         assert_eq!(zobrist as usize % INITIAL_CAPACITY, hash);
         let duration = start.elapsed();
         println!("hash lasted for: {:?}", duration);
@@ -291,6 +328,8 @@ mod tests {
 
         let start = Instant::now();
         let hash = transposition_table.hash(zobrist + 1);
+        assert!(hash.is_ok());
+        let hash = hash.unwrap();
         assert_eq!((zobrist as usize + 1) % INITIAL_CAPACITY, hash);
         let duration = start.elapsed();
         println!("hash lasted for: {:?}", duration);
@@ -298,7 +337,8 @@ mod tests {
 
         let start = Instant::now();
         let hash = transposition_table.hash(zobrist + 1);
-        assert_eq!((zobrist as usize + 1) % INITIAL_CAPACITY, hash);
+        assert!(hash.is_ok());
+        assert_eq!((zobrist as usize + 1) % INITIAL_CAPACITY, hash.unwrap());
         let duration = start.elapsed();
         println!("hash lasted for: {:?}", duration);
     }
@@ -361,17 +401,17 @@ mod tests {
 
         transposition_table.put_position(&board, 4, 100,&[Option::from(Move::empty()), Option::from(Move::empty()), Option::from(Move::empty())], EXACT);
         let expected = Option::from(Transposition::from_position(&board, 4, 100,&[Option::from(Move::empty()), Option::from(Move::empty()), Option::from(Move::empty())], EXACT));
-        assert_eq!(expected, *transposition_table.get_from_position(&board));
+        assert_eq!(expected, transposition_table.get_from_position(&board).cloned());
 
         transposition_table.put_position(&board, 6, 100,&[Option::from(Move::empty()), Option::from(Move::empty()), Option::from(Move::empty())], EXACT);
         let expected2 = Option::from(Transposition::from_position(&board, 6, 100,&[Option::from(Move::empty()), Option::from(Move::empty()), Option::from(Move::empty())], EXACT));
-        assert_eq!(expected2, *transposition_table.get_from_position(&board));
+        assert_eq!(expected2, transposition_table.get_from_position(&board).cloned());
 
         board = Board::new();
         board.read_fen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
         transposition_table.put_position(&board, 4, 100,&[Option::from(Move::empty()), Option::from(Move::empty()), Option::from(Move::empty())], EXACT);
         let expected3 = Option::from(Transposition::from_position(&board, 4, 100,&[Option::from(Move::empty()), Option::from(Move::empty()), Option::from(Move::empty())], EXACT));
-        assert_eq!(expected3, *transposition_table.get_from_position(&board));
+        assert_eq!(expected3, transposition_table.get_from_position(&board).cloned());
         assert_ne!(expected, expected3);
     }
 
@@ -385,19 +425,19 @@ mod tests {
         let transposition = Transposition::from_position(&board, 4, 100,&[Option::from(Move::empty()), Option::from(Move::empty()), Option::from(Move::empty())], EXACT);
         transposition_table.put_transposition(&transposition);
         let expected = Option::from(transposition.clone());
-        assert_eq!(expected, *transposition_table.get_from_zobrist(transposition.zobrist));
+        assert_eq!(expected, transposition_table.get_from_zobrist(transposition.zobrist).cloned());
 
         let transposition2 = Transposition::from_position(&board, 6, 100,&[Option::from(Move::empty()), Option::from(Move::empty()), Option::from(Move::empty())], EXACT);
         transposition_table.put_transposition(&transposition2.clone());
         let expected2 = Option::from(Transposition::from_position(&board, 6, 100,&[Option::from(Move::empty()), Option::from(Move::empty()), Option::from(Move::empty())], EXACT));
-        assert_eq!(expected2, *transposition_table.get_from_zobrist(transposition2.zobrist));
+        assert_eq!(expected2, transposition_table.get_from_zobrist(transposition2.zobrist).cloned());
 
         board = Board::new();
         board.read_fen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
         let transposition3 = Transposition::from_position(&board, 4, 100,&[Option::from(Move::empty()), Option::from(Move::empty()), Option::from(Move::empty())], EXACT);
         transposition_table.put_transposition(&transposition3.clone());
         let expected3 = Option::from(transposition3.clone());
-        assert_eq!(expected3, *transposition_table.get_from_zobrist(transposition3.zobrist));
+        assert_eq!(expected3, transposition_table.get_from_zobrist(transposition3.zobrist).cloned());
         assert_ne!(expected, expected3);
     }
 
