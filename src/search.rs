@@ -618,7 +618,7 @@ impl<T: Evaluator> Engine<T> {
         if self.best_moves[buffer_index][0] == None {
             self.repetition_table.unvisit_position(zobrist);
             let mate_plies = self.depth as i32;
-            return if move_list.is_in_check() { Some(NEGATIVE_INFINITY - mate_plies) } else { Some(DRAW) }
+            return if move_list.is_in_check() { Some(NEGATIVE_INFINITY + mate_plies) } else { Some(DRAW) }
         }
 
         // update the transposition table
@@ -733,7 +733,7 @@ impl<T: Evaluator> Engine<T> {
             self.repetition_table.unvisit_position(zobrist);
             return if in_check {
                 let mate_plies = self.depth as i32;
-                Some(NEGATIVE_INFINITY - mate_plies)
+                Some(NEGATIVE_INFINITY + mate_plies)
             } else {
                 Some(alpha)
             };
@@ -801,7 +801,7 @@ impl<T: Evaluator> Engine<T> {
         if self.best_moves[buffer_index][0] == None {
             self.repetition_table.unvisit_position(zobrist);
             let mate_plies = self.depth as i32;
-            return if in_check { Some(NEGATIVE_INFINITY - mate_plies) } else { Some(alpha) }
+            return if in_check { Some(NEGATIVE_INFINITY + mate_plies) } else { Some(alpha) }
         }
 
         // update the transposition table
@@ -1037,7 +1037,7 @@ mod tests {
         engine.depth = 1;
         let search_control = SearchControl::new(None, None);
 
-        assert_eq!(NEGATIVE_INFINITY - 1, engine.search_alpha_beta_pruning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, None).unwrap());
+        assert_eq!(NEGATIVE_INFINITY + 1, engine.search_alpha_beta_pruning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, None).unwrap());
         assert!(engine.repetition_table.is_empty());
 
         let mut board = Board::new();
@@ -1049,7 +1049,7 @@ mod tests {
         engine.depth = 1;
         let search_control = SearchControl::new(None, None);
 
-        assert_eq!(POSITIVE_INFINITY + 1, engine.search_alpha_beta_pruning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, None).unwrap());
+        assert_eq!(POSITIVE_INFINITY - 1, engine.search_alpha_beta_pruning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, None).unwrap());
         assert!(engine.repetition_table.is_empty());
     }
 

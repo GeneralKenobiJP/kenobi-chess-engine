@@ -707,7 +707,7 @@ impl Bot<MainEvaluator> {
             )
         }
         else {
-            let mate_plies = score_cp.abs() - POSITIVE_INFINITY;
+            let mate_plies = (score_cp.abs() - POSITIVE_INFINITY).abs();
             let mate_moves = score_cp.signum() * (mate_plies + 3) / 2;
             format!(
                 "info depth {depth} score mate {mate_moves} time {milliseconds} nodes {nodes} nps {nps}"
