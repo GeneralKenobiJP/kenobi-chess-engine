@@ -124,7 +124,7 @@ impl Board {
     /// Calculates Manhattan distance between two given squares
     /// The squares are given as their number in the order (not bit)
     /// NOTE: corners are NOT treated as connections
-    pub fn distance(square1: u8, square2: u8) -> u8 {
+    pub fn manhattan_distance(square1: u8, square2: u8) -> u8 {
         let file1 = square1 % 8;
         let rank1 = square1 / 8;
 
@@ -459,13 +459,13 @@ mod tests {
 
     #[test]
     fn check_distance() {
-        assert_eq!(0, Board::distance(0,0));
-        assert_eq!(1, Board::distance(0,1));
-        assert_eq!(1, Board::distance(0,8));
-        assert_eq!(2, Board::distance(0,9));
-        assert_eq!(3, Board::distance(0,10));
-        assert_eq!(7, Board::distance(0, 56));
-        assert_eq!(14, Board::distance(0, 63));
+        assert_eq!(0, Board::manhattan_distance(0, 0));
+        assert_eq!(1, Board::manhattan_distance(0, 1));
+        assert_eq!(1, Board::manhattan_distance(0, 8));
+        assert_eq!(2, Board::manhattan_distance(0, 9));
+        assert_eq!(3, Board::manhattan_distance(0, 10));
+        assert_eq!(7, Board::manhattan_distance(0, 56));
+        assert_eq!(14, Board::manhattan_distance(0, 63));
     }
 
     #[test]

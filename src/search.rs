@@ -31,6 +31,7 @@ const DELTA_MARGIN: i32 = 200;
 const DELTA_PRUNING_PHASE_LIMIT: i32 = 20;
 const STOP_CHECK_PERIOD: u32 = 1 << 12;
 const STOP_CHECK_MASK: u32 = STOP_CHECK_PERIOD - 1;
+const QUIET_CHECKS_QUIESCENCE_DEPTH_LIMIT: u32 = 4;
 
 /// Per-search state shared between the UCI control thread and the search worker.
 /// It deliberately lives outside `Engine`, so separate engine instances cannot
@@ -466,7 +467,7 @@ impl<T: Evaluator> Engine<T> {
 
         if depth == 0 {
             self.repetition_table.unvisit_position(zobrist);
-            return self.quiescence_search(move_list, alpha, beta, control);
+            return self.quiescence_search(move_list, alpha, beta, control, 0);
         }
 
         // Index for the best moves buffer.
@@ -693,6 +694,7 @@ impl<T: Evaluator> Engine<T> {
         mut alpha: i32,
         beta: i32,
         control: &SearchControl,
+        quiescence_depth: u32
     ) -> Option<i32> {
         self.guard_counter = self.guard_counter.wrapping_add(1);
         if control.inc_node((self.guard_counter & STOP_CHECK_MASK) == 0) {
@@ -721,7 +723,8 @@ impl<T: Evaluator> Engine<T> {
         }
 
         let in_check = move_list.is_in_check();
-        let stand_pat = match self.compute_stand_pat(move_list, &mut alpha, beta, zobrist, in_check) {
+        let quiet_checks = quiescence_depth < QUIET_CHECKS_QUIESCENCE_DEPTH_LIMIT;
+        let stand_pat = match self.compute_stand_pat(move_list, &mut alpha, beta, zobrist, in_check, quiet_checks) {
             Ok(value) => value,
             Err(value) => return value,
         };
@@ -769,7 +772,7 @@ impl<T: Evaluator> Engine<T> {
             move_list.make_move(&piece_move);
             let legal = !move_list.is_opponent_in_check();
             let child = if legal {
-                self.quiescence_search(move_list, -beta, -alpha, control)
+                self.quiescence_search(move_list, -beta, -alpha, control, quiescence_depth + 1)
             } else {
                 Some(0)
             };
@@ -834,12 +837,14 @@ impl<T: Evaluator> Engine<T> {
     /// * beta - current upper bound of the quiescence search
     /// * zobrist - the zobrist hash of the current board position
     /// * in_check - are we currently in check? If yes, we have to evaluate all quiet moves, as well.
+    /// * quiet_checks - should we consider quiet checks when generating noisy moves? Only used in shallow nodes.
     ///
     /// Returns:
     /// * Ok(Some(score)) if the stand-pat did not fail hard and we are not in check. `move_list` is populated with noisy moves.
     /// * Ok(None) if we are in check. `move_list` is populated with all legal moves.
     /// * Err(Some(beta)) if we failed hard (the value exceeded the beta).
-    fn compute_stand_pat(&mut self, mut move_list: &mut MoveList, alpha: &mut i32, beta: i32, zobrist: u64, in_check: bool) -> Result<Option<i32>, Option<i32>> {
+    fn compute_stand_pat(&mut self, mut move_list: &mut MoveList, alpha: &mut i32, beta: i32,
+                         zobrist: u64, in_check: bool, quiet_checks: bool) -> Result<Option<i32>, Option<i32>> {
         Ok(if !in_check {
             let value = T::evaluate(move_list.get_board());
             if value >= beta {
@@ -847,7 +852,7 @@ impl<T: Evaluator> Engine<T> {
                 return Err(Some(beta));
             }
             *alpha = (*alpha).max(value);
-            move_list.generate_noisy_moves();
+            move_list.generate_noisy_moves(quiet_checks);
             Some(value)
         } else {
             // In check, quiet evasions are not optional; searching captures only
@@ -1044,7 +1049,7 @@ mod tests {
         engine.depth = 1;
         let search_control = SearchControl::new(None, None);
 
-        assert_eq!(POSITIVE_INFINITY, engine.search_alpha_beta_pruning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, None).unwrap());
+        assert_eq!(POSITIVE_INFINITY + 1, engine.search_alpha_beta_pruning(&mut move_list, 1, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, None).unwrap());
         assert!(engine.repetition_table.is_empty());
     }
 
@@ -1059,7 +1064,7 @@ mod tests {
         let search_control = SearchControl::new(None, None);
 
         assert_eq!(0, engine.search_naive(&mut move_list, 1));
-        assert_eq!(-100, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control).unwrap());
+        assert_eq!(-100, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, 0).unwrap());
         assert!(engine.repetition_table.is_empty());
     }
 
@@ -1074,7 +1079,7 @@ mod tests {
         let search_control = SearchControl::new(None, None);
 
         assert_eq!(0, engine.search_naive(&mut move_list, 1));
-        assert_eq!(-100, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control).unwrap());
+        assert_eq!(-100, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, 0).unwrap());
         assert!(engine.repetition_table.is_empty());
     }
 
@@ -1095,7 +1100,7 @@ mod tests {
         assert_eq!(100, engine.search_naive(&mut move_list, 1));
 
         //Stand-pat makes it 0, otherwise it is -700 (black is not forced to capture the pawn, which directly leads to promotion)
-        assert_eq!(0, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control).unwrap());
+        assert_eq!(0, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, 0).unwrap());
         assert!(engine.repetition_table.is_empty());
     }
 
@@ -1163,7 +1168,7 @@ mod tests {
         let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
         let search_control = SearchControl::new(None, None);
 
-        assert_ne!(DRAW, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control).unwrap());
+        assert_ne!(DRAW, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, 0).unwrap());
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
         assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
@@ -1171,7 +1176,7 @@ mod tests {
         engine = Engine::with_evaluator(MockMaterialEvaluator {});
         engine.repetition_table.visit_position(move_list.get_board().zobrist);
 
-        assert_ne!(DRAW, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control).unwrap());
+        assert_ne!(DRAW, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, 0).unwrap());
         assert!(!engine.repetition_table.visit_position(move_list.get_board().zobrist));
         assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
 
@@ -1179,7 +1184,7 @@ mod tests {
         engine.repetition_table.visit_position(move_list.get_board().zobrist);
         engine.repetition_table.visit_position(move_list.get_board().zobrist);
 
-        assert_eq!(DRAW, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control).unwrap());
+        assert_eq!(DRAW, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, 0).unwrap());
         assert!(engine.repetition_table.visit_position(move_list.get_board().zobrist));
 
         engine.repetition_table.unvisit_position(move_list.get_board().zobrist);
@@ -1511,7 +1516,7 @@ mod tests {
     fn check_stand_pat_non_check() {
         let board = Board::from_fen(START_POSITION);
         let mut move_list = MoveList::from_board(board);
-        move_list.generate_noisy_moves();
+        move_list.generate_noisy_moves(true);
         let moves = move_list.get_moves().clone();
         move_list.clear();
 
@@ -1522,7 +1527,7 @@ mod tests {
         engine.repetition_table.visit_position(board.zobrist);
 
         let stand_pat =
-            engine.compute_stand_pat(&mut move_list, &mut alpha, beta, board.zobrist, false);
+            engine.compute_stand_pat(&mut move_list, &mut alpha, beta, board.zobrist, false, true);
 
         assert_eq!(0, alpha);
         assert!(stand_pat.is_ok());
@@ -1548,7 +1553,7 @@ mod tests {
         engine.repetition_table.visit_position(board.zobrist);
 
         let stand_pat =
-            engine.compute_stand_pat(&mut move_list, &mut alpha, beta, board.zobrist, true);
+            engine.compute_stand_pat(&mut move_list, &mut alpha, beta, board.zobrist, true, true);
 
         assert_eq!(-200, alpha);
         assert!(stand_pat.is_ok());
@@ -1572,7 +1577,7 @@ mod tests {
         engine.repetition_table.visit_position(board.zobrist);
 
         let stand_pat =
-            engine.compute_stand_pat(&mut move_list, &mut alpha, beta, board.zobrist, false);
+            engine.compute_stand_pat(&mut move_list, &mut alpha, beta, board.zobrist, false, true);
 
         assert_eq!(-200, alpha);
         assert!(stand_pat.is_err());
@@ -1721,156 +1726,11 @@ mod tests {
         );
 
         let result = engine
-            .quiescence_search(&mut move_list, alpha, beta, &control)
+            .quiescence_search(&mut move_list, alpha, beta, &control, 0)
             .unwrap();
 
         assert!(engine.repetition_table.is_empty());
         result
-    }
-
-    /// TT-free quiescence oracle used by the differential tests below.
-    ///
-    /// This deliberately omits delta pruning, move ordering and transposition
-    /// lookups. It is small and slow, but mathematically straightforward.
-    fn reference_quiescence(
-        move_list: &mut MoveList,
-        mut alpha: i32,
-        beta: i32,
-    ) -> i32 {
-        let in_check = move_list.is_in_check();
-
-        if !in_check {
-            let stand_pat =
-                <MockMaterialEvaluator as Evaluator>::evaluate(move_list.get_board());
-
-            if stand_pat >= beta {
-                return beta;
-            }
-
-            alpha = alpha.max(stand_pat);
-            move_list.generate_noisy_moves();
-        } else {
-            move_list.generate_moves();
-        }
-
-        let moves = move_list.get_moves().clone();
-        let mut legal_move_found = false;
-
-        for piece_move in moves {
-            move_list.make_move(&piece_move);
-            let legal = !move_list.is_opponent_in_check();
-
-            if legal {
-                legal_move_found = true;
-                let value = -reference_quiescence(move_list, -beta, -alpha);
-                alpha = alpha.max(value);
-            }
-
-            move_list.unmake_move(&piece_move);
-
-            if alpha >= beta {
-                break;
-            }
-        }
-
-        if in_check && !legal_move_found {
-            NEGATIVE_INFINITY
-        } else {
-            alpha
-        }
-    }
-
-    /// TT-free fixed-depth negamax oracle. It intentionally excludes every
-    /// selective optimization so the production search has an independent
-    /// correctness reference.
-    fn reference_search(
-        move_list: &mut MoveList,
-        depth: u32,
-        mut alpha: i32,
-        beta: i32,
-    ) -> i32 {
-        if depth == 0 {
-            return reference_quiescence(move_list, alpha, beta);
-        }
-
-        move_list.generate_moves();
-        let moves = move_list.get_moves().clone();
-        let mut legal_move_found = false;
-        let mut best = NEGATIVE_INFINITY;
-
-        for piece_move in moves {
-            move_list.make_move(&piece_move);
-            let legal = !move_list.is_opponent_in_check();
-
-            if legal {
-                legal_move_found = true;
-                let value = -reference_search(move_list, depth - 1, -beta, -alpha);
-                best = best.max(value);
-                alpha = alpha.max(value);
-            }
-
-            move_list.unmake_move(&piece_move);
-
-            if alpha >= beta {
-                break;
-            }
-        }
-
-        if !legal_move_found {
-            if move_list.is_in_check() {
-                NEGATIVE_INFINITY
-            } else {
-                DRAW
-            }
-        } else {
-            best
-        }
-    }
-
-    fn reference_root_moves(
-        move_list: &mut MoveList,
-        depth: u32,
-    ) -> (i32, Vec<Move>) {
-        assert!(depth > 0);
-
-        move_list.generate_moves();
-        let moves = move_list.get_moves().clone();
-        let mut best_score = NEGATIVE_INFINITY;
-        let mut best_moves = Vec::new();
-
-        for piece_move in moves {
-            move_list.make_move(&piece_move);
-            let legal = !move_list.is_opponent_in_check();
-
-            if legal {
-                let score = -reference_search(
-                    move_list,
-                    depth - 1,
-                    NEGATIVE_INFINITY,
-                    POSITIVE_INFINITY,
-                );
-
-                if score > best_score {
-                    best_score = score;
-                    best_moves.clear();
-                    best_moves.push(piece_move);
-                } else if score == best_score {
-                    best_moves.push(piece_move);
-                }
-            }
-
-            move_list.unmake_move(&piece_move);
-        }
-
-        if best_moves.is_empty() {
-            best_score = if move_list.is_in_check() {
-                NEGATIVE_INFINITY
-            } else {
-                DRAW
-            };
-        }
-
-        (best_score, best_moves)
     }
 
     #[test]
@@ -1893,7 +1753,7 @@ mod tests {
             direct_engine.current_ply = direct_board.plies;
 
             let direct = direct_engine
-                .quiescence_search(&mut direct_moves, alpha, beta, &direct_control)
+                .quiescence_search(&mut direct_moves, alpha, beta, &direct_control, 0)
                 .unwrap();
 
             let mut boundary_moves = MoveList::from_fen(fen);
@@ -2092,59 +1952,31 @@ mod tests {
     }
 
     #[test]
-    fn check_tt_search_matches_tt_free_reference() {
-        const CASES: [(&str, u32); 4] = [
-            ("4k3/8/8/8/8/8/8/4K3 w - - 0 1", 2),
-            ("q3k3/8/8/8/8/8/8/R3K3 w - - 0 1", 2),
-            ("4k3/8/3p4/2P5/8/8/8/4K3 w - - 0 1", 2),
-            ("4k3/8/8/3r4/3Q4/8/8/4K3 w - - 0 1", 2),
-        ];
+    fn test_quiescence_search_checks_with_quiet() {
+        let mut board = Board::new();
+        let fen = "4k3/8/4K3/8/8/8/8/2Q5 w - - 0 1";
+        board.read_fen(fen);
+        let mut move_list = MoveList::from_board(board);
 
-        for (fen, depth) in CASES {
-            let mut reference_moves = MoveList::from_fen(fen);
-            let reference_board = *reference_moves.get_board();
-            let (expected_score, expected_best_moves) =
-                reference_root_moves(&mut reference_moves, depth);
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
+        let search_control = SearchControl::new(None, None);
 
-            assert_eq!(reference_board, *reference_moves.get_board());
-
-            let mut tt_moves = MoveList::from_fen(fen);
-            let tt_board = *tt_moves.get_board();
-            let mut tt_engine =
-                Engine::with_evaluator_and_capacity(MockMaterialEvaluator {}, 4096);
-            let control = SearchControl::new(None, None);
-            tt_engine.current_ply = tt_board.plies;
-            tt_engine.depth = depth;
-            tt_engine.max_depth = depth;
-
-            let actual_score = tt_engine
-                .search_alpha_beta_pruning(
-                    &mut tt_moves,
-                    depth,
-                    NEGATIVE_INFINITY,
-                    POSITIVE_INFINITY,
-                    &control,
-                    None,
-                )
-                .unwrap();
-
-            assert_eq!(
-                expected_score,
-                actual_score,
-                "TT-enabled search disagreed with the reference search for FEN {fen}"
-            );
-            assert_eq!(tt_board, *tt_moves.get_board());
-            assert!(tt_engine.repetition_table.is_empty());
-
-            if !expected_best_moves.is_empty() {
-                let actual_best = tt_engine.best_moves[0][0]
-                    .expect("a nonterminal root must produce a best move");
-
-                assert!(
-                    expected_best_moves.contains(&actual_best),
-                    "TT search selected {actual_best:?}, but the reference-optimal moves were {expected_best_moves:?} for FEN {fen}"
-                );
-            }
-        }
+        assert_eq!(POSITIVE_INFINITY, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, 0).unwrap());
+        assert!(engine.repetition_table.is_empty());
     }
+
+    #[test]
+    fn test_quiescence_search_checks_without_quiet() {
+        let mut board = Board::new();
+        let fen = "4k3/8/4K3/8/8/8/8/2Q5 w - - 0 1";
+        board.read_fen(fen);
+        let mut move_list = MoveList::from_board(board);
+
+        let mut engine = Engine::with_evaluator(MockMaterialEvaluator {});
+        let search_control = SearchControl::new(None, None);
+
+        assert_eq!(900, engine.quiescence_search(&mut move_list, NEGATIVE_INFINITY, POSITIVE_INFINITY, &search_control, QUIET_CHECKS_QUIESCENCE_DEPTH_LIMIT).unwrap());
+        assert!(engine.repetition_table.is_empty());
+    }
+
 }

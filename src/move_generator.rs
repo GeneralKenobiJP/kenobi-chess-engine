@@ -125,6 +125,7 @@ impl Move {
 pub struct MoveList {
     board: Board,
     moves: Vec<Move>,
+    moves_tmp: Vec<Move>,
     capture_history: Vec<u16>, // used as stack, 16 == no capture; 8 left bits encode square of capture, 8 right bits - captured piece
     en_passant_history: Vec<u8>, // used as stack, 64 == no passant
     castling_rights_history: Vec<u8>, // used as stack
@@ -140,6 +141,7 @@ impl MoveList {
         MoveList {
             board,
             moves: Vec::with_capacity(MAX_MOVES_IN_POSITION),
+            moves_tmp: Vec::with_capacity(MAX_MOVES_IN_POSITION),
             capture_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
             en_passant_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
             castling_rights_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
@@ -155,6 +157,7 @@ impl MoveList {
         MoveList {
             board: Board::from_fen(fen),
             moves: Vec::with_capacity(MAX_MOVES_IN_POSITION),
+            moves_tmp: Vec::with_capacity(MAX_MOVES_IN_POSITION),
             capture_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
             en_passant_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
             castling_rights_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
@@ -170,6 +173,7 @@ impl MoveList {
         MoveList {
             board: Board::new(),
             moves: Vec::with_capacity(MAX_MOVES_IN_POSITION),
+            moves_tmp: Vec::with_capacity(MAX_MOVES_IN_POSITION),
             capture_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
             en_passant_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
             castling_rights_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
@@ -185,11 +189,23 @@ impl MoveList {
     /// that is: all the vectors, which hold the game state.
     /// Look-up tables are left untouched.
     pub fn clear(&mut self) {
-        self.moves = Vec::new();
-        self.capture_history = Vec::with_capacity(INITIAL_STACK_CAPACITY);
-        self.en_passant_history = Vec::with_capacity(INITIAL_STACK_CAPACITY);
-        self.castling_rights_history = Vec::with_capacity(INITIAL_STACK_CAPACITY);
-        self.halfmoves_history = Vec::with_capacity(INITIAL_STACK_CAPACITY);
+        self.moves.clear();
+        self.moves_tmp.clear();
+        self.capture_history.clear();
+        self.en_passant_history.clear();
+        self.castling_rights_history.clear();
+        self.halfmoves_history.clear();
+        self.halfmoves_history.clear();
+    }
+
+    /// Transfers moves from the normal buffer to the temporary buffer.
+    pub fn transfer_moves_to_tmp(&mut self) {
+        self.moves_tmp = std::mem::take(&mut self.moves);
+    }
+
+    /// Recovers moves from the temporary buffer to the normal buffer.
+    pub fn recover_moves_from_tmp(&mut self) {
+        self.moves = std::mem::take(&mut self.moves_tmp);
     }
 
     /// Getter for the move list
@@ -634,8 +650,7 @@ impl MoveList {
     /// Noisy moves include captures, checks and promotions
     /// Should NOT be used for move generation
     /// Used for heuristics
-    /// NOTE: currently does not consider checks, because of the need to optimize it
-    pub fn generate_noisy_moves(&mut self) {
+    pub fn generate_noisy_moves(&mut self, quiet_checks: bool) {
         self.moves.clear();
 
         self.generate_captures();
@@ -643,7 +658,10 @@ impl MoveList {
             self.generate_white_promotions();
         }
         else { self.generate_black_promotions(); }
-        // self.generate_checks();
+
+        if quiet_checks {
+            self.generate_checks();
+        }
     }
 
     /// Generates captures and updates move list based on the situation on the board
@@ -669,18 +687,20 @@ impl MoveList {
     /// Does NOT construct a new vector for moves
     /// Note: this method is somewhat slow
     pub fn generate_checks(&mut self) {
-        let mut move_list = MoveList::from_board(self.board);
+        // Preserve moves already generated
+        self.transfer_moves_to_tmp();
 
-        move_list.generate_moves();
-
-        let moves = move_list.get_moves().clone();
+        self.generate_moves();
+        let moves = self.get_moves().clone();
 
         for piece_move in moves {
-            move_list.make_move(&piece_move);
-            let is_check = move_list.is_in_check();
-            move_list.unmake_move(&piece_move);
-            if is_check && !self.moves.contains(&piece_move) { self.moves.push(piece_move); }
+            self.make_move(&piece_move);
+            let is_check = self.is_in_check();
+            self.unmake_move(&piece_move);
+            if is_check && !self.moves_tmp.contains(&piece_move) { self.moves_tmp.push(piece_move); }
         }
+
+        self.recover_moves_from_tmp();
     }
 
     /// KING MOVE GENERATION
@@ -1172,7 +1192,7 @@ impl MoveList {
                     continue;
                 }
 
-                if Board::distance(origin as u8, target as u8) > 3 {
+                if Board::manhattan_distance(origin as u8, target as u8) > 3 {
                     continue;
                 }
 
@@ -3713,32 +3733,57 @@ mod tests {
         assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
     }
 
-    // #[test]
-    // fn check_generate_noisy_moves() {
-    //     let mut board = Board::new();
-    //     board.read_fen("4k3/6P1/8/8/3B4/2Qp4/p2Rp3/8 w - - 0 1");
-    //
-    //     let mut expected_move_list = Vec::<Move>::new();
-    //     expected_move_list.push(Move {origin: 49, target: 57, promotion: 2, piece: PAWN});
-    //     expected_move_list.push(Move {origin: 49, target: 57, promotion: 3, piece: PAWN});
-    //     expected_move_list.push(Move {origin: 49, target: 57, promotion: 4, piece: PAWN});
-    //     expected_move_list.push(Move {origin: 49, target: 57, promotion: 5, piece: PAWN});
-    //     expected_move_list.push(Move {origin: 21, target: 61, promotion: 0, piece: QUEEN});
-    //     expected_move_list.push(Move {origin: 21, target: 45, promotion: 0, piece: QUEEN});
-    //     expected_move_list.push(Move {origin: 21, target: 20, promotion: 0, piece: QUEEN});
-    //     expected_move_list.push(Move {origin: 12, target: 11, promotion: 0, piece: ROOK});
-    //     expected_move_list.push(Move {origin: 12, target: 15, promotion: 0, piece: ROOK});
-    //     expected_move_list.push(Move {origin: 12, target: 20, promotion: 0, piece: ROOK});
-    //
-    //     let mut move_list = MoveList::new(&mut board);
-    //
-    //     let start = Instant::now();
-    //     move_list.generate_noisy_moves();
-    //     let duration = start.elapsed();
-    //     println!("generate_checks lasted for {:?}", duration);
-    //
-    //     assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
-    // }
+    #[test]
+    fn check_generate_noisy_moves_with_quiet_checks() {
+        let mut board = Board::new();
+        board.read_fen("4k3/6P1/8/8/3B4/2Qp4/p2Rp3/8 w - - 0 1");
+
+        let mut expected_move_list = Vec::<Move>::new();
+        expected_move_list.push(Move {origin: 49, target: 57, promotion: 2, piece: PAWN});
+        expected_move_list.push(Move {origin: 49, target: 57, promotion: 3, piece: PAWN});
+        expected_move_list.push(Move {origin: 49, target: 57, promotion: 4, piece: PAWN});
+        expected_move_list.push(Move {origin: 49, target: 57, promotion: 5, piece: PAWN});
+        expected_move_list.push(Move {origin: 21, target: 61, promotion: 0, piece: QUEEN});
+        expected_move_list.push(Move {origin: 21, target: 45, promotion: 0, piece: QUEEN});
+        expected_move_list.push(Move {origin: 21, target: 20, promotion: 0, piece: QUEEN});
+        expected_move_list.push(Move {origin: 12, target: 11, promotion: 0, piece: ROOK});
+        expected_move_list.push(Move {origin: 12, target: 15, promotion: 0, piece: ROOK});
+        expected_move_list.push(Move {origin: 12, target: 20, promotion: 0, piece: ROOK});
+
+        let mut move_list = MoveList::from_board(board);
+
+        let start = Instant::now();
+        move_list.generate_noisy_moves(true);
+        let duration = start.elapsed();
+        println!("generate_checks lasted for {:?}", duration);
+
+        assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
+    }
+
+    #[test]
+    fn check_generate_noisy_moves_without_quiet_checks() {
+        let mut board = Board::new();
+        board.read_fen("4k3/6P1/8/8/3B4/2Qp4/p2Rp3/8 w - - 0 1");
+
+        let mut expected_move_list = Vec::<Move>::new();
+        expected_move_list.push(Move {origin: 49, target: 57, promotion: 2, piece: PAWN});
+        expected_move_list.push(Move {origin: 49, target: 57, promotion: 3, piece: PAWN});
+        expected_move_list.push(Move {origin: 49, target: 57, promotion: 4, piece: PAWN});
+        expected_move_list.push(Move {origin: 49, target: 57, promotion: 5, piece: PAWN});
+        expected_move_list.push(Move {origin: 21, target: 20, promotion: 0, piece: QUEEN});
+        expected_move_list.push(Move {origin: 12, target: 11, promotion: 0, piece: ROOK});
+        expected_move_list.push(Move {origin: 12, target: 15, promotion: 0, piece: ROOK});
+        expected_move_list.push(Move {origin: 12, target: 20, promotion: 0, piece: ROOK});
+
+        let mut move_list = MoveList::from_board(board);
+
+        let start = Instant::now();
+        move_list.generate_noisy_moves(false);
+        let duration = start.elapsed();
+        println!("generate_checks lasted for {:?}", duration);
+
+        assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
+    }
 
     #[test]
     fn check_move_piece_quiet_move() {
@@ -4418,5 +4463,65 @@ mod tests {
             assert_eq!(en_passant_history_len, move_list.en_passant_history.len());
             assert_board_invariants(move_list.get_board());
         }
+    }
+
+    #[test]
+    fn check_transfer_moves_to_tmp() {
+        let board = Board::from_fen(START_POSITION);
+        let mut move_list = MoveList::from_board(board);
+
+        move_list.generate_moves();
+        let expected_moves = move_list.moves.clone();
+
+        assert!(move_list.moves_tmp.is_empty());
+
+        move_list.transfer_moves_to_tmp();
+        assert!(move_list.moves.is_empty());
+        assert_eq!(move_list.moves_tmp, expected_moves);
+    }
+
+    #[test]
+    fn check_transfer_moves_to_non_empty_tmp() {
+        let board = Board::from_fen(START_POSITION);
+        let mut move_list = MoveList::from_board(board);
+
+        move_list.generate_moves();
+        let expected_moves = move_list.moves.clone();
+
+        move_list.moves_tmp.push(Move::empty());
+
+        move_list.transfer_moves_to_tmp();
+        assert!(move_list.moves.is_empty());
+        assert_eq!(move_list.moves_tmp, expected_moves);
+    }
+
+    #[test]
+    fn check_recover_moves_from_tmp() {
+        let board = Board::from_fen(START_POSITION);
+        let mut move_list = MoveList::from_board(board);
+
+        move_list.generate_moves();
+        let expected_moves = move_list.moves.clone();
+
+        move_list.transfer_moves_to_tmp();
+        move_list.recover_moves_from_tmp();
+        assert!(move_list.moves_tmp.is_empty());
+        assert_eq!(move_list.moves, expected_moves);
+    }
+
+    #[test]
+    fn check_recover_moves_from_non_empty_tmp() {
+        let board = Board::from_fen(START_POSITION);
+        let mut move_list = MoveList::from_board(board);
+
+        move_list.generate_moves();
+        let expected_moves = move_list.moves.clone();
+
+        move_list.transfer_moves_to_tmp();
+        move_list.moves.push(Move::empty());
+        move_list.recover_moves_from_tmp();
+
+        assert!(move_list.moves_tmp.is_empty());
+        assert_eq!(move_list.moves, expected_moves);
     }
 }
