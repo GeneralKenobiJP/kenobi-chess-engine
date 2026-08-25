@@ -3,7 +3,7 @@
 //! Involves bitboards, magic bitboards.
 
 use std::collections::HashMap;
-use crate::piece::Piece;
+use crate::piece::{Piece};
 use crate::board::{Board, CASTLE_BLACK_KINGSIDE_FLAGS, CASTLE_BLACK_KINGSIDE_MASK, CASTLE_BLACK_QUEENSIDE_FLAGS, CASTLE_BLACK_QUEENSIDE_MASK, CASTLE_WHITE_KINGSIDE_FLAGS, CASTLE_WHITE_KINGSIDE_MASK, CASTLE_WHITE_QUEENSIDE_FLAGS, CASTLE_WHITE_QUEENSIDE_MASK, FILE_1_MASK, FILE_8_MASK, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_MASK, UNCASTLE_BLACK_KINGSIDE_FLAGS, UNCASTLE_BLACK_QUEENSIDE_FLAGS, UNCASTLE_WHITE_KINGSIDE_FLAGS, UNCASTLE_WHITE_QUEENSIDE_FLAGS, UPPER_RANK_LOWEST_TILE};
 use crate::piece::Colour::{BLACK, WHITE};
 use crate::piece::Piece::{BISHOP, KING, KNIGHT, PAWN, QUEEN, ROOK};
@@ -323,17 +323,17 @@ impl MoveList {
             }
             if piece_move.target.abs_diff(piece_move.origin) == 16 {
                 // We pushed the pawn by 2 squares and therefore allowed en passant
-                //todo
-                // let en_passant_target = (piece_move.target + piece_move.origin) / 2;
-                // self.board.en_passant_possibility =
-                //     if self.board.is_en_passant_possible(en_passant_target) {
-                //         en_passant_target
-                //     }
-                //     else {
-                //         NO_PASSANT
-                //     };
-                self.board.en_passant_possibility = (piece_move.target + piece_move.origin)/2;
-                self.board.zobrist ^= ZOBRIST_TABLE.en_passant[piece_move.target as usize % 8];
+                // But we still need to check if en passant is legal
+                // i.e. is there an opponent's pawn to take it, is it unpinned, etc.
+                let en_passant_target = (piece_move.target + piece_move.origin) / 2;
+                self.board.en_passant_possibility =
+                    if self.is_en_passant_possible(en_passant_target, active_player) {
+                        self.board.zobrist ^= ZOBRIST_TABLE.en_passant[piece_move.target as usize % 8];
+                        en_passant_target
+                    }
+                    else {
+                        NO_PASSANT
+                    };
             }
             else { self.board.en_passant_possibility = NO_PASSANT; }
         }
@@ -356,10 +356,87 @@ impl MoveList {
         self.board.switch_active_player();
     }
 
-    //todo
-    // fn is_en_passant_possible(&self, en_passant_tile: u64) -> bool {
-    //     if self
-    // }
+    /// Checks if en passant is possible, given the final square of the double-moved pawn,
+    /// and its colour.
+    /// Test whether there exists an opponent's pawn to take it, and whether such a move
+    /// will leave opponent's king unchecked (i.e. whether the pawn is unpinned).
+    /// * en_passant_square - if pawn moves e2e4, thus prompting us to check
+    ///     legality of en passant, this is e4 as u8
+    /// * double_move_pawn_colour - colour of the double-moved pawn as usize (0 - WHITE, 1 - BLACK)
+    fn is_en_passant_possible(&self, en_passant_square: u8, double_move_pawn_colour: usize) -> bool {
+        if double_move_pawn_colour == WHITE as usize {
+            self.is_en_passant_possible_white_pawn(en_passant_square)
+        }
+        else {
+            self.is_en_passant_possible_black_pawn(en_passant_square)
+        }
+    }
+
+    /// Checks if en passant is possible after white's double-pawn move,
+    /// given the final square of the double-moved pawn.
+    /// Test whether there exists an opponent's pawn to take it, and whether such a move
+    /// will leave opponent's king unchecked (i.e. whether the pawn is unpinned).
+    /// * en_passant_square - if pawn moves e2e4, thus prompting us to check
+    ///     legality of en passant, this is e3 as u8
+    fn is_en_passant_possible_white_pawn(&self, en_passant_square: u8) -> bool {
+        let own_pawns = self.board.piece_bitboards[6 * BLACK as usize + PAWN as usize];
+        let king = self.board.piece_bitboards[6 * BLACK as usize + KING as usize];
+        let en_passant_tile = 1 << en_passant_square;
+        let pawn_square = en_passant_square + 8;
+        let pawn_tile = 1 << pawn_square;
+        let enemy_pawns_after = self.board.piece_bitboards[6 * WHITE as usize + PAWN as usize] & !pawn_tile;
+
+        let mut candidates = own_pawns & (((pawn_tile & NOT_FILE_A_MASK) << 1) | ((pawn_tile & NOT_FILE_H_MASK) >> 1));
+
+        while candidates != 0 {
+            let origin_tile = candidates & candidates.wrapping_neg();
+            candidates ^= origin_tile;
+
+            let occupied_after =
+                self.board.main_bitboard
+                & !origin_tile
+                & !pawn_tile
+                | en_passant_tile;
+            if !self.is_square_attacked_by_white_en_passant(king, occupied_after, enemy_pawns_after) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Checks if en passant is possible after black's double-pawn move,
+    /// given the final square of the double-moved pawn.
+    /// Test whether there exists an opponent's pawn to take it, and whether such a move
+    /// will leave opponent's king unchecked (i.e. whether the pawn is unpinned).
+    /// * en_passant_square - if pawn moves e7e5, thus prompting us to check
+    ///     legality of en passant, this is e6 as u8
+    fn is_en_passant_possible_black_pawn(&self, en_passant_square: u8) -> bool {
+        let own_pawns = self.board.piece_bitboards[6 * WHITE as usize + PAWN as usize];
+        let king = self.board.piece_bitboards[6 * WHITE as usize + KING as usize];
+        let en_passant_tile = 1 << en_passant_square;
+        let pawn_square = en_passant_square - 8;
+        let pawn_tile = 1 << pawn_square;
+        let enemy_pawns_after = self.board.piece_bitboards[6 * BLACK as usize + PAWN as usize] & !pawn_tile;
+
+        let mut candidates = own_pawns & (((pawn_tile & NOT_FILE_A_MASK) << 1) | ((pawn_tile & NOT_FILE_H_MASK) >> 1)) & EN_PASSANT_MASK;
+
+        while candidates != 0 {
+            let origin_tile = candidates & candidates.wrapping_neg();
+            candidates ^= origin_tile;
+
+            let occupied_after =
+                self.board.main_bitboard
+                & !origin_tile
+                & !pawn_tile
+                | en_passant_tile;
+            if !self.is_square_attacked_by_black_en_passant(king, occupied_after, enemy_pawns_after) {
+                return true;
+            }
+        }
+
+        false
+    }
 
     /// Handles an en passant capture/uncapture.
     /// Adjusts the board and the zobrist accordingly.
@@ -887,6 +964,31 @@ impl MoveList {
         false
     }
 
+    /// Checks if the given square is attacked by white, given a custom main bitboard and white pawn bitboard.
+    /// Used for en passant legality checks.
+    /// Inputs a 64-bit number with one bit set to 1 as a tile indication
+    /// Outputs true/false
+    fn is_square_attacked_by_white_en_passant(&self, tile: u64, main_bitboard: u64, white_pawns: u64) -> bool {
+        // The main idea is to virtually place a piece of type X belonging to us on the given square
+        // and check if it can attack any enemy piece of the same type X.
+        // In such case, the square is attacked by the enemy's piece of type X.
+
+        // Check if a pawn attacks the square
+        if (tile & NOT_FILE_H_MASK) >> 9 & white_pawns != 0 { return true; }
+        if (tile & NOT_FILE_A_MASK) >> 7 & white_pawns != 0 { return true; }
+
+        let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+        if tile & self.king_lookup_table[u64::checked_ilog2(self.board.piece_bitboards[0])
+            .unwrap_or_default() as usize] != 0 { return true; }
+        if self.knight_lookup_table[square as usize] & self.board.piece_bitboards[5] != 0 { return true; }
+        if self.get_bishop_magic_bitboard_with_occupancy(square, main_bitboard) & self.board.piece_bitboards[4] != 0 { return true; }
+        if self.get_rook_magic_bitboard_with_occupancy(square, main_bitboard) & self.board.piece_bitboards[3] != 0 { return true; }
+        if (self.get_bishop_magic_bitboard_with_occupancy(square, main_bitboard) | self.get_rook_magic_bitboard_with_occupancy(square, main_bitboard))
+            & self.board.piece_bitboards[2] != 0 { return true; }
+
+        false
+    }
+
     /// Checks if the given square is attacked by black
     /// Inputs a 64-bit number with one bit set to 1 as a tile indication
     /// Outputs true/false
@@ -905,6 +1007,29 @@ impl MoveList {
         if self.get_bishop_magic_bitboard(square) & self.board.piece_bitboards[10] != 0 { return true; }
         if self.get_rook_magic_bitboard(square) & self.board.piece_bitboards[9] != 0 { return true; }
         if (self.get_bishop_magic_bitboard(square) | self.get_rook_magic_bitboard(square))
+            & self.board.piece_bitboards[8] != 0 { return true; }
+
+        false
+    }
+
+    // Checks if the given square is attacked by black
+    // Inputs a 64-bit number with one bit set to 1 as a tile indication
+    // Outputs true/false
+    fn is_square_attacked_by_black_en_passant(&self, tile: u64, main_bitboard: u64, black_pawns: u64) -> bool {
+        // The main idea is to virtually place a piece of type X belonging to us on the given square
+        // and check if it can attack any enemy piece of the same type X.
+        // In such case, the square is attacked by the enemy's piece of type X.
+
+        // Check if a pawn attacks the square
+        if (tile & NOT_FILE_A_MASK) << 9 & black_pawns != 0 { return true; }
+        if (tile & NOT_FILE_H_MASK) << 7 & black_pawns != 0 { return true; }
+
+        let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+        if tile & self.king_lookup_table[u64::checked_ilog2(self.board.piece_bitboards[6]).unwrap_or_default() as usize] != 0 { return true; }
+        if self.knight_lookup_table[square as usize] & self.board.piece_bitboards[11] != 0 { return true; }
+        if self.get_bishop_magic_bitboard_with_occupancy(square, main_bitboard) & self.board.piece_bitboards[10] != 0 { return true; }
+        if self.get_rook_magic_bitboard_with_occupancy(square, main_bitboard) & self.board.piece_bitboards[9] != 0 { return true; }
+        if (self.get_bishop_magic_bitboard_with_occupancy(square, main_bitboard) | self.get_rook_magic_bitboard_with_occupancy(square, main_bitboard))
             & self.board.piece_bitboards[8] != 0 { return true; }
 
         false
@@ -1436,6 +1561,17 @@ impl MoveList {
         self.rook_magic_bitboard[magic_hash_rook(occupancy, origin)]
     }
 
+    /// Retrieves rook magic bitboard based on a given origin and current board situation,
+    /// when supplied with custom main bitboard.
+    /// Used by en passant legality check.
+    /// Constructs occupancy mask from the current board situation and
+    /// masks it with the relevant magic mask to obtain a raw key,
+    /// then hashes using magic hash to obtain a hashed key
+    fn get_rook_magic_bitboard_with_occupancy(&self, origin: u8, main_bitboard: u64) -> u64 {
+        let occupancy = main_bitboard & MAGIC_MASK_ROOK[origin as usize];
+        self.rook_magic_bitboard[magic_hash_rook(occupancy, origin)]
+    }
+
     /// Outputs a bitboard of rook moves, based on the current board occupancy, given the rook's square
     fn generate_rook_moves_bitboard(&self, square: u8) -> u64 {
         self.get_rook_magic_bitboard(square) & (self.board.empty_bitboard | self.board.colour_bitboards[self.board.inactive_player as usize])
@@ -1654,6 +1790,17 @@ impl MoveList {
     /// then hashes using magic hash to obtain a hashed key
     fn get_bishop_magic_bitboard(&self, origin: u8) -> u64 {
         let occupancy = self.board.main_bitboard & MAGIC_MASK_BISHOP[origin as usize];
+        self.bishop_magic_bitboard[magic_hash_bishop(occupancy, origin)]
+    }
+
+    /// Retrieves bishop magic bitboard based on a given origin and current board situation,
+    /// when supplied with custom main bitboard.
+    /// Used by en passant legality check.
+    /// Constructs occupancy mask from the current board situation and
+    /// masks it with the relevant magic mask to obtain a raw key,
+    /// then hashes using magic hash to obtain a hashed key
+    fn get_bishop_magic_bitboard_with_occupancy(&self, origin: u8, main_bitboard: u64) -> u64 {
+        let occupancy = main_bitboard & MAGIC_MASK_BISHOP[origin as usize];
         self.bishop_magic_bitboard[magic_hash_bishop(occupancy, origin)]
     }
 
@@ -3060,7 +3207,7 @@ mod tests {
         assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
         assert_eq!(64, move_list.en_passant_history[0]);
         assert_eq!(8, move_list.castling_rights_history[0]);
-        assert_eq!(47, move_list.board.en_passant_possibility);
+        assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
         assert_eq!(0, move_list.get_board().half_moves);
         assert_eq!([1, 8, 1, 2, 2, 2,  1, 8, 1, 2, 2, 2], move_list.get_board().piece_counter);
         assert_eq!(4, move_list.get_board().plies);
@@ -4523,5 +4670,53 @@ mod tests {
 
         assert!(move_list.moves_tmp.is_empty());
         assert_eq!(move_list.moves, expected_moves);
+    }
+
+    #[test]
+    fn test_is_en_passant_possible_black_pawn() {
+        let board = Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1");
+        let mut move_list = MoveList::from_board(board);
+        assert!(!move_list.is_en_passant_possible(43, 1));
+        assert!(!move_list.is_en_passant_possible_black_pawn(43));
+        move_list.make_move(&Move::new(51, 35, 0, PAWN));
+        assert_eq!(move_list.board.en_passant_possibility, NO_PASSANT);
+
+        let board = Board::from_fen("rnbqkbnr/pppppppp/8/5P2/8/8/PPPPP1PP/RNBQKBNR b KQkq - 0 1");
+        let mut move_list = MoveList::from_board(board);
+        assert!(move_list.is_en_passant_possible(43, 1));
+        assert!(move_list.is_en_passant_possible_black_pawn(43));
+        move_list.make_move(&Move::new(51, 35, 0, PAWN));
+        assert_eq!(move_list.board.en_passant_possibility, 43);
+
+        let board = Board::from_fen("rnb1kbnr/pppp1ppp/5q2/4pP2/8/8/PPPPPKPP/RNBQ1BNR b kq - 0 1");
+        let mut move_list = MoveList::from_board(board);
+        assert!(!move_list.is_en_passant_possible(43, 1));
+        assert!(!move_list.is_en_passant_possible_black_pawn(43));
+        move_list.make_move(&Move::new(51, 35, 0, PAWN));
+        assert_eq!(move_list.board.en_passant_possibility, NO_PASSANT);
+    }
+
+    #[test]
+    fn test_is_en_passant_possible_white_pawn() {
+        let board = Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        let mut move_list = MoveList::from_board(board);
+        assert!(!move_list.is_en_passant_possible(19, 0));
+        assert!(!move_list.is_en_passant_possible_white_pawn(19));
+        move_list.make_move(&Move::new(11, 27, 0, PAWN));
+        assert_eq!(move_list.board.en_passant_possibility, NO_PASSANT);
+
+        let board = Board::from_fen("rnbqkbnr/ppp1pppp/8/8/3p4/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        let mut move_list = MoveList::from_board(board);
+        assert!(move_list.is_en_passant_possible(19, 0));
+        assert!(move_list.is_en_passant_possible_white_pawn(19));
+        move_list.make_move(&Move::new(11, 27, 0, PAWN));
+        assert_eq!(move_list.board.en_passant_possibility, 19);
+
+        let board = Board::from_fen("rnbq1bnr/pppkpppp/8/8/3p4/3Q4/PPPPPPPP/RNB1KBNR w KQ - 0 1");
+        let mut move_list = MoveList::from_board(board);
+        assert!(!move_list.is_en_passant_possible(19, 0));
+        assert!(!move_list.is_en_passant_possible_white_pawn(19));
+        move_list.make_move(&Move::new(11, 27, 0, PAWN));
+        assert_eq!(move_list.board.en_passant_possibility, NO_PASSANT);
     }
 }
