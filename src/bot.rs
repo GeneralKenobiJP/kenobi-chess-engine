@@ -673,7 +673,10 @@ impl Bot<MainEvaluator> {
         } else if name.eq_ignore_ascii_case("Clear Hash") {
             self.stop_and_join_search();
             self.engine = Arc::new(Mutex::new(Engine::new()));
-        } else if self.debug {
+        } else if name.eq_ignore_ascii_case("setoption name Ponder value true") {
+            
+        }
+        else if self.debug {
             eprintln!("Ignored unsupported UCI option: {name}");
         }
 
@@ -796,7 +799,8 @@ impl Bot<MainEvaluator> {
             .append_line(&format!(
                 "option name Move Overhead type spin default {DEFAULT_MOVE_OVERHEAD_MS} min 0 max {MAX_MOVE_OVERHEAD_MS}"
             ))
-            .append_line(&"option name Clear Hash type button");
+            .append_line(&"option name Clear Hash type button")
+            .append_line(&"option name Ponder type check default true");
         response.build()
     }
 
@@ -898,7 +902,7 @@ mod tests {
 
     #[test]
     fn check_option() {
-        let expected = "option name Move Overhead type spin default 10 min 0 max 5000\noption name Clear Hash type button";
+        let expected = "option name Move Overhead type spin default 10 min 0 max 5000\noption name Clear Hash type button\noption name Ponder type check default true";
         assert_eq!(expected,  Bot::option());
     }
 
@@ -906,7 +910,8 @@ mod tests {
     fn check_uci() {
         let expected = format!("id name Kenobi {}\nid author Jakub Pietrzak\n\
         option name Move Overhead type spin default 10 min 0 max 5000\n\
-        option name Clear Hash type button\nuciok", env!("CARGO_PKG_VERSION"));
+        option name Clear Hash type button\n\
+        option name Ponder type check default true\nuciok", env!("CARGO_PKG_VERSION"));
         assert_eq!(Some(expected),  Bot::uci());
     }
 

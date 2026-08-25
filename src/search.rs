@@ -256,6 +256,31 @@ impl<T: Evaluator> Engine<T> {
         &self.repetition_table
     }
 
+    /// Returns a string containing info on the search:
+    /// the number of nodes visited, and the search duration:
+    /// * depth
+    /// * score evaluation in centipawns
+    /// * time in miliseconds
+    /// * number of nodes visited
+    /// * nodes per second visited
+    fn info(&mut self) -> String {
+        let depth = self.get_current_depth();
+        let score_cp = self.get_last_root_score().unwrap_or(0);
+
+        if score_cp.abs() < POSITIVE_INFINITY {
+            format!(
+                "info depth {depth} score cp {score_cp}"
+            )
+        }
+        else {
+            let mate_plies = (score_cp.abs() - POSITIVE_INFINITY).abs();
+            let mate_moves = score_cp.signum() * (mate_plies + 3) / 2;
+            format!(
+                "info depth {depth} score mate {mate_moves}"
+            )
+        }
+    }
+
     // pub fn get_tt_len(&self) -> usize {
     //     self.transposition_table.len
     // }
@@ -370,6 +395,8 @@ impl<T: Evaluator> Engine<T> {
 
             self.last_root_best = self.best_moves[0][0];
             self.last_root_score = value;
+
+            println!("{}", self.info());
 
             // If mate found, don't look further
             if value.abs() >= POSITIVE_INFINITY {
