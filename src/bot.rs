@@ -419,6 +419,7 @@ impl Bot<MainEvaluator> {
 
         let mut move_list_binding = self.move_list.lock().unwrap();
         Self::input_moves(&mut move_list_binding, moves, repetition_table);
+        repetition_table.unvisit_position(move_list_binding.get_board().zobrist);
 
         Option::from(response)
     }
@@ -674,7 +675,7 @@ impl Bot<MainEvaluator> {
             self.stop_and_join_search();
             self.engine = Arc::new(Mutex::new(Engine::new()));
         } else if name.eq_ignore_ascii_case("setoption name Ponder value true") {
-            
+
         }
         else if self.debug {
             eprintln!("Ignored unsupported UCI option: {name}");
@@ -700,9 +701,15 @@ impl Bot<MainEvaluator> {
     /// * nodes per second visited
     fn info(engine: &Engine, nodes: u64, elapsed: Duration) -> String {
         let depth = engine.get_current_depth();
-        let score_cp = engine.get_last_root_score().unwrap_or(0);
+        let score_cp = engine.get_last_root_score();
         let milliseconds = elapsed.as_millis().max(1);
         let nps = u128::from(nodes).saturating_mul(1_000) / milliseconds;
+
+        if score_cp.is_none() {
+            return format!("info depth {depth} time {milliseconds} nodes {nodes} nps {nps}")
+        }
+
+        let score_cp = score_cp.unwrap();
 
         if score_cp.abs() < POSITIVE_INFINITY {
             format!(

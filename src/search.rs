@@ -121,7 +121,7 @@ pub struct Engine<T: Evaluator = MainEvaluator> {
     best_moves_evaluation: [[i32; 3]; DEPTH_LIMIT],
     guard_counter: u32,
     last_root_best: Option<Move>,
-    last_root_score: i32,
+    last_root_score: Option<i32>,
 }
 
 impl Engine<MainEvaluator> {
@@ -140,7 +140,7 @@ impl Engine<MainEvaluator> {
             best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT],
             guard_counter: 0,
             last_root_best: None,
-            last_root_score: 0,
+            last_root_score: None,
         }
     }
 
@@ -158,7 +158,7 @@ impl Engine<MainEvaluator> {
             best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT],
             guard_counter: 0,
             last_root_best: None,
-            last_root_score: 0,
+            last_root_score: None,
         }
     }
 }
@@ -179,7 +179,7 @@ impl<T: Evaluator> Engine<T> {
             best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT],
             guard_counter: 0,
             last_root_best: None,
-            last_root_score: 0,
+            last_root_score: None,
         }
     }
 
@@ -197,7 +197,7 @@ impl<T: Evaluator> Engine<T> {
             best_moves_evaluation: [[NEGATIVE_INFINITY; 3]; DEPTH_LIMIT],
             guard_counter: 0,
             last_root_best: None,
-            last_root_score: 0,
+            last_root_score: None,
         }
     }
 
@@ -232,7 +232,7 @@ impl<T: Evaluator> Engine<T> {
 
     /// Returns the score of the last root evaluated.
     pub fn get_last_root_score(&self) -> Option<i32> {
-        self.last_root_best.map(|_| self.last_root_score)
+        self.last_root_score
     }
 
     /// Retrieves the `Transposition` data for the given board position from the engine's transposition table.
@@ -314,7 +314,7 @@ impl<T: Evaluator> Engine<T> {
             if let Some(transposition) = transposition_entry {
                 if transposition.depth >= depth && transposition.node_type == EXACT {
                     self.last_root_best = transposition.best_moves[0];
-                    self.last_root_score = transposition.value;
+                    self.last_root_score = Some(transposition.value);
                     return transposition.value;
                 }
             }
@@ -323,7 +323,7 @@ impl<T: Evaluator> Engine<T> {
         self.current_ply = board.plies;
         self.guard_counter = 0;
         self.last_root_best = None;
-        self.last_root_score = T::evaluate(board);
+        self.last_root_score = Some(T::evaluate(board));
 
         // Clear best moves (and evaluations) that were used up in the previous search
         for i in 0..self.max_depth as usize {
@@ -333,7 +333,7 @@ impl<T: Evaluator> Engine<T> {
 
         self.max_depth = depth;
 
-        let mut value = self.last_root_score;
+        let mut value = self.last_root_score.unwrap();
         for current_depth in 1..=depth {
             self.depth = current_depth;
 
@@ -343,6 +343,7 @@ impl<T: Evaluator> Engine<T> {
 
             loop {
                 if control.is_stopped(true) {
+                    self.depth -= 1;
                     return value;
                 }
 
@@ -367,6 +368,7 @@ impl<T: Evaluator> Engine<T> {
                     control,
                     root_moves,
                 ) else {
+                    self.depth -= 1;
                     return value;
                 };
 
@@ -385,6 +387,7 @@ impl<T: Evaluator> Engine<T> {
                         control,
                         root_moves,
                     ) else {
+                        self.depth-=1;
                         return value;
                     };
                     value = candidate;
@@ -394,7 +397,7 @@ impl<T: Evaluator> Engine<T> {
             }
 
             self.last_root_best = self.best_moves[0][0];
-            self.last_root_score = value;
+            self.last_root_score = Some(value);
 
             println!("{}", self.info());
 
