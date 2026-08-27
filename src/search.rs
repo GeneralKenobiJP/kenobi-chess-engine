@@ -225,7 +225,7 @@ impl<T: Evaluator> Engine<T> {
     pub fn try_get_best_move(&self, board: &Board) -> Option<Move> {
         self.last_root_best.or_else(|| {
             self.transposition_table
-                .get_from_zobrist(board.zobrist).clone()
+                .get_from_zobrist(board.zobrist, board.half_moves).clone()
                 .and_then(|entry| entry.best_moves[0])
         })
     }
@@ -237,7 +237,7 @@ impl<T: Evaluator> Engine<T> {
 
     /// Retrieves the `Transposition` data for the given board position from the engine's transposition table.
     pub fn get_transposition(&self, board: &Board) -> Option<&Transposition> {
-        self.transposition_table.get_from_zobrist(board.zobrist).clone() //todo: do we really need to clone this one?
+        self.transposition_table.get_from_zobrist(board.zobrist, board.half_moves).clone() //todo: do we really need to clone this one?
     }
 
     /// Retrieves the depth at which the engine is currently conducting a search
@@ -307,7 +307,8 @@ impl<T: Evaluator> Engine<T> {
     ) -> i32 {
         let depth = depth.min((DEPTH_LIMIT - 2) as u32);
         let board = move_list.get_board();
-        let transposition_entry = self.transposition_table.get_from_zobrist(board.zobrist);
+        let transposition_entry = self.transposition_table.
+            get_from_zobrist(board.zobrist, board.half_moves);
 
         // Check if we have a proper entry in the transposition table
         if root_moves.is_none() {
@@ -466,6 +467,7 @@ impl<T: Evaluator> Engine<T> {
         }
 
         let zobrist = move_list.get_board().zobrist;
+        let half_moves = move_list.get_board().half_moves;
 
         if move_list.get_board().half_moves >= 100 {
             return Some(DRAW);
@@ -477,7 +479,7 @@ impl<T: Evaluator> Engine<T> {
 
         let original_alpha=  alpha;
 
-        let transposition_entry = self.transposition_table.get_from_zobrist(zobrist);
+        let transposition_entry = self.transposition_table.get_from_zobrist(zobrist, half_moves);
         let mut skip_null = false;
 
         // Check if we have a proper entry in the transposition table
@@ -559,7 +561,8 @@ impl<T: Evaluator> Engine<T> {
 
             if value >= beta {
                 self.repetition_table.unvisit_position(zobrist);
-                self.transposition_table.put_transposition_with_validation(&Transposition::from_zobrist(zobrist, reduced_depth, value, &self.best_moves[buffer_index], BETA));
+                self.transposition_table.put_transposition_with_validation(
+                    &Transposition::from_zobrist(zobrist, half_moves, reduced_depth, value, &self.best_moves[buffer_index], BETA));
                 return Some(beta);
             }
         }
@@ -654,7 +657,8 @@ impl<T: Evaluator> Engine<T> {
         // update the transposition table
         let node_type = if self.best_moves_evaluation[buffer_index][0] <= original_alpha { ALPHA }
             else if self.best_moves_evaluation[buffer_index][0] >= beta { self.store_killer_move(&cutoff_move, buffer_index); BETA } else { EXACT };
-        self.transposition_table.put_transposition_with_validation(&Transposition::from_zobrist(zobrist, depth, self.best_moves_evaluation[buffer_index][0], &self.best_moves[buffer_index], node_type));
+        self.transposition_table.put_transposition_with_validation(
+            &Transposition::from_zobrist(zobrist, half_moves, depth, self.best_moves_evaluation[buffer_index][0], &self.best_moves[buffer_index], node_type));
 
         self.repetition_table.unvisit_position(zobrist);
 
@@ -732,6 +736,7 @@ impl<T: Evaluator> Engine<T> {
         }
 
         let zobrist = move_list.get_board().zobrist;
+        let half_moves = move_list.get_board().half_moves;
 
         if move_list.get_board().half_moves >= 100 {
             return Some(DRAW);
@@ -743,7 +748,7 @@ impl<T: Evaluator> Engine<T> {
 
         let original_alpha = alpha;
 
-        let transposition_entry = self.transposition_table.get_from_zobrist(zobrist);
+        let transposition_entry = self.transposition_table.get_from_zobrist(zobrist, half_moves);
         // Check if we have a proper entry in the transposition table
         if let Some(transposition) = transposition_entry {
             if transposition.node_type == EXACT { self.repetition_table.unvisit_position(zobrist); return Some(transposition.value); }
@@ -844,6 +849,7 @@ impl<T: Evaluator> Engine<T> {
         };
         self.transposition_table.put_transposition_with_validation(&Transposition::from_zobrist(
             zobrist,
+            half_moves,
             0,
             alpha,
             &self.best_moves[buffer_index],
@@ -1306,13 +1312,13 @@ mod tests {
         let zob = current_board.zobrist;
 
         // store transposition using this array
-        engine.transposition_table.put_transposition(&Transposition::from_zobrist(zob, 1, 0, &engine.best_moves[0], EXACT));
+        engine.transposition_table.put_transposition(&Transposition::from_zobrist(zob, 0, 1, 0, &engine.best_moves[0], EXACT));
 
         // mutate engine.best_moves[0][0]
         engine.best_moves[0][0] = Some(Move::new(1, 18, 0, KNIGHT));
 
         // get from TT
-        if let Some(t) = engine.transposition_table.get_from_zobrist(zob) {
+        if let Some(t) = engine.transposition_table.get_from_zobrist(zob, 0) {
             assert_eq!(t.best_moves[0], Some(Move::new(48, 40, 0, PAWN)), "TT did not preserve its copy of the move");
         } else {
             panic!("TT entry missing");
@@ -1663,6 +1669,7 @@ mod tests {
         // Remove only the explicitly retained root result. The completed
         // search also stored the same root move in the transposition table.
         engine.last_root_best = None;
+        engine.last_root_score = None;
 
         assert_eq!(
             Some(expected_move),
@@ -1709,6 +1716,7 @@ mod tests {
         engine.transposition_table.put_transposition(
             &Transposition::from_zobrist(
                 board.zobrist,
+                board.half_moves,
                 depth,
                 stored_value,
                 &[None; 3],
@@ -1748,6 +1756,7 @@ mod tests {
         engine.transposition_table.put_transposition(
             &Transposition::from_zobrist(
                 board.zobrist,
+                0,
                 0,
                 stored_value,
                 &[None; 3],

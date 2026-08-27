@@ -52,7 +52,7 @@ pub struct Board {
 
     // The halfmove clock specifies a decimal number of half moves with respect to the 50 move draw rule.
     // It is reset to zero after a capture or a pawn move and incremented otherwise.
-    pub half_moves: u32,
+    pub half_moves: u8,
     pub plies: u32,
     pub zobrist: u64,
     pub piece_counter: [u8; 12]

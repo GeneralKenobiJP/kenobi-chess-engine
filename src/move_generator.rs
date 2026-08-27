@@ -643,7 +643,7 @@ impl MoveList {
 
         self.board.en_passant_possibility = self.en_passant_history.pop().unwrap_or_default();
         self.board.castling_rights = self.castling_rights_history.pop().unwrap_or_default();
-        self.board.half_moves = self.halfmoves_history.pop().unwrap_or_default() as u32;
+        self.board.half_moves = self.halfmoves_history.pop().unwrap_or_default();
 
         self.board.plies -= 1;
 

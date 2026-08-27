@@ -61,7 +61,8 @@ impl<T: Evaluator> Engine<T> {
     /// If the node type is EXACT, the best move (PV-node) also gets
     /// a priority boost of PV_NODE_PRIORITY
     fn apply_hash_move(&self, order_table: &mut OrderTable, move_list: &MoveList) {
-        match self.transposition_table.get_from_zobrist(move_list.get_board().zobrist) {
+        let board = move_list.get_board();
+        match self.transposition_table.get_from_zobrist(board.zobrist, board.half_moves) {
             None => { return; }
             Some(transposition) => {
 

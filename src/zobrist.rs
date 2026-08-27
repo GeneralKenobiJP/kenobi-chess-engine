@@ -10,6 +10,8 @@ use crate::piece::Colour::BLACK;
 // const PIECES_POSITIONS: usize = 64*12;
 const ZOBRIST_CONSTANTS: usize = 64*12 + 8 + 16 + 1;
 const ZOBRIST_SEED: u64 = 0xFFAA_B58C_5833_FE89u64;
+const HALFMOVE_MULT_KEY: u64 = 6_364_136_223_846_793_005;
+const HALFMOVE_ADD_KEY: u64 = 1_442_695_040_888_963_407;
 
 /// Each significant board position atomic setting gets its own pseudo-random key
 /// (i.e. white rook on square A1, en passant on file C, castling rights Kkq, black to play)
@@ -19,7 +21,7 @@ pub struct ZobristTable {
     pub pieces: [[u64; 64]; 12],
     pub en_passant: [u64; 8], // we only need to know the file of en passant
     pub castling_rights: [u64; 16], // 2^4 = 16 combinations, little-endian
-    pub active_player: u64 // we only need to indicate if black is the active player
+    pub active_player: u64, // we only need to indicate if black is the active player
 }
 
 pub const ZOBRIST_TABLE: ZobristTable = {
@@ -105,6 +107,15 @@ fn zobrist_active_player(active_player: &Colour) -> u64 {
     0u64
 }
 
+#[inline(always)]
+pub const fn make_halfmove_key(halfmoves: u8) -> u64 {
+    let bucket = (halfmoves / 10) as u64;
+    bucket
+        .wrapping_mul(HALFMOVE_MULT_KEY)
+        .wrapping_add(HALFMOVE_ADD_KEY)
+}
+
+
 #[cfg(test)]
 mod tests {
     use std::time::Instant;
@@ -188,5 +199,16 @@ mod tests {
         assert_eq!(expected, zobrist_hash(&board));
         let duration = time.elapsed();
         println!("zobrist_hash lasted for: {:?}", duration);
+    }
+
+    #[test]
+    fn check_halfmove_key() {
+        assert_eq!(0u64.wrapping_mul(HALFMOVE_MULT_KEY).wrapping_add(HALFMOVE_ADD_KEY), make_halfmove_key(0));
+        assert_eq!(0u64.wrapping_mul(HALFMOVE_MULT_KEY).wrapping_add(HALFMOVE_ADD_KEY), make_halfmove_key(9));
+        assert_eq!(1u64.wrapping_mul(HALFMOVE_MULT_KEY).wrapping_add(HALFMOVE_ADD_KEY), make_halfmove_key(10));
+        assert_eq!(1u64.wrapping_mul(HALFMOVE_MULT_KEY).wrapping_add(HALFMOVE_ADD_KEY), make_halfmove_key(19));
+        assert_eq!(2u64.wrapping_mul(HALFMOVE_MULT_KEY).wrapping_add(HALFMOVE_ADD_KEY), make_halfmove_key(20));
+        assert_eq!(9u64.wrapping_mul(HALFMOVE_MULT_KEY).wrapping_add(HALFMOVE_ADD_KEY), make_halfmove_key(99));
+        assert_eq!(10u64.wrapping_mul(HALFMOVE_MULT_KEY).wrapping_add(HALFMOVE_ADD_KEY), make_halfmove_key(100));
     }
 }
