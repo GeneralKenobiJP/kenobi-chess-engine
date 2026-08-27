@@ -7,18 +7,19 @@
 use std::io::{self, Write};
 use std::iter::Peekable;
 use std::str::SplitWhitespace;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::{spawn, JoinHandle};
 use std::time::{Duration, Instant};
 
 use scanner_rust::ScannerStr;
 
 use crate::board::{Board, START_POSITION};
-use crate::evaluation::{Evaluator, MainEvaluator};
+use crate::evaluation::{Evaluator, MainEvaluator, POSITIVE_INFINITY};
 use crate::move_generator::{Move, MoveList};
 use crate::perft::perft_log;
 use crate::search::{Engine, SearchControl};
 use crate::string_builder::StringBuilder;
+use crate::transposition_table::RepetitionTable;
 
 const INFINITE_DEPTH: u32 = 256;
 const DEFAULT_MOVE_OVERHEAD_MS: u64 = 10;
@@ -391,9 +392,16 @@ impl Bot<MainEvaluator> {
 
         self.stop_and_join_search();
 
-        // we lock the move_list before using it
+        let mut move_list_binding = self.move_list.lock().unwrap();
+        move_list_binding.clear();
+        drop(move_list_binding);
+
         let mut move_list_binding = self.move_list.lock().unwrap();
         let mut board = move_list_binding.get_mutable_board();
+        let mut engine_binding = self.engine.lock().unwrap();
+        let mut repetition_table = engine_binding.get_mut_repetition_table();
+
+        repetition_table.clear();
 
         if startpos {
             *board = Board::from_fen(START_POSITION);
@@ -405,21 +413,24 @@ impl Bot<MainEvaluator> {
             }
         }
 
+        repetition_table.visit_position(board.zobrist);
         // we drop the binding, as we no longer need it, and it allows a mutable borrow of self later on
         drop(move_list_binding);
 
-        self.input_moves(moves);
+        let mut move_list_binding = self.move_list.lock().unwrap();
+        Self::input_moves(&mut move_list_binding, moves, repetition_table);
+        repetition_table.unvisit_position(move_list_binding.get_board().zobrist);
 
         Option::from(response)
     }
 
     /// Inputs moves after a "moves" subcommand within the "position" command.
     /// Makes moves, one by one, on the board until the moves are exhausted
-    fn input_moves(&mut self, moves: Vec<String>) {
-        let mut move_list_binding = self.move_list.lock().unwrap();
+    fn input_moves(move_list_binding: &mut MutexGuard<MoveList>, moves: Vec<String>, repetition_table: &mut RepetitionTable) {
         for input in moves {
             let piece_move = Move::from_algebraic_notation(&*input, move_list_binding.get_board());
             move_list_binding.make_move(&piece_move);
+            repetition_table.visit_position(move_list_binding.get_board().zobrist);
         }
     }
 
@@ -555,7 +566,7 @@ impl Bot<MainEvaluator> {
     ///     budget = Math.min(p, Math.max(0, r - m_o)), where:
     ///         p = r/m + 3/4 * i,
     ///         r - time remaining on the clock,
-    ///         m - moves to the next time control,
+    ///         m - moves to the next time control (min. 1),
     ///         i - time increment,
     ///         m_o - non-search related overhead per each move
     fn compute_time_budget(&self, settings: &SearchSettings, move_list: &MoveList) -> Option<Duration> {
@@ -598,7 +609,9 @@ impl Bot<MainEvaluator> {
             gate.release();
         }
         if let Some(handle) = search.handle.take() {
-            let _ = handle.join();
+            if let Err(payload) = handle.join() {
+                eprintln!("search worker panicked: {payload:?}");
+            }
         }
     }
 
@@ -661,7 +674,10 @@ impl Bot<MainEvaluator> {
         } else if name.eq_ignore_ascii_case("Clear Hash") {
             self.stop_and_join_search();
             self.engine = Arc::new(Mutex::new(Engine::new()));
-        } else if self.debug {
+        } else if name.eq_ignore_ascii_case("setoption name Ponder value true") {
+
+        }
+        else if self.debug {
             eprintln!("Ignored unsupported UCI option: {name}");
         }
 
@@ -685,12 +701,28 @@ impl Bot<MainEvaluator> {
     /// * nodes per second visited
     fn info(engine: &Engine, nodes: u64, elapsed: Duration) -> String {
         let depth = engine.get_current_depth();
-        let score_cp = engine.get_last_root_score().unwrap_or(0);
+        let score_cp = engine.get_last_root_score();
         let milliseconds = elapsed.as_millis().max(1);
         let nps = u128::from(nodes).saturating_mul(1_000) / milliseconds;
-        format!(
-            "info depth {depth} score cp {score_cp} time {milliseconds} nodes {nodes} nps {nps}"
-        )
+
+        if score_cp.is_none() {
+            return format!("info depth {depth} time {milliseconds} nodes {nodes} nps {nps}")
+        }
+
+        let score_cp = score_cp.unwrap();
+
+        if score_cp.abs() < POSITIVE_INFINITY {
+            format!(
+                "info depth {depth} score cp {score_cp} time {milliseconds} nodes {nodes} nps {nps}"
+            )
+        }
+        else {
+            let mate_plies = (score_cp.abs() - POSITIVE_INFINITY).abs();
+            let mate_moves = score_cp.signum() * (mate_plies + 3) / 2;
+            format!(
+                "info depth {depth} score mate {mate_moves} time {milliseconds} nodes {nodes} nps {nps}"
+            )
+        }
     }
 
     /// Implements the "best_move" UCI command.
@@ -705,6 +737,8 @@ impl Bot<MainEvaluator> {
     ) -> String {
         let mut response = Self::info(engine, nodes, elapsed);
         response.push_str("\nbestmove ");
+
+        // Self::tt_entries(&engine);
 
         let best_move = match engine.try_get_best_move(move_list.get_board()) {
             Some(best_move)
@@ -772,7 +806,8 @@ impl Bot<MainEvaluator> {
             .append_line(&format!(
                 "option name Move Overhead type spin default {DEFAULT_MOVE_OVERHEAD_MS} min 0 max {MAX_MOVE_OVERHEAD_MS}"
             ))
-            .append_line(&"option name Clear Hash type button");
+            .append_line(&"option name Clear Hash type button")
+            .append_line(&"option name Ponder type check default true");
         response.build()
     }
 
@@ -787,6 +822,11 @@ impl Bot<MainEvaluator> {
         let engine_binding = self.engine.lock().unwrap();
         Option::from(engine_binding.get_current_depth().to_string())
     }
+
+    // /// Outputs a string containing the information on the depth of the current search.
+    // fn tt_entries(engine: &Engine) {
+    //     println!("{}", engine.get_tt_len());
+    // }
 }
 
 #[cfg(test)]
@@ -869,7 +909,7 @@ mod tests {
 
     #[test]
     fn check_option() {
-        let expected = "option name Move Overhead type spin default 10 min 0 max 5000\noption name Clear Hash type button";
+        let expected = "option name Move Overhead type spin default 10 min 0 max 5000\noption name Clear Hash type button\noption name Ponder type check default true";
         assert_eq!(expected,  Bot::option());
     }
 
@@ -877,7 +917,8 @@ mod tests {
     fn check_uci() {
         let expected = format!("id name Kenobi {}\nid author Jakub Pietrzak\n\
         option name Move Overhead type spin default 10 min 0 max 5000\n\
-        option name Clear Hash type button\nuciok", env!("CARGO_PKG_VERSION"));
+        option name Clear Hash type button\n\
+        option name Ponder type check default true\nuciok", env!("CARGO_PKG_VERSION"));
         assert_eq!(Some(expected),  Bot::uci());
     }
 
@@ -904,13 +945,26 @@ mod tests {
     fn check_input_moves() {
         let mut bot = Bot::with_position(START_POSITION);
         let move_strings = vec!(String::from("e2e4"), String::from("e7e5"));
-        bot.input_moves(move_strings);
+        {
+            let mut move_list_binding = bot.move_list.lock().unwrap();
+            let mut engine_binding = bot.engine.lock().unwrap();
+            let mut repetition_table = engine_binding.get_mut_repetition_table();
+
+            Bot::input_moves(&mut move_list_binding, move_strings, &mut repetition_table);
+        }
 
         let mut expected_bot = Bot::with_position(START_POSITION);
         expected_bot.move_list.lock().unwrap().make_move(&Move{origin: 11, target: 27, promotion: 0, piece: PAWN});
+        let zobrist1 = expected_bot.move_list.lock().unwrap().get_board().zobrist;
         expected_bot.move_list.lock().unwrap().make_move(&Move{origin: 51, target: 35, promotion: 0, piece: PAWN});
+        let zobrist2 = expected_bot.move_list.lock().unwrap().get_board().zobrist;
 
-        assert_eq!(expected_bot.move_list.lock().unwrap().get_board(), bot.move_list.lock().unwrap().get_board());
+        let expected_board = expected_bot.move_list.lock().unwrap().get_board().clone();
+        let board = bot.move_list.lock().unwrap().get_board().clone();
+
+        assert_eq!(expected_board, board);
+        assert_eq!(1, bot.engine.lock().unwrap().get_repetition_table().get_repetition(zobrist1));
+        assert_eq!(1, bot.engine.lock().unwrap().get_repetition_table().get_repetition(zobrist2));
     }
 
     #[test]
@@ -937,24 +991,6 @@ mod tests {
 
         assert_eq!(expected_board, *bot.move_list.lock().unwrap().get_board());
     }
-    //todo: add parser checks
-
-    // #[test]
-    // fn check_input_position_fen_moves() {
-    //     let mut bot = Bot::new();
-    //     let string = "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1 moves e2e4";
-    //
-    //     assert_eq!(Some(String::from("")), bot.input_position(Some(string.parse().unwrap()), false, Vec::new()));
-    //
-    //     assert!(tokens.next().is_none());
-    //
-    //     let mut expected_board = Board::new();
-    //     expected_board.read_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
-    //     let mut expected_move_list = MoveList::from_board(expected_board);
-    //     expected_move_list.make_move(&Move{origin: 11, target: 27, promotion: 0, piece: PAWN});
-    //
-    //     assert_eq!(expected_move_list.get_board(), bot.move_list.lock().unwrap().get_board());
-    // }
 
     #[test]
     fn check_input_position_fen_moves() {
@@ -1309,7 +1345,12 @@ mod tests {
         );
 
         let mut expected_bot = Bot::with_position(START_POSITION);
-        expected_bot.input_moves(vec!(String::from("e2e4"), String::from("e7e5")));
+        {
+            let mut engine_binding = expected_bot.engine.lock().unwrap();
+            let mut repetition_table = engine_binding.get_mut_repetition_table();
+            let mut move_list_binding = expected_bot.move_list.lock().unwrap();
+            Bot::input_moves(&mut move_list_binding, vec!(String::from("e2e4"), String::from("e7e5")), repetition_table);
+        }
         assert_eq!(
             expected_bot.move_list.lock().unwrap().get_board(),
             bot.move_list.lock().unwrap().get_board()

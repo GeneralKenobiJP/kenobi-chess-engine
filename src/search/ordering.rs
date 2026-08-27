@@ -31,10 +31,10 @@ impl<T: Evaluator> Engine<T> {
             self.apply_mvv_lva(&mut order_table, move_list);
         }
         else {
-            self.apply_mvv_lva_with_recapture(&mut order_table, move_list, (*recapture.unwrap() & CAPTURE_SQUARE_MASK) as u8);
+            self.apply_mvv_lva_with_recapture(&mut order_table, move_list, ((*recapture.unwrap() & CAPTURE_SQUARE_MASK) >> 8) as u8);
         }
 
-        self.apply_killer_moves(&mut order_table);
+        self.apply_killer_moves(&mut order_table, move_list);
 
         move_list.order_moves(&order_table);
     }
@@ -61,7 +61,8 @@ impl<T: Evaluator> Engine<T> {
     /// If the node type is EXACT, the best move (PV-node) also gets
     /// a priority boost of PV_NODE_PRIORITY
     fn apply_hash_move(&self, order_table: &mut OrderTable, move_list: &MoveList) {
-        match self.transposition_table.get_from_zobrist(move_list.get_board().zobrist) {
+        let board = move_list.get_board();
+        match self.transposition_table.get_from_zobrist(board.zobrist, board.half_moves) {
             None => { return; }
             Some(transposition) => {
 
@@ -157,20 +158,20 @@ impl<T: Evaluator> Engine<T> {
     /// The assumption is as follows:
     /// if a given move proved to be troublesome against one of our moves,
     /// it is highly likely to prove troublesome again should we try another move.
-    /// For each depth we store 2 killer moves, since sometimes a move creates a sudden threat that
+    /// For each ply we store 2 killer moves, since sometimes a move creates a sudden threat that
     /// requires an urgent response - this response will get saved as a killer move
     /// (thus overwriting the previous killer move), even though it
     /// is not necessarily a universally good response if no such threat arises.
     /// Therefore, we store the old killer move so that we can still refer to it, since it is
     /// likely to stay a good response, thus preventing the engine from forgetting a good move
     /// because of occasional noise.
-    fn apply_killer_moves(&self, order_table: &mut OrderTable) {
-        let depth = self.depth as usize;
+    fn apply_killer_moves(&self, order_table: &mut OrderTable, move_list: &MoveList) {
+        let idx = (move_list.get_board().plies - self.current_ply) as usize;
         for i in 0..2 {
-            if self.killer_moves[depth][i].is_none() {
+            if self.killer_moves[idx][i].is_none() {
                 return;
             }
-            let killer_move = &self.killer_moves[depth][i].unwrap();
+            let killer_move = &self.killer_moves[idx][i].unwrap();
             if !order_table.contains_key(killer_move) {
                 return;
             }

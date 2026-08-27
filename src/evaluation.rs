@@ -3,14 +3,16 @@
 //! Currently considers material advantage.
 //! Value is measured in centipanws, i.e. 1 pawn = 100 centipawns
 
+use std::cmp::min;
 use std::fmt::Debug;
 use num_traits::WrappingNeg;
 use crate::board::Board;
 
 // We omit the king
 pub const PIECE_WORTH: [i32; 5] = [100, 900, 500, 300, 300];
-pub const NEGATIVE_INFINITY: i32 = i32::MIN + 1;
-pub const POSITIVE_INFINITY: i32 = i32::MAX;
+pub const PROMOTION_MATERIAL_DIFFERENCE: [i32; 6] = [0, 0, 800, 400, 200, 200];
+pub const NEGATIVE_INFINITY: i32 = -1_000_000_000;
+pub const POSITIVE_INFINITY: i32 = 1_000_000_000;
 pub const DRAW: i32 = 0;
 const TOTAL_START_VALUE: i32 = 2 * (8 * PIECE_WORTH[0] + 1 * PIECE_WORTH[1] + 2 * PIECE_WORTH[2] + 2 * PIECE_WORTH[3] + 2 * PIECE_WORTH[4]);
 
@@ -210,7 +212,7 @@ impl Evaluator for MainEvaluator {
     fn evaluate(board: &Board) -> i32 {
         let mut value = 0;
 
-        if board.half_moves == 100 { return DRAW; }
+        if board.half_moves >= 100 { return DRAW; }
 
         let phase_factor = compute_game_phase_factor(&board.piece_counter);
 
@@ -338,6 +340,7 @@ pub fn compute_game_phase_factor(piece_count: &[u8; 12]) -> i32 {
         }
     }
     factor = (factor * 100) / TOTAL_START_VALUE;
+    factor = min(100, factor);
 
     factor
 }

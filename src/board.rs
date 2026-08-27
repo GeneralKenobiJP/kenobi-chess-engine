@@ -5,6 +5,7 @@
 //! Defines some methods for board
 //! Implements FEN utility that allows to convert input FEN string into attributes of Board
 
+use std::cmp::max;
 use num_traits::FromPrimitive;
 use scanner_rust::ScannerStr;
 use crate::evaluation::{NEGATIVE_INFINITY, POSITIVE_INFINITY};
@@ -51,7 +52,7 @@ pub struct Board {
 
     // The halfmove clock specifies a decimal number of half moves with respect to the 50 move draw rule.
     // It is reset to zero after a capture or a pawn move and incremented otherwise.
-    pub half_moves: u32,
+    pub half_moves: u8,
     pub plies: u32,
     pub zobrist: u64,
     pub piece_counter: [u8; 12]
@@ -120,9 +121,10 @@ impl Board {
         self.zobrist ^= ZOBRIST_TABLE.active_player;
     }
 
-    /// Calculates distance between two given squares
+    /// Calculates Manhattan distance between two given squares
     /// The squares are given as their number in the order (not bit)
-    pub fn distance(square1: u8, square2: u8) -> u8 {
+    /// NOTE: corners are NOT treated as connections
+    pub fn manhattan_distance(square1: u8, square2: u8) -> u8 {
         let file1 = square1 % 8;
         let rank1 = square1 / 8;
 
@@ -132,12 +134,26 @@ impl Board {
         u8::abs_diff(file1, file2) + u8::abs_diff(rank1, rank2)
     }
 
+    /// Calculates Chebyshev distance between two given squares
+    /// The squares are given as their number in the order (not bit)
+    /// NOTE: Chebyshev distance treats corners as rightful connections
+    pub fn chebyshev_distance(square1: u8, square2: u8) -> u8 {
+        let file1 = square1 % 8;
+        let rank1 = square1 / 8;
+
+        let file2 = square2 % 8;
+        let rank2 = square2 / 8;
+
+        max(u8::abs_diff(file1, file2), u8::abs_diff(rank1, rank2))
+    }
+
     /// Read in the FEN (Forsyth-Edwards Notation) and adjust the board's attributes accordingly
     /// parameters:
     ///     board - Board object we are considering
     ///     fen - FEN string holding board position
     pub fn read_fen(&mut self, fen: &str) {
-        self.piece_counter = [0;12];
+        let board = Board::new();
+        *self = board;
 
         let fen = if fen == "" { START_POSITION } else { fen };
         // println!("Received fen: {}", fen);
@@ -443,13 +459,24 @@ mod tests {
 
     #[test]
     fn check_distance() {
-        assert_eq!(0, Board::distance(0,0));
-        assert_eq!(1, Board::distance(0,1));
-        assert_eq!(1, Board::distance(0,8));
-        assert_eq!(2, Board::distance(0,9));
-        assert_eq!(3, Board::distance(0,10));
-        assert_eq!(7, Board::distance(0, 56));
-        assert_eq!(14, Board::distance(0, 63));
+        assert_eq!(0, Board::manhattan_distance(0, 0));
+        assert_eq!(1, Board::manhattan_distance(0, 1));
+        assert_eq!(1, Board::manhattan_distance(0, 8));
+        assert_eq!(2, Board::manhattan_distance(0, 9));
+        assert_eq!(3, Board::manhattan_distance(0, 10));
+        assert_eq!(7, Board::manhattan_distance(0, 56));
+        assert_eq!(14, Board::manhattan_distance(0, 63));
+    }
+
+    #[test]
+    fn check_chebyshev_distance() {
+        assert_eq!(1, Board::chebyshev_distance(0,8));
+        assert_eq!(1, Board::chebyshev_distance(0,9));
+        assert_eq!(0, Board::chebyshev_distance(0,0));
+        assert_eq!(1, Board::chebyshev_distance(0,1));
+        assert_eq!(2, Board::chebyshev_distance(0,10));
+        assert_eq!(7, Board::chebyshev_distance(0, 56));
+        assert_eq!(7, Board::chebyshev_distance(0, 63));
     }
 
     #[test]
@@ -492,5 +519,51 @@ mod tests {
         assert_eq!(Option::from(KING), board.get_piece_from_square_by_player(3, 0));
         assert_eq!(Option::from(KING), board.get_piece_from_square_by_player(59, 1));
         assert_eq!(None, board.get_piece_from_square_by_player(30, 0));
+    }
+
+    #[test]
+    fn check_read_fen_resets_board_state() {
+        let mut board = Board::new();
+
+        let fen = "rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b K - 1 2";
+        board.read_fen(fen);
+
+        let fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
+        board.read_fen(fen);
+        assert_eq!(board.main_bitboard,       0b1111111111111111000000000000000000001000000000001111011111111111);
+        assert_eq!(board.empty_bitboard, u64::MAX - board.main_bitboard);
+        assert_eq!(board.colour_bitboards[0], 0b0000000000000000000000000000000000001000000000001111011111111111);
+        assert_eq!(board.colour_bitboards[1], 0b1111111111111111000000000000000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[0], 0b0000000000000000000000000000000000000000000000000000000000001000);
+        assert_eq!(board.piece_bitboards[1],  0b0000000000000000000000000000000000001000000000001111011100000000);
+        assert_eq!(board.piece_bitboards[2], 0b0000000000000000000000000000000000000000000000000000000000010000);
+        assert_eq!(board.piece_bitboards[3], 0b0000000000000000000000000000000000000000000000000000000010000001);
+        assert_eq!(board.piece_bitboards[4], 0b0000000000000000000000000000000000000000000000000000000000100100);
+        assert_eq!(board.piece_bitboards[5], 0b0000000000000000000000000000000000000000000000000000000001000010);
+        assert_eq!(board.piece_bitboards[6], 0b0000100000000000000000000000000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[7], 0b0000000011111111000000000000000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[8], 0b0001000000000000000000000000000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[9], 0b1000000100000000000000000000000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[10], 0b0010010000000000000000000000000000000000000000000000000000000000);
+        assert_eq!(board.piece_bitboards[11], 0b0100001000000000000000000000000000000000000000000000000000000000);
+        assert_eq!(board.active_player, BLACK);
+        assert_eq!(board.inactive_player, WHITE);
+        assert_eq!(board.castling_rights, 15);
+        assert_eq!(board.en_passant_possibility, 19);
+        assert_eq!(board.half_moves, 0);
+        assert_eq!(board.plies, 1);
+        assert_eq!(board.zobrist, zobrist_hash(&board));
+        assert_eq!(board.piece_counter[0], 1);
+        assert_eq!(board.piece_counter[1], 8);
+        assert_eq!(board.piece_counter[2], 1);
+        assert_eq!(board.piece_counter[3], 2);
+        assert_eq!(board.piece_counter[4], 2);
+        assert_eq!(board.piece_counter[5], 2);
+        assert_eq!(board.piece_counter[6], 1);
+        assert_eq!(board.piece_counter[7], 8);
+        assert_eq!(board.piece_counter[8], 1);
+        assert_eq!(board.piece_counter[9], 2);
+        assert_eq!(board.piece_counter[10], 2);
+        assert_eq!(board.piece_counter[11], 2);
     }
 }

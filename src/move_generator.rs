@@ -3,7 +3,7 @@
 //! Involves bitboards, magic bitboards.
 
 use std::collections::HashMap;
-use crate::piece::Piece;
+use crate::piece::{Piece};
 use crate::board::{Board, CASTLE_BLACK_KINGSIDE_FLAGS, CASTLE_BLACK_KINGSIDE_MASK, CASTLE_BLACK_QUEENSIDE_FLAGS, CASTLE_BLACK_QUEENSIDE_MASK, CASTLE_WHITE_KINGSIDE_FLAGS, CASTLE_WHITE_KINGSIDE_MASK, CASTLE_WHITE_QUEENSIDE_FLAGS, CASTLE_WHITE_QUEENSIDE_MASK, FILE_1_MASK, FILE_8_MASK, LOWER_RANK_HIGHEST_TILE, NOT_FILE_A_MASK, NOT_FILE_H_MASK, UNCASTLE_BLACK_KINGSIDE_FLAGS, UNCASTLE_BLACK_QUEENSIDE_FLAGS, UNCASTLE_WHITE_KINGSIDE_FLAGS, UNCASTLE_WHITE_QUEENSIDE_FLAGS, UPPER_RANK_LOWEST_TILE};
 use crate::piece::Colour::{BLACK, WHITE};
 use crate::piece::Piece::{BISHOP, KING, KNIGHT, PAWN, QUEEN, ROOK};
@@ -86,7 +86,7 @@ impl Move {
             }
         }
         else {
-            if piece == KING && Board::distance(origin, target) > 1 {
+            if piece == KING && Board::chebyshev_distance(origin, target) > 1 {
                 promotion = 1;
             }
             else {
@@ -125,6 +125,7 @@ impl Move {
 pub struct MoveList {
     board: Board,
     moves: Vec<Move>,
+    moves_tmp: Vec<Move>,
     capture_history: Vec<u16>, // used as stack, 16 == no capture; 8 left bits encode square of capture, 8 right bits - captured piece
     en_passant_history: Vec<u8>, // used as stack, 64 == no passant
     castling_rights_history: Vec<u8>, // used as stack
@@ -140,6 +141,7 @@ impl MoveList {
         MoveList {
             board,
             moves: Vec::with_capacity(MAX_MOVES_IN_POSITION),
+            moves_tmp: Vec::with_capacity(MAX_MOVES_IN_POSITION),
             capture_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
             en_passant_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
             castling_rights_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
@@ -155,6 +157,7 @@ impl MoveList {
         MoveList {
             board: Board::from_fen(fen),
             moves: Vec::with_capacity(MAX_MOVES_IN_POSITION),
+            moves_tmp: Vec::with_capacity(MAX_MOVES_IN_POSITION),
             capture_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
             en_passant_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
             castling_rights_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
@@ -170,6 +173,7 @@ impl MoveList {
         MoveList {
             board: Board::new(),
             moves: Vec::with_capacity(MAX_MOVES_IN_POSITION),
+            moves_tmp: Vec::with_capacity(MAX_MOVES_IN_POSITION),
             capture_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
             en_passant_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
             castling_rights_history: Vec::with_capacity(INITIAL_STACK_CAPACITY),
@@ -185,11 +189,23 @@ impl MoveList {
     /// that is: all the vectors, which hold the game state.
     /// Look-up tables are left untouched.
     pub fn clear(&mut self) {
-        self.moves = Vec::new();
-        self.capture_history = Vec::with_capacity(INITIAL_STACK_CAPACITY);
-        self.en_passant_history = Vec::with_capacity(INITIAL_STACK_CAPACITY);
-        self.castling_rights_history = Vec::with_capacity(INITIAL_STACK_CAPACITY);
-        self.halfmoves_history = Vec::with_capacity(INITIAL_STACK_CAPACITY);
+        self.moves.clear();
+        self.moves_tmp.clear();
+        self.capture_history.clear();
+        self.en_passant_history.clear();
+        self.castling_rights_history.clear();
+        self.halfmoves_history.clear();
+        self.halfmoves_history.clear();
+    }
+
+    /// Transfers moves from the normal buffer to the temporary buffer.
+    pub fn transfer_moves_to_tmp(&mut self) {
+        self.moves_tmp = std::mem::take(&mut self.moves);
+    }
+
+    /// Recovers moves from the temporary buffer to the normal buffer.
+    pub fn recover_moves_from_tmp(&mut self) {
+        self.moves = std::mem::take(&mut self.moves_tmp);
     }
 
     /// Getter for the move list
@@ -300,14 +316,24 @@ impl MoveList {
                 self.handle_en_passant(target, inactive_player);
                 self.board.piece_counter[6 * inactive_player + piece] -= 1;
                 self.capture_history.push(NO_CAPTURE);
+                self.board.half_moves = 0;
                 self.board.en_passant_possibility = NO_PASSANT;
                 self.board.switch_active_player();
                 return;
             }
             if piece_move.target.abs_diff(piece_move.origin) == 16 {
                 // We pushed the pawn by 2 squares and therefore allowed en passant
-                self.board.en_passant_possibility = (piece_move.target + piece_move.origin)/2;
-                self.board.zobrist ^= ZOBRIST_TABLE.en_passant[piece_move.target as usize % 8];
+                // But we still need to check if en passant is legal
+                // i.e. is there an opponent's pawn to take it, is it unpinned, etc.
+                let en_passant_target = (piece_move.target + piece_move.origin) / 2;
+                self.board.en_passant_possibility =
+                    if self.is_en_passant_possible(en_passant_target, active_player) {
+                        self.board.zobrist ^= ZOBRIST_TABLE.en_passant[piece_move.target as usize % 8];
+                        en_passant_target
+                    }
+                    else {
+                        NO_PASSANT
+                    };
             }
             else { self.board.en_passant_possibility = NO_PASSANT; }
         }
@@ -330,7 +356,89 @@ impl MoveList {
         self.board.switch_active_player();
     }
 
-    /// Handles en passant.
+    /// Checks if en passant is possible, given the final square of the double-moved pawn,
+    /// and its colour.
+    /// Test whether there exists an opponent's pawn to take it, and whether such a move
+    /// will leave opponent's king unchecked (i.e. whether the pawn is unpinned).
+    /// * en_passant_square - if pawn moves e2e4, thus prompting us to check
+    ///     legality of en passant, this is e4 as u8
+    /// * double_move_pawn_colour - colour of the double-moved pawn as usize (0 - WHITE, 1 - BLACK)
+    fn is_en_passant_possible(&self, en_passant_square: u8, double_move_pawn_colour: usize) -> bool {
+        if double_move_pawn_colour == WHITE as usize {
+            self.is_en_passant_possible_white_pawn(en_passant_square)
+        }
+        else {
+            self.is_en_passant_possible_black_pawn(en_passant_square)
+        }
+    }
+
+    /// Checks if en passant is possible after white's double-pawn move,
+    /// given the final square of the double-moved pawn.
+    /// Test whether there exists an opponent's pawn to take it, and whether such a move
+    /// will leave opponent's king unchecked (i.e. whether the pawn is unpinned).
+    /// * en_passant_square - if pawn moves e2e4, thus prompting us to check
+    ///     legality of en passant, this is e3 as u8
+    fn is_en_passant_possible_white_pawn(&self, en_passant_square: u8) -> bool {
+        let own_pawns = self.board.piece_bitboards[6 * BLACK as usize + PAWN as usize];
+        let king = self.board.piece_bitboards[6 * BLACK as usize + KING as usize];
+        let en_passant_tile = 1 << en_passant_square;
+        let pawn_square = en_passant_square + 8;
+        let pawn_tile = 1 << pawn_square;
+        let enemy_pawns_after = self.board.piece_bitboards[6 * WHITE as usize + PAWN as usize] & !pawn_tile;
+
+        let mut candidates = own_pawns & (((pawn_tile & NOT_FILE_A_MASK) << 1) | ((pawn_tile & NOT_FILE_H_MASK) >> 1));
+
+        while candidates != 0 {
+            let origin_tile = candidates & candidates.wrapping_neg();
+            candidates ^= origin_tile;
+
+            let occupied_after =
+                self.board.main_bitboard
+                & !origin_tile
+                & !pawn_tile
+                | en_passant_tile;
+            if !self.is_square_attacked_by_white_en_passant(king, occupied_after, enemy_pawns_after) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Checks if en passant is possible after black's double-pawn move,
+    /// given the final square of the double-moved pawn.
+    /// Test whether there exists an opponent's pawn to take it, and whether such a move
+    /// will leave opponent's king unchecked (i.e. whether the pawn is unpinned).
+    /// * en_passant_square - if pawn moves e7e5, thus prompting us to check
+    ///     legality of en passant, this is e6 as u8
+    fn is_en_passant_possible_black_pawn(&self, en_passant_square: u8) -> bool {
+        let own_pawns = self.board.piece_bitboards[6 * WHITE as usize + PAWN as usize];
+        let king = self.board.piece_bitboards[6 * WHITE as usize + KING as usize];
+        let en_passant_tile = 1 << en_passant_square;
+        let pawn_square = en_passant_square - 8;
+        let pawn_tile = 1 << pawn_square;
+        let enemy_pawns_after = self.board.piece_bitboards[6 * BLACK as usize + PAWN as usize] & !pawn_tile;
+
+        let mut candidates = own_pawns & (((pawn_tile & NOT_FILE_A_MASK) << 1) | ((pawn_tile & NOT_FILE_H_MASK) >> 1)) & EN_PASSANT_MASK;
+
+        while candidates != 0 {
+            let origin_tile = candidates & candidates.wrapping_neg();
+            candidates ^= origin_tile;
+
+            let occupied_after =
+                self.board.main_bitboard
+                & !origin_tile
+                & !pawn_tile
+                | en_passant_tile;
+            if !self.is_square_attacked_by_black_en_passant(king, occupied_after, enemy_pawns_after) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Handles an en passant capture/uncapture.
     /// Adjusts the board and the zobrist accordingly.
     /// Parameters:
     ///     - target_tile - 1u64 << target
@@ -535,7 +643,7 @@ impl MoveList {
 
         self.board.en_passant_possibility = self.en_passant_history.pop().unwrap_or_default();
         self.board.castling_rights = self.castling_rights_history.pop().unwrap_or_default();
-        self.board.half_moves = self.halfmoves_history.pop().unwrap_or_default() as u32;
+        self.board.half_moves = self.halfmoves_history.pop().unwrap_or_default();
 
         self.board.plies -= 1;
 
@@ -619,8 +727,7 @@ impl MoveList {
     /// Noisy moves include captures, checks and promotions
     /// Should NOT be used for move generation
     /// Used for heuristics
-    /// NOTE: currently does not consider checks, because of the need to optimize it
-    pub fn generate_noisy_moves(&mut self) {
+    pub fn generate_noisy_moves(&mut self, quiet_checks: bool) {
         self.moves.clear();
 
         self.generate_captures();
@@ -628,7 +735,10 @@ impl MoveList {
             self.generate_white_promotions();
         }
         else { self.generate_black_promotions(); }
-        // self.generate_checks();
+
+        if quiet_checks {
+            self.generate_checks();
+        }
     }
 
     /// Generates captures and updates move list based on the situation on the board
@@ -654,18 +764,20 @@ impl MoveList {
     /// Does NOT construct a new vector for moves
     /// Note: this method is somewhat slow
     pub fn generate_checks(&mut self) {
-        let mut move_list = MoveList::from_board(self.board);
+        // Preserve moves already generated
+        self.transfer_moves_to_tmp();
 
-        move_list.generate_moves();
-
-        let moves = move_list.get_moves().clone();
+        self.generate_moves();
+        let moves = self.get_moves().clone();
 
         for piece_move in moves {
-            move_list.make_move(&piece_move);
-            let is_check = move_list.is_in_check();
-            move_list.unmake_move(&piece_move);
-            if is_check && !self.moves.contains(&piece_move) { self.moves.push(piece_move); }
+            self.make_move(&piece_move);
+            let is_check = self.is_in_check();
+            self.unmake_move(&piece_move);
+            if is_check && !self.moves_tmp.contains(&piece_move) { self.moves_tmp.push(piece_move); }
         }
+
+        self.recover_moves_from_tmp();
     }
 
     /// KING MOVE GENERATION
@@ -852,6 +964,31 @@ impl MoveList {
         false
     }
 
+    /// Checks if the given square is attacked by white, given a custom main bitboard and white pawn bitboard.
+    /// Used for en passant legality checks.
+    /// Inputs a 64-bit number with one bit set to 1 as a tile indication
+    /// Outputs true/false
+    fn is_square_attacked_by_white_en_passant(&self, tile: u64, main_bitboard: u64, white_pawns: u64) -> bool {
+        // The main idea is to virtually place a piece of type X belonging to us on the given square
+        // and check if it can attack any enemy piece of the same type X.
+        // In such case, the square is attacked by the enemy's piece of type X.
+
+        // Check if a pawn attacks the square
+        if (tile & NOT_FILE_H_MASK) >> 9 & white_pawns != 0 { return true; }
+        if (tile & NOT_FILE_A_MASK) >> 7 & white_pawns != 0 { return true; }
+
+        let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+        if tile & self.king_lookup_table[u64::checked_ilog2(self.board.piece_bitboards[0])
+            .unwrap_or_default() as usize] != 0 { return true; }
+        if self.knight_lookup_table[square as usize] & self.board.piece_bitboards[5] != 0 { return true; }
+        if self.get_bishop_magic_bitboard_with_occupancy(square, main_bitboard) & self.board.piece_bitboards[4] != 0 { return true; }
+        if self.get_rook_magic_bitboard_with_occupancy(square, main_bitboard) & self.board.piece_bitboards[3] != 0 { return true; }
+        if (self.get_bishop_magic_bitboard_with_occupancy(square, main_bitboard) | self.get_rook_magic_bitboard_with_occupancy(square, main_bitboard))
+            & self.board.piece_bitboards[2] != 0 { return true; }
+
+        false
+    }
+
     /// Checks if the given square is attacked by black
     /// Inputs a 64-bit number with one bit set to 1 as a tile indication
     /// Outputs true/false
@@ -870,6 +1007,29 @@ impl MoveList {
         if self.get_bishop_magic_bitboard(square) & self.board.piece_bitboards[10] != 0 { return true; }
         if self.get_rook_magic_bitboard(square) & self.board.piece_bitboards[9] != 0 { return true; }
         if (self.get_bishop_magic_bitboard(square) | self.get_rook_magic_bitboard(square))
+            & self.board.piece_bitboards[8] != 0 { return true; }
+
+        false
+    }
+
+    // Checks if the given square is attacked by black
+    // Inputs a 64-bit number with one bit set to 1 as a tile indication
+    // Outputs true/false
+    fn is_square_attacked_by_black_en_passant(&self, tile: u64, main_bitboard: u64, black_pawns: u64) -> bool {
+        // The main idea is to virtually place a piece of type X belonging to us on the given square
+        // and check if it can attack any enemy piece of the same type X.
+        // In such case, the square is attacked by the enemy's piece of type X.
+
+        // Check if a pawn attacks the square
+        if (tile & NOT_FILE_A_MASK) << 9 & black_pawns != 0 { return true; }
+        if (tile & NOT_FILE_H_MASK) << 7 & black_pawns != 0 { return true; }
+
+        let square = u64::checked_ilog2(tile).unwrap_or_default() as u8;
+        if tile & self.king_lookup_table[u64::checked_ilog2(self.board.piece_bitboards[6]).unwrap_or_default() as usize] != 0 { return true; }
+        if self.knight_lookup_table[square as usize] & self.board.piece_bitboards[11] != 0 { return true; }
+        if self.get_bishop_magic_bitboard_with_occupancy(square, main_bitboard) & self.board.piece_bitboards[10] != 0 { return true; }
+        if self.get_rook_magic_bitboard_with_occupancy(square, main_bitboard) & self.board.piece_bitboards[9] != 0 { return true; }
+        if (self.get_bishop_magic_bitboard_with_occupancy(square, main_bitboard) | self.get_rook_magic_bitboard_with_occupancy(square, main_bitboard))
             & self.board.piece_bitboards[8] != 0 { return true; }
 
         false
@@ -1157,7 +1317,7 @@ impl MoveList {
                     continue;
                 }
 
-                if Board::distance(origin as u8, target as u8) > 3 {
+                if Board::manhattan_distance(origin as u8, target as u8) > 3 {
                     continue;
                 }
 
@@ -1401,6 +1561,17 @@ impl MoveList {
         self.rook_magic_bitboard[magic_hash_rook(occupancy, origin)]
     }
 
+    /// Retrieves rook magic bitboard based on a given origin and current board situation,
+    /// when supplied with custom main bitboard.
+    /// Used by en passant legality check.
+    /// Constructs occupancy mask from the current board situation and
+    /// masks it with the relevant magic mask to obtain a raw key,
+    /// then hashes using magic hash to obtain a hashed key
+    fn get_rook_magic_bitboard_with_occupancy(&self, origin: u8, main_bitboard: u64) -> u64 {
+        let occupancy = main_bitboard & MAGIC_MASK_ROOK[origin as usize];
+        self.rook_magic_bitboard[magic_hash_rook(occupancy, origin)]
+    }
+
     /// Outputs a bitboard of rook moves, based on the current board occupancy, given the rook's square
     fn generate_rook_moves_bitboard(&self, square: u8) -> u64 {
         self.get_rook_magic_bitboard(square) & (self.board.empty_bitboard | self.board.colour_bitboards[self.board.inactive_player as usize])
@@ -1622,6 +1793,17 @@ impl MoveList {
         self.bishop_magic_bitboard[magic_hash_bishop(occupancy, origin)]
     }
 
+    /// Retrieves bishop magic bitboard based on a given origin and current board situation,
+    /// when supplied with custom main bitboard.
+    /// Used by en passant legality check.
+    /// Constructs occupancy mask from the current board situation and
+    /// masks it with the relevant magic mask to obtain a raw key,
+    /// then hashes using magic hash to obtain a hashed key
+    fn get_bishop_magic_bitboard_with_occupancy(&self, origin: u8, main_bitboard: u64) -> u64 {
+        let occupancy = main_bitboard & MAGIC_MASK_BISHOP[origin as usize];
+        self.bishop_magic_bitboard[magic_hash_bishop(occupancy, origin)]
+    }
+
     /// Outputs a bitboard of bishop moves, based on the current board occupancy, given the bishop's square
     fn generate_bishop_moves_bitboard(&self, square: u8) -> u64 {
         self.get_bishop_magic_bitboard(square) & (self.board.empty_bitboard | self.board.colour_bitboards[self.board.inactive_player as usize])
@@ -1717,6 +1899,7 @@ mod tests {
     use std::time::Instant;
     use crate::board::{Board, START_POSITION};
     use crate::piece::Piece::PAWN;
+    use crate::zobrist::zobrist_hash;
     use super::*;
 
     fn compare_vecs<Move: PartialEq + Eq + std::hash::Hash + Clone>
@@ -3024,7 +3207,7 @@ mod tests {
         assert_eq!(NO_CAPTURE, move_list.capture_history[0]);
         assert_eq!(64, move_list.en_passant_history[0]);
         assert_eq!(8, move_list.castling_rights_history[0]);
-        assert_eq!(47, move_list.board.en_passant_possibility);
+        assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
         assert_eq!(0, move_list.get_board().half_moves);
         assert_eq!([1, 8, 1, 2, 2, 2,  1, 8, 1, 2, 2, 2], move_list.get_board().piece_counter);
         assert_eq!(4, move_list.get_board().plies);
@@ -3697,32 +3880,57 @@ mod tests {
         assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
     }
 
-    // #[test]
-    // fn check_generate_noisy_moves() {
-    //     let mut board = Board::new();
-    //     board.read_fen("4k3/6P1/8/8/3B4/2Qp4/p2Rp3/8 w - - 0 1");
-    //
-    //     let mut expected_move_list = Vec::<Move>::new();
-    //     expected_move_list.push(Move {origin: 49, target: 57, promotion: 2, piece: PAWN});
-    //     expected_move_list.push(Move {origin: 49, target: 57, promotion: 3, piece: PAWN});
-    //     expected_move_list.push(Move {origin: 49, target: 57, promotion: 4, piece: PAWN});
-    //     expected_move_list.push(Move {origin: 49, target: 57, promotion: 5, piece: PAWN});
-    //     expected_move_list.push(Move {origin: 21, target: 61, promotion: 0, piece: QUEEN});
-    //     expected_move_list.push(Move {origin: 21, target: 45, promotion: 0, piece: QUEEN});
-    //     expected_move_list.push(Move {origin: 21, target: 20, promotion: 0, piece: QUEEN});
-    //     expected_move_list.push(Move {origin: 12, target: 11, promotion: 0, piece: ROOK});
-    //     expected_move_list.push(Move {origin: 12, target: 15, promotion: 0, piece: ROOK});
-    //     expected_move_list.push(Move {origin: 12, target: 20, promotion: 0, piece: ROOK});
-    //
-    //     let mut move_list = MoveList::new(&mut board);
-    //
-    //     let start = Instant::now();
-    //     move_list.generate_noisy_moves();
-    //     let duration = start.elapsed();
-    //     println!("generate_checks lasted for {:?}", duration);
-    //
-    //     assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
-    // }
+    #[test]
+    fn check_generate_noisy_moves_with_quiet_checks() {
+        let mut board = Board::new();
+        board.read_fen("4k3/6P1/8/8/3B4/2Qp4/p2Rp3/8 w - - 0 1");
+
+        let mut expected_move_list = Vec::<Move>::new();
+        expected_move_list.push(Move {origin: 49, target: 57, promotion: 2, piece: PAWN});
+        expected_move_list.push(Move {origin: 49, target: 57, promotion: 3, piece: PAWN});
+        expected_move_list.push(Move {origin: 49, target: 57, promotion: 4, piece: PAWN});
+        expected_move_list.push(Move {origin: 49, target: 57, promotion: 5, piece: PAWN});
+        expected_move_list.push(Move {origin: 21, target: 61, promotion: 0, piece: QUEEN});
+        expected_move_list.push(Move {origin: 21, target: 45, promotion: 0, piece: QUEEN});
+        expected_move_list.push(Move {origin: 21, target: 20, promotion: 0, piece: QUEEN});
+        expected_move_list.push(Move {origin: 12, target: 11, promotion: 0, piece: ROOK});
+        expected_move_list.push(Move {origin: 12, target: 15, promotion: 0, piece: ROOK});
+        expected_move_list.push(Move {origin: 12, target: 20, promotion: 0, piece: ROOK});
+
+        let mut move_list = MoveList::from_board(board);
+
+        let start = Instant::now();
+        move_list.generate_noisy_moves(true);
+        let duration = start.elapsed();
+        println!("generate_checks lasted for {:?}", duration);
+
+        assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
+    }
+
+    #[test]
+    fn check_generate_noisy_moves_without_quiet_checks() {
+        let mut board = Board::new();
+        board.read_fen("4k3/6P1/8/8/3B4/2Qp4/p2Rp3/8 w - - 0 1");
+
+        let mut expected_move_list = Vec::<Move>::new();
+        expected_move_list.push(Move {origin: 49, target: 57, promotion: 2, piece: PAWN});
+        expected_move_list.push(Move {origin: 49, target: 57, promotion: 3, piece: PAWN});
+        expected_move_list.push(Move {origin: 49, target: 57, promotion: 4, piece: PAWN});
+        expected_move_list.push(Move {origin: 49, target: 57, promotion: 5, piece: PAWN});
+        expected_move_list.push(Move {origin: 21, target: 20, promotion: 0, piece: QUEEN});
+        expected_move_list.push(Move {origin: 12, target: 11, promotion: 0, piece: ROOK});
+        expected_move_list.push(Move {origin: 12, target: 15, promotion: 0, piece: ROOK});
+        expected_move_list.push(Move {origin: 12, target: 20, promotion: 0, piece: ROOK});
+
+        let mut move_list = MoveList::from_board(board);
+
+        let start = Instant::now();
+        move_list.generate_noisy_moves(false);
+        let duration = start.elapsed();
+        println!("generate_checks lasted for {:?}", duration);
+
+        assert!(compare_vecs(move_list.get_moves(), &expected_move_list));
+    }
 
     #[test]
     fn check_move_piece_quiet_move() {
@@ -4222,5 +4430,293 @@ mod tests {
         assert_eq!(Move::new(11, 27, 0, PAWN), move_list.moves[1]);
         assert_eq!(Move::new(12, 28, 0, PAWN), move_list.moves[2]);
         assert_eq!(Move::new(8, 16, 0, PAWN), move_list.moves[3]);
+    }
+
+    fn assert_board_invariants(board: &Board) {
+        assert_eq!(
+            0,
+            board.colour_bitboards[WHITE as usize]
+                & board.colour_bitboards[BLACK as usize],
+            "white and black occupancy overlap"
+        );
+
+        let mut all_pieces = 0u64;
+
+        for player in [WHITE, BLACK] {
+            let mut player_pieces = 0u64;
+
+            for piece in 0..6 {
+                let index = 6 * player as usize + piece;
+                let piece_bitboard = board.piece_bitboards[index];
+
+                assert_eq!(
+                    0,
+                    player_pieces & piece_bitboard,
+                    "two piece types overlap for player {player:?}"
+                );
+                assert_eq!(
+                    piece_bitboard.count_ones() as u8,
+                    board.piece_counter[index],
+                    "piece counter disagrees with bitboard at index {index}"
+                );
+
+                player_pieces |= piece_bitboard;
+            }
+
+            assert_eq!(
+                player_pieces,
+                board.colour_bitboards[player as usize],
+                "colour occupancy disagrees with piece occupancy for {player:?}"
+            );
+            all_pieces |= player_pieces;
+        }
+
+        assert_eq!(all_pieces, board.main_bitboard);
+        assert_eq!(!board.main_bitboard, board.empty_bitboard);
+        assert_eq!(board.active_player.switch_player(), board.inactive_player);
+        assert_eq!(
+            zobrist_hash(board),
+            board.zobrist,
+            "incremental Zobrist key disagrees with a full recomputation"
+        );
+    }
+
+    fn assert_make_unmake_round_trip(fen: &str) {
+        let mut move_list = MoveList::from_fen(fen);
+        assert_board_invariants(move_list.get_board());
+
+        move_list.generate_moves();
+        let generated_moves = move_list.moves.clone();
+
+        assert!(
+            !generated_moves.is_empty(),
+            "test position unexpectedly generated no moves: {fen}"
+        );
+
+        for piece_move in generated_moves {
+            let board_before = move_list.board;
+            let moves_before = move_list.moves.clone();
+            let capture_history_len = move_list.capture_history.len();
+            let en_passant_history_len = move_list.en_passant_history.len();
+            let castling_history_len = move_list.castling_rights_history.len();
+            let halfmove_history_len = move_list.halfmoves_history.len();
+
+            let target_tile = 1u64 << piece_move.target;
+            let was_en_passant = piece_move.piece == PAWN
+                && piece_move.target == board_before.en_passant_possibility;
+            let was_capture = board_before.main_bitboard & target_tile != 0
+                || was_en_passant;
+
+            move_list.make_move(&piece_move);
+
+            assert_board_invariants(move_list.get_board());
+            assert_eq!(board_before.plies + 1, move_list.board.plies);
+            assert_eq!(board_before.active_player, move_list.board.inactive_player);
+            assert_eq!(board_before.inactive_player, move_list.board.active_player);
+            assert_eq!(capture_history_len + 1, move_list.capture_history.len());
+            assert_eq!(
+                en_passant_history_len + 1,
+                move_list.en_passant_history.len()
+            );
+            assert_eq!(
+                castling_history_len + 1,
+                move_list.castling_rights_history.len()
+            );
+            assert_eq!(
+                halfmove_history_len + 1,
+                move_list.halfmoves_history.len()
+            );
+
+            if piece_move.piece == PAWN || was_capture {
+                assert_eq!(
+                    0,
+                    move_list.board.half_moves,
+                    "pawn moves and captures must reset the halfmove clock: {piece_move:?} in {fen}"
+                );
+            } else {
+                assert_eq!(
+                    board_before.half_moves + 1,
+                    move_list.board.half_moves,
+                    "quiet non-pawn move must increment the halfmove clock"
+                );
+            }
+
+            move_list.unmake_move(&piece_move);
+
+            assert_eq!(
+                board_before,
+                move_list.board,
+                "make/unmake failed for {piece_move:?} in {fen}"
+            );
+            assert_eq!(moves_before, move_list.moves);
+            assert_eq!(capture_history_len, move_list.capture_history.len());
+            assert_eq!(en_passant_history_len, move_list.en_passant_history.len());
+            assert_eq!(castling_history_len, move_list.castling_rights_history.len());
+            assert_eq!(halfmove_history_len, move_list.halfmoves_history.len());
+            assert_board_invariants(move_list.get_board());
+        }
+    }
+
+    #[test]
+    fn check_make_unmake_invariants_for_special_moves() {
+        const POSITIONS: [&str; 7] = [
+            // Quiet moves and double pawn pushes.
+            START_POSITION,
+            // Ordinary pawn and piece captures.
+            "4k3/8/8/3p4/4P3/8/8/R3K3 w - - 7 1",
+            // En passant with a nonzero halfmove clock catches a missing reset.
+            "4k3/8/8/3pP3/8/8/8/4K3 w - d6 17 1",
+            // White castling in both directions.
+            "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 23 1",
+            // Black castling in both directions.
+            "r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 23 1",
+            // Quiet promotion.
+            "4k3/P7/8/8/8/8/8/4K3 w - - 11 1",
+            // Capture-promotions in both directions plus a quiet promotion.
+            "r1r1k3/1P6/8/8/8/8/8/4K3 w - - 9 1",
+        ];
+
+        for fen in POSITIONS {
+            assert_make_unmake_round_trip(fen);
+        }
+    }
+
+    #[test]
+    fn check_null_move_round_trip() {
+        const POSITIONS: [&str; 3] = [
+            START_POSITION,
+            "4k3/8/8/3pP3/8/8/8/4K3 w - d6 17 1",
+            "r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 23 1",
+        ];
+
+        for fen in POSITIONS {
+            let mut move_list = MoveList::from_fen(fen);
+            let board_before = move_list.board;
+            let en_passant_history_len = move_list.en_passant_history.len();
+
+            move_list.make_null_move();
+
+            assert_board_invariants(move_list.get_board());
+            assert_eq!(board_before.plies + 1, move_list.board.plies);
+            assert_eq!(NO_PASSANT, move_list.board.en_passant_possibility);
+            assert_eq!(
+                en_passant_history_len + 1,
+                move_list.en_passant_history.len()
+            );
+
+            move_list.unmake_null_move();
+
+            assert_eq!(board_before, move_list.board);
+            assert_eq!(en_passant_history_len, move_list.en_passant_history.len());
+            assert_board_invariants(move_list.get_board());
+        }
+    }
+
+    #[test]
+    fn check_transfer_moves_to_tmp() {
+        let board = Board::from_fen(START_POSITION);
+        let mut move_list = MoveList::from_board(board);
+
+        move_list.generate_moves();
+        let expected_moves = move_list.moves.clone();
+
+        assert!(move_list.moves_tmp.is_empty());
+
+        move_list.transfer_moves_to_tmp();
+        assert!(move_list.moves.is_empty());
+        assert_eq!(move_list.moves_tmp, expected_moves);
+    }
+
+    #[test]
+    fn check_transfer_moves_to_non_empty_tmp() {
+        let board = Board::from_fen(START_POSITION);
+        let mut move_list = MoveList::from_board(board);
+
+        move_list.generate_moves();
+        let expected_moves = move_list.moves.clone();
+
+        move_list.moves_tmp.push(Move::empty());
+
+        move_list.transfer_moves_to_tmp();
+        assert!(move_list.moves.is_empty());
+        assert_eq!(move_list.moves_tmp, expected_moves);
+    }
+
+    #[test]
+    fn check_recover_moves_from_tmp() {
+        let board = Board::from_fen(START_POSITION);
+        let mut move_list = MoveList::from_board(board);
+
+        move_list.generate_moves();
+        let expected_moves = move_list.moves.clone();
+
+        move_list.transfer_moves_to_tmp();
+        move_list.recover_moves_from_tmp();
+        assert!(move_list.moves_tmp.is_empty());
+        assert_eq!(move_list.moves, expected_moves);
+    }
+
+    #[test]
+    fn check_recover_moves_from_non_empty_tmp() {
+        let board = Board::from_fen(START_POSITION);
+        let mut move_list = MoveList::from_board(board);
+
+        move_list.generate_moves();
+        let expected_moves = move_list.moves.clone();
+
+        move_list.transfer_moves_to_tmp();
+        move_list.moves.push(Move::empty());
+        move_list.recover_moves_from_tmp();
+
+        assert!(move_list.moves_tmp.is_empty());
+        assert_eq!(move_list.moves, expected_moves);
+    }
+
+    #[test]
+    fn test_is_en_passant_possible_black_pawn() {
+        let board = Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1");
+        let mut move_list = MoveList::from_board(board);
+        assert!(!move_list.is_en_passant_possible(43, 1));
+        assert!(!move_list.is_en_passant_possible_black_pawn(43));
+        move_list.make_move(&Move::new(51, 35, 0, PAWN));
+        assert_eq!(move_list.board.en_passant_possibility, NO_PASSANT);
+
+        let board = Board::from_fen("rnbqkbnr/pppppppp/8/5P2/8/8/PPPPP1PP/RNBQKBNR b KQkq - 0 1");
+        let mut move_list = MoveList::from_board(board);
+        assert!(move_list.is_en_passant_possible(43, 1));
+        assert!(move_list.is_en_passant_possible_black_pawn(43));
+        move_list.make_move(&Move::new(51, 35, 0, PAWN));
+        assert_eq!(move_list.board.en_passant_possibility, 43);
+
+        let board = Board::from_fen("rnb1kbnr/pppp1ppp/5q2/4pP2/8/8/PPPPPKPP/RNBQ1BNR b kq - 0 1");
+        let mut move_list = MoveList::from_board(board);
+        assert!(!move_list.is_en_passant_possible(43, 1));
+        assert!(!move_list.is_en_passant_possible_black_pawn(43));
+        move_list.make_move(&Move::new(51, 35, 0, PAWN));
+        assert_eq!(move_list.board.en_passant_possibility, NO_PASSANT);
+    }
+
+    #[test]
+    fn test_is_en_passant_possible_white_pawn() {
+        let board = Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        let mut move_list = MoveList::from_board(board);
+        assert!(!move_list.is_en_passant_possible(19, 0));
+        assert!(!move_list.is_en_passant_possible_white_pawn(19));
+        move_list.make_move(&Move::new(11, 27, 0, PAWN));
+        assert_eq!(move_list.board.en_passant_possibility, NO_PASSANT);
+
+        let board = Board::from_fen("rnbqkbnr/ppp1pppp/8/8/3p4/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        let mut move_list = MoveList::from_board(board);
+        assert!(move_list.is_en_passant_possible(19, 0));
+        assert!(move_list.is_en_passant_possible_white_pawn(19));
+        move_list.make_move(&Move::new(11, 27, 0, PAWN));
+        assert_eq!(move_list.board.en_passant_possibility, 19);
+
+        let board = Board::from_fen("rnbq1bnr/pppkpppp/8/8/3p4/3Q4/PPPPPPPP/RNB1KBNR w KQ - 0 1");
+        let mut move_list = MoveList::from_board(board);
+        assert!(!move_list.is_en_passant_possible(19, 0));
+        assert!(!move_list.is_en_passant_possible_white_pawn(19));
+        move_list.make_move(&Move::new(11, 27, 0, PAWN));
+        assert_eq!(move_list.board.en_passant_possibility, NO_PASSANT);
     }
 }
