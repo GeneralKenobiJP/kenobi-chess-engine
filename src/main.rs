@@ -9,6 +9,7 @@ mod zobrist;
 mod transposition_table;
 mod bot;
 mod string_builder;
+mod syzygy;
 
 use std::io::{self, BufRead, Write};
 
