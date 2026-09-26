@@ -85,6 +85,11 @@ impl TranspositionTable {
             // len: 0
         }
     }
+    
+    /// Retrieves the maximum capacity of the transposition table
+    pub fn get_capacity(&self) -> usize {
+        self.table.len()
+    }
 
     /// Hashes the key by implementing linear probing
     /// Should be called for a zobrist-hashed key

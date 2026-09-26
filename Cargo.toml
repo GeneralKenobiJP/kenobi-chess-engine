@@ -3,6 +3,9 @@ name = "kenobi-chess-engine"
 version = "0.1.0"
 edition = "2024"
 
+[build-dependencies]
+cc = "1.4.4"
+
 [dependencies]
 scanner-rust = "2.0.17"
 criterion = "0.5.1"

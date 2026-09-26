@@ -4,21 +4,22 @@
 //! Communication is realized through the message() function.
 //! It should be called in the game loop of the main function.
 
+use std::fs;
 use std::io::{self, Write};
 use std::iter::Peekable;
+use std::path::Path;
 use std::str::SplitWhitespace;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::{spawn, JoinHandle};
 use std::time::{Duration, Instant};
 
-use scanner_rust::ScannerStr;
-
 use crate::board::{Board, START_POSITION};
-use crate::evaluation::{Evaluator, MainEvaluator, POSITIVE_INFINITY};
+use crate::evaluation::{Evaluator, MainEvaluator, POSITIVE_INFINITY, POSITIVE_INFINITY_EPSILON_MARGIN};
 use crate::move_generator::{Move, MoveList};
 use crate::perft::perft_log;
 use crate::search::{Engine, SearchControl};
 use crate::string_builder::StringBuilder;
+use crate::syzygy::Syzygy;
 use crate::transposition_table::RepetitionTable;
 
 const INFINITE_DEPTH: u32 = 256;
@@ -381,7 +382,7 @@ impl Bot<MainEvaluator> {
     /// Creates a new engine object and clears the move list
     fn new_game(&mut self) -> Option<String> {
         self.stop_and_join_search();
-        self.engine = Arc::new(Mutex::new(Engine::new()));
+        self.engine.lock().unwrap().new_game();
         self.move_list.lock().unwrap().clear();
         Option::from(String::new())
     }
@@ -653,6 +654,75 @@ impl Bot<MainEvaluator> {
         Some(String::new())
     }
 
+    fn load_syzygy(path: impl AsRef<str>) -> Result<Syzygy, String> {
+        let path = path.as_ref();
+
+        let separator = if cfg!(windows) {
+            ';'
+        } else {
+            ':'
+        };
+
+        let mut has_wdl = false;
+
+        for component in path.split(separator) {
+            let component = component.trim();
+
+            if component.is_empty() {
+                return Err(
+                    "SyzygyPath contains an empty directory".to_owned()
+                );
+            }
+
+            let directory = Path::new(component);
+
+            if !directory.exists() {
+                return Err(format!(
+                    "Syzygy path does not exist: {}",
+                    directory.display()
+                ));
+            }
+
+            if !directory.is_dir() {
+                return Err(format!(
+                    "Syzygy path is not a directory: {}",
+                    directory.display()
+                ));
+            }
+
+            for entry in fs::read_dir(directory)
+                .map_err(|e| format!("Syzygy path could not be read: {e}"))?
+            {
+                let entry = entry.map_err(|e| e.to_string())?;
+                let file = entry.path();
+
+                if (file.is_file())
+                    && file.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("rtbw"))
+                {
+                    has_wdl = true;
+                    break;
+                }
+            }
+        }
+
+        if !has_wdl {
+            return Err(format!(
+                "No .rtbw Syzygy WDL files found in {path}"
+            ));
+        }
+
+       // let Fathom initialize the tables.
+        let syzygy = Syzygy::open(path)?;
+
+        if syzygy.max_pieces() < 3 {
+            return Err(format!(
+                "Fathom did not recognize usable Syzygy tables in {path}"
+            ));
+        }
+
+        Ok(syzygy)
+    }
+
     /// Sets an option given its name and value.
     ///
     /// Currently supported options:
@@ -674,8 +744,24 @@ impl Bot<MainEvaluator> {
         } else if name.eq_ignore_ascii_case("Clear Hash") {
             self.stop_and_join_search();
             self.engine = Arc::new(Mutex::new(Engine::new()));
-        } else if name.eq_ignore_ascii_case("setoption name Ponder value true") {
+        } else if name.eq_ignore_ascii_case("Ponder") {
 
+        }
+        else if name.eq_ignore_ascii_case("SyzygyPath") {
+            let Some(value) = value.and_then(|value| value.parse::<String>().ok()) else {
+                return Some("info string SyzygyPath requires a string value".to_owned());
+            };
+            if value.eq_ignore_ascii_case("<empty>") {
+                self.engine.lock().unwrap().set_syzygy(None);
+            }
+            else {
+                let syzygy = Self::load_syzygy(value);
+                // println!("{:?}", syzygy);
+                if syzygy.is_err() {
+                    return syzygy.err();
+                }
+                self.engine.lock().unwrap().set_syzygy(Some(Arc::from(syzygy.unwrap())));
+            }
         }
         else if self.debug {
             eprintln!("Ignored unsupported UCI option: {name}");
@@ -699,28 +785,30 @@ impl Bot<MainEvaluator> {
     /// * time in miliseconds
     /// * number of nodes visited
     /// * nodes per second visited
+    /// * number of the endgame tablebase hits
     fn info(engine: &Engine, nodes: u64, elapsed: Duration) -> String {
         let depth = engine.get_current_depth();
         let score_cp = engine.get_last_root_score();
         let milliseconds = elapsed.as_millis().max(1);
         let nps = u128::from(nodes).saturating_mul(1_000) / milliseconds;
+        let tbhits = engine.get_tablebase_stats().tbhits();
 
         if score_cp.is_none() {
-            return format!("info depth {depth} time {milliseconds} nodes {nodes} nps {nps}")
+            return format!("info depth {depth} time {milliseconds} nodes {nodes} nps {nps} tbhits {tbhits}")
         }
 
         let score_cp = score_cp.unwrap();
 
-        if score_cp.abs() < POSITIVE_INFINITY {
+        if score_cp.abs() < POSITIVE_INFINITY_EPSILON_MARGIN {
             format!(
-                "info depth {depth} score cp {score_cp} time {milliseconds} nodes {nodes} nps {nps}"
+                "info depth {depth} score cp {score_cp} time {milliseconds} nodes {nodes} nps {nps} tbhits {tbhits}"
             )
         }
         else {
             let mate_plies = (score_cp.abs() - POSITIVE_INFINITY).abs();
             let mate_moves = score_cp.signum() * (mate_plies + 3) / 2;
             format!(
-                "info depth {depth} score mate {mate_moves} time {milliseconds} nodes {nodes} nps {nps}"
+                "info depth {depth} score mate {mate_moves} time {milliseconds} nodes {nodes} nps {nps} tbhits {tbhits}"
             )
         }
     }
@@ -807,7 +895,8 @@ impl Bot<MainEvaluator> {
                 "option name Move Overhead type spin default {DEFAULT_MOVE_OVERHEAD_MS} min 0 max {MAX_MOVE_OVERHEAD_MS}"
             ))
             .append_line(&"option name Clear Hash type button")
-            .append_line(&"option name Ponder type check default true");
+            .append_line(&"option name Ponder type check default true")
+            .append_line(&"option name SyzygyPath type string default <empty>");
         response.build()
     }
 
@@ -909,7 +998,9 @@ mod tests {
 
     #[test]
     fn check_option() {
-        let expected = "option name Move Overhead type spin default 10 min 0 max 5000\noption name Clear Hash type button\noption name Ponder type check default true";
+        let expected = "option name Move Overhead type spin default 10 min 0 max 5000\n\
+        option name Clear Hash type button\noption name Ponder type check default true\n\
+        option name SyzygyPath type string default <empty>";
         assert_eq!(expected,  Bot::option());
     }
 
@@ -918,7 +1009,8 @@ mod tests {
         let expected = format!("id name Kenobi {}\nid author Jakub Pietrzak\n\
         option name Move Overhead type spin default 10 min 0 max 5000\n\
         option name Clear Hash type button\n\
-        option name Ponder type check default true\nuciok", env!("CARGO_PKG_VERSION"));
+        option name Ponder type check default true\n\
+        option name SyzygyPath type string default <empty>\nuciok", env!("CARGO_PKG_VERSION"));
         assert_eq!(Some(expected),  Bot::uci());
     }
 
@@ -1306,7 +1398,7 @@ mod tests {
         );
 
         let expected_regex = Regex::new(
-            r"^info depth \d+ score cp -?\d+ time \d+ nodes \d+ nps \d+\nbestmove [a-h][1-8][a-h][1-8]( ponder [a-h][1-8][a-h][1-8])?$"
+            r"^info depth \d+ score cp -?\d+ time \d+ nodes \d+ nps \d+ tbhits \d+\nbestmove [a-h][1-8][a-h][1-8]( ponder [a-h][1-8][a-h][1-8])?$"
         ).unwrap();
 
         assert!(expected_regex.is_match(&response));
@@ -1390,4 +1482,80 @@ mod tests {
         assert!(bot.active_search.is_none());
     }
 
+    #[test]
+    fn check_set_option_syzygy_missing_path() {
+        let mut bot = Bot::new();
+        let path = std::env::temp_dir().join(format!(
+            "kenobi_missing_syzygy_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&path);
+
+        assert_eq!(
+            Some(format!(
+                "Syzygy path does not exist: {}",
+                path.display()
+            )),
+            bot.set_option(
+                String::from("SyzygyPath"),
+                Some(path.to_string_lossy().into_owned()),
+            )
+        );
+    }
+
+
+    #[test]
+    fn check_load_syzygy_rejects_directory_without_wdl_files() {
+        let path = std::env::temp_dir().join(format!(
+            "kenobi_empty_syzygy_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).unwrap();
+
+        let result = Bot::load_syzygy(&path.to_str().unwrap());
+
+        std::fs::remove_dir_all(&path).unwrap();
+
+        assert_eq!(
+            Err(format!(
+                "No .rtbw Syzygy WDL files found in {}",
+                path.display()
+            )),
+            result
+        );
+    }
+
+    #[test]
+    fn check_set_option_syzygy_empty() {
+        let mut bot = Bot::new();
+
+        assert_eq!(
+            Some(String::new()),
+            bot.set_option(
+                String::from("SyzygyPath"),
+                Some(String::from("<empty>")),
+            )
+        );
+        assert!(!bot.engine.lock().unwrap().has_syzygy());
+    }
+
+    #[test]
+    #[ignore = "requires SYZYGY_PATH pointing at a directory containing usable WDL tables"]
+    fn check_syzygy_option_survives_new_game() {
+        let _guard = crate::syzygy::FATHOM_TEST_MUTEX.lock().unwrap();
+        let path = std::env::var("SYZYGY_PATH")
+            .expect("SYZYGY_PATH must point at the Syzygy tablebase directory");
+
+        let mut bot = Bot::new();
+
+        assert_eq!(
+            Some(String::new()),
+            bot.set_option(String::from("SyzygyPath"), Some(path))
+        );
+        assert!(bot.engine.lock().unwrap().has_syzygy());
+
+        assert_eq!(Some(String::new()), bot.new_game());
+        assert!(bot.engine.lock().unwrap().has_syzygy());
+    }
 }

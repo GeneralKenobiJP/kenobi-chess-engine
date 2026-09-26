@@ -30,6 +30,15 @@ const ROOK_POSTPOSITION_ARRAY: [u8; 13] = [2, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 58, 
 
 pub const MAX_MOVES_IN_POSITION: usize = 218;
 
+pub enum Promotion {
+    NoPromotion = 0,
+    EnPassantPromotion = 1,
+    QueenPromotion = 2,
+    RookPromotion = 3,
+    BishopPromotion = 4,
+    KnightPromotion = 5,
+}
+
 #[derive(PartialEq, Eq, Hash, Clone, Debug, Copy)]
 pub struct Move {
     pub origin: u8,
