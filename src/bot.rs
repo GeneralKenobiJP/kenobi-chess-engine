@@ -654,42 +654,60 @@ impl Bot<MainEvaluator> {
         Some(String::new())
     }
 
-    fn load_syzygy(path: impl AsRef<Path>) -> Result<Syzygy, String> {
+    fn load_syzygy(path: impl AsRef<str>) -> Result<Syzygy, String> {
         let path = path.as_ref();
 
-        if !path.exists() {
-            return Err(format!(
-                "Syzygy path does not exist: {}",
-                path.display()
-            ));
-        }
-
-        if !path.is_dir() {
-            return Err(format!(
-            "Syzygy path is not a directory: {}",
-                path.display()
-            ));
-        }
+        let separator = if cfg!(windows) {
+            ';'
+        } else {
+            ':'
+        };
 
         let mut has_wdl = false;
-        for entry in fs::read_dir(path)
-            .map_err(|e| format!("Syzygy path could not be read: {e}"))?
-        {
-            let entry = entry.map_err(|e| e.to_string())?;
-            let file = entry.path();
 
-            if(file.is_file())
-                && file.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("rtbw"))
+        for component in path.split(separator) {
+            let component = component.trim();
+
+            if component.is_empty() {
+                return Err(
+                    "SyzygyPath contains an empty directory".to_owned()
+                );
+            }
+
+            let directory = Path::new(component);
+
+            if !directory.exists() {
+                return Err(format!(
+                    "Syzygy path does not exist: {}",
+                    directory.display()
+                ));
+            }
+
+            if !directory.is_dir() {
+                return Err(format!(
+                    "Syzygy path is not a directory: {}",
+                    directory.display()
+                ));
+            }
+
+            for entry in fs::read_dir(directory)
+                .map_err(|e| format!("Syzygy path could not be read: {e}"))?
             {
-                has_wdl = true;
-                break;
+                let entry = entry.map_err(|e| e.to_string())?;
+                let file = entry.path();
+
+                if (file.is_file())
+                    && file.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("rtbw"))
+                {
+                    has_wdl = true;
+                    break;
+                }
             }
         }
 
         if !has_wdl {
             return Err(format!(
-                "No .rtbw Syzygy WDL files found in {}",
-                path.display()
+                "No .rtbw Syzygy WDL files found in {path}"
             ));
         }
 
@@ -698,8 +716,7 @@ impl Bot<MainEvaluator> {
 
         if syzygy.max_pieces() < 3 {
             return Err(format!(
-                "Fathom did not recognize usable Syzygy tables in {}",
-                path.display()
+                "Fathom did not recognize usable Syzygy tables in {path}"
             ));
         }
 
@@ -774,7 +791,7 @@ impl Bot<MainEvaluator> {
         let score_cp = engine.get_last_root_score();
         let milliseconds = elapsed.as_millis().max(1);
         let nps = u128::from(nodes).saturating_mul(1_000) / milliseconds;
-        let tbhits = engine.get_tablebase_stats().hits;
+        let tbhits = engine.get_tablebase_stats().tbhits();
 
         if score_cp.is_none() {
             return format!("info depth {depth} time {milliseconds} nodes {nodes} nps {nps} tbhits {tbhits}")
@@ -1496,7 +1513,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path).unwrap();
 
-        let result = Bot::load_syzygy(&path);
+        let result = Bot::load_syzygy(&path.to_str().unwrap());
 
         std::fs::remove_dir_all(&path).unwrap();
 

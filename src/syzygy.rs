@@ -10,6 +10,13 @@ const TB_BLESSED_LOSS: u32 = 1;
 const TB_DRAW: u32 = 2;
 const TB_CURSED_WIN: u32 = 3;
 const TB_WIN: u32 = 4;
+const TB_MAX_MOVES: usize = 193;
+
+const TB_PROMOTES_NONE: u32 = 0;
+const TB_PROMOTES_QUEEN: u32 = 1;
+const TB_PROMOTES_ROOK: u32 = 2;
+const TB_PROMOTES_BISHOP: u32 = 3;
+const TB_PROMOTES_KNIGHT: u32 = 4;
 
 const TB_RESULT_FAILED: u32 = 0xFFFF_FFFF;
 
@@ -32,15 +39,63 @@ unsafe extern "C" {
         ep: u32,
         white_to_move: u8,
     ) -> u32;
+
+    fn fathom_probe_root_dtz(
+        white: u64,
+        black: u64,
+        kings: u64,
+        queens: u64,
+        rooks: u64,
+        bishops: u64,
+        knights: u64,
+        pawns: u64,
+        rule50: u32,
+        castling: u32,
+        ep: u32,
+        white_to_move: u8,
+        has_repeated: u8,
+        use_rule50: u8,
+        out_moves: *mut RawRootMove,
+        capacity: u32,
+    ) -> i32;
+
+    fn fathom_probe_root_wdl(
+        white: u64,
+        black: u64,
+        kings: u64,
+        queens: u64,
+        rooks: u64,
+        bishops: u64,
+        knights: u64,
+        pawns: u64,
+        rule50: u32,
+        castling: u32,
+        ep: u32,
+        white_to_move: u8,
+        use_rule50: u8,
+        out_moves: *mut RawRootMove,
+        capacity: u32,
+    ) -> i32;
 }
 
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
 pub struct TablebaseStats {
-    pub(crate) probes: u64,
-    pub(crate) hits: u64,
-    pub(crate) wins: u64,
-    pub(crate) draws: u64,
-    pub(crate) losses: u64,
+    pub probes: u64,
+    pub hits: u64,
+    pub wins: u64,
+    pub draws: u64,
+    pub losses: u64,
+    pub root_probes: u64,
+    pub root_dtz_hits: u64,
+    pub root_wdl_hits: u64,
+}
+
+impl TablebaseStats {
+    pub fn tbhits(&self) -> u64 {
+        self.hits
+            .saturating_add(self.root_dtz_hits)
+            .saturating_add(self.root_wdl_hits)
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -225,6 +280,95 @@ impl Syzygy {
 
         Wdl::from_raw(result)
     }
+
+    pub fn probe_root(
+        &self,
+        position: &TbPosition,
+        has_repeated: bool,
+        use_rule50: bool,
+    ) -> Option<RootProbe> {
+        let occupied = position.white | position.black;
+        let piece_count = occupied.count_ones();
+
+        if piece_count > self.max_pieces {
+            return None;
+        }
+
+        // Fathom root probing does not support castling rights.
+        if position.castling != 0 {
+            return None;
+        }
+
+        let mut raw_moves = [RawRootMove::default(); TB_MAX_MOVES];
+
+        let dtz_count = unsafe {
+            fathom_probe_root_dtz(
+                position.white,
+                position.black,
+                position.kings,
+                position.queens,
+                position.rooks,
+                position.bishops,
+                position.knights,
+                position.pawns,
+                position.rule50,
+                position.castling,
+                position.ep,
+                u8::from(position.white_to_move),
+                u8::from(has_repeated),
+                u8::from(use_rule50),
+                raw_moves.as_mut_ptr(),
+                TB_MAX_MOVES as u32,
+            )
+        };
+
+        let (kind, count) = if dtz_count >= 0 {
+            (RootProbeKind::Dtz, dtz_count)
+        } else {
+            let wdl_count = unsafe {
+                fathom_probe_root_wdl(
+                    position.white,
+                    position.black,
+                    position.kings,
+                    position.queens,
+                    position.rooks,
+                    position.bishops,
+                    position.knights,
+                    position.pawns,
+                    position.rule50,
+                    position.castling,
+                    position.ep,
+                    u8::from(position.white_to_move),
+                    u8::from(use_rule50),
+                    raw_moves.as_mut_ptr(),
+                    TB_MAX_MOVES as u32,
+                )
+            };
+
+            if wdl_count < 0 {
+                return None;
+            }
+
+            (RootProbeKind::WdlFallback, wdl_count)
+        };
+
+        let count = usize::try_from(count).ok()?;
+
+        if count > raw_moves.len() {
+            return None;
+        }
+
+        let moves = raw_moves[..count]
+            .iter()
+            .copied()
+            .map(TbRootMove::from_raw)
+            .collect::<Option<Vec<_>>>()?;
+
+        Some(RootProbe {
+            kind,
+            moves,
+        })
+    }
 }
 
 impl Drop for Syzygy {
@@ -234,6 +378,72 @@ impl Drop for Syzygy {
         }
     }
 }
+
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+struct RawRootMove {
+    move_code: u32,
+    score: i32,
+    rank: i32,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum TbPromotion {
+    None,
+    Queen,
+    Rook,
+    Bishop,
+    Knight,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct TbRootMove {
+    pub from: u8,
+    pub to: u8,
+    pub promotion: TbPromotion,
+
+    /// Fathom-native ranking.
+    /// Higher is better.
+    pub rank: i32,
+
+    /// Fathom-native display score.
+    /// Do not feed this directly into the engine's alpha-beta score space.
+    pub score: i32,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum RootProbeKind {
+    Dtz,
+    WdlFallback,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RootProbe {
+    pub kind: RootProbeKind,
+    pub moves: Vec<TbRootMove>,
+}
+
+impl TbRootMove {
+    fn from_raw(raw: RawRootMove) -> Option<Self> {
+        let promotion = match (raw.move_code >> 12) & 0x7 {
+            TB_PROMOTES_NONE => TbPromotion::None,
+            TB_PROMOTES_QUEEN => TbPromotion::Queen,
+            TB_PROMOTES_ROOK => TbPromotion::Rook,
+            TB_PROMOTES_BISHOP => TbPromotion::Bishop,
+            TB_PROMOTES_KNIGHT => TbPromotion::Knight,
+            _ => return None,
+        };
+
+        Some(Self {
+            from: ((raw.move_code >> 6) & 0x3f) as u8,
+            to: (raw.move_code & 0x3f) as u8,
+            promotion,
+            rank: raw.rank,
+            score: raw.score,
+        })
+    }
+}
+
 
 #[cfg(test)]
 pub(crate) static FATHOM_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());

@@ -13,7 +13,8 @@ use crate::board::Board;
 use crate::evaluation::{compute_game_phase_factor, DRAW, Evaluator, MainEvaluator, PIECE_WORTH, PROMOTION_MATERIAL_DIFFERENCE, TABLEBASE_WIN_SCORE, TABLEBASE_LOSS_SCORE, POSITIVE_INFINITY_EPSILON_MARGIN, NEGATIVE_INFINITY_EPSILON_MARGIN, TABLEBASE_WIN_SCORE_EPSILON_MARGIN, TABLEBASE_LOSS_SCORE_EPSILON_MARGIN};
 use crate::move_generator::{MAX_MOVES_IN_POSITION, Move, MoveList};
 use crate::evaluation::{POSITIVE_INFINITY, NEGATIVE_INFINITY};
-use crate::syzygy::{Syzygy, TablebaseStats, TbPosition, Wdl};
+use crate::move_generator::Promotion::{BishopPromotion, KnightPromotion, NoPromotion, QueenPromotion, RookPromotion};
+use crate::syzygy::{RootProbeKind, Syzygy, TablebaseStats, TbPosition, TbPromotion, TbRootMove, Wdl};
 use crate::transposition_table::{RepetitionTable, Transposition, TranspositionTable};
 use crate::transposition_table::NodeType::{ALPHA, BETA, EXACT, NOISY_ONLY};
 
@@ -312,7 +313,7 @@ impl<T: Evaluator> Engine<T> {
     fn info(&mut self) -> String {
         let depth = self.get_current_depth();
         let score_cp = self.get_last_root_score().unwrap_or(0);
-        let tbhits = self.tb_stats.hits;
+        let tbhits = self.tb_stats.tbhits();
 
         if score_cp.abs() < POSITIVE_INFINITY_EPSILON_MARGIN {
             format!(
@@ -354,6 +355,39 @@ impl<T: Evaluator> Engine<T> {
         board.plies - self.current_ply
     }
 
+    // fn tablebase_square_to_engine_square(square: u8) -> u8 {
+    //     // Kenobi: h1 = 0, g1 = 1, ..., a1 = 7.
+    //     // Syzygy: h1 = 7, g1 = 6, ..., a1 = 0.
+    //     let square_i16 = square as i16;
+    //     let tb_file = square_i16 % 8;
+    //
+    //     (square_i16 - 2 * tb_file + 7) as u8
+    // }
+
+    /// Converts a TbRootMove into an engine Move.
+    /// Takes the current board as the input, and assumes the move is a currently legal move.
+    fn tablebase_root_move_to_move(
+        board: &Board,
+        tb_move: &TbRootMove,
+    ) -> Move {
+        // let from = Self::tablebase_square_to_engine_square(tb_move.from);
+        // let to = Self::tablebase_square_to_engine_square(tb_move.to);
+        let from = tb_move.from;
+        let to = tb_move.to;
+
+        let promotion = match tb_move.promotion {
+            TbPromotion::None => NoPromotion,
+            TbPromotion::Queen => QueenPromotion,
+            TbPromotion::Rook => RookPromotion,
+            TbPromotion::Bishop => BishopPromotion,
+            TbPromotion::Knight => KnightPromotion,
+        };
+
+        let piece = board.get_piece_from_square(from);
+
+        Move::new(from, to, promotion as u8, piece.unwrap())
+    }
+
     // pub fn get_tt_len(&self) -> usize {
     //     self.transposition_table.len
     // }
@@ -380,9 +414,11 @@ impl<T: Evaluator> Engine<T> {
     ) -> i32 {
         let depth = depth.min((DEPTH_LIMIT - 2) as u32);
         let board = move_list.get_board();
+        self.tb_stats = TablebaseStats::default();
+        let tablebase_root_moves = self.tablebase_root_moves(&board, root_moves);
+        let root_moves = tablebase_root_moves.as_deref().or(root_moves);
         let transposition_entry = self.transposition_table.
             get_from_zobrist(board.zobrist, board.half_moves);
-        self.tb_stats = TablebaseStats::default();
 
         // Check if we have a proper entry in the transposition table
         if root_moves.is_none() {
@@ -976,6 +1012,79 @@ impl<T: Evaluator> Engine<T> {
         self.repetition_table.unvisit_position(zobrist);
 
         Some(alpha)
+    }
+
+    /// Returns a list of best-ranked endgame root moves as indicated by the endgame tablebase.
+    /// Ignores all moves that are ranked below the best rank.
+    /// Excludes all moves absent from the requested root moves.
+    ///
+    /// The probed moves should be later further evaluated, since some of them may be very unnatural.
+    fn tablebase_root_moves(
+        &mut self,
+        board: &Board,
+        requested_root_moves: Option<&[Move]>,
+    ) -> Option<Vec<Move>> {
+        if self.syzygy.is_none() {
+            return None;
+        }
+
+        let position = TbPosition::from_board(board);
+
+        // Bot::input_position() keeps previous positions in the repetition
+        // table but explicitly removes the current root position from the
+        // current occurrence count, so > 0 means this root occurred earlier.
+        let has_repeated =
+            self.repetition_table.get_repetition(board.zobrist) > 0;
+
+        self.tb_stats.root_probes += 1;
+
+        let probe = self
+            .syzygy
+            .as_ref()?
+            .probe_root(
+                &position,
+                has_repeated,
+                true, // Kenobi enforces the 50-move rule.
+            )?;
+
+        match probe.kind {
+            RootProbeKind::Dtz => {
+                self.tb_stats.root_dtz_hits += 1;
+            }
+            RootProbeKind::WdlFallback => {
+                self.tb_stats.root_wdl_hits += 1;
+            }
+        }
+
+        let mut candidates = Vec::with_capacity(probe.moves.len());
+
+        for tb_move in &probe.moves {
+            let engine_move =
+                Self::tablebase_root_move_to_move(board, tb_move);
+
+            // UCI "searchmoves" is authoritative.
+            //
+            // Important: restrict to searchmoves BEFORE finding best TB rank.
+            // If the user asks us to search only a theoretically bad move,
+            // we still have to search that move.
+            if requested_root_moves
+                .map_or(true, |allowed| allowed.contains(&engine_move))
+            {
+                candidates.push((engine_move, tb_move.rank));
+            }
+        }
+
+        let best_rank =
+            candidates.iter().map(|(_, rank)| *rank).max()?;
+
+        let result = candidates
+            .into_iter()
+            .filter_map(|(piece_move, rank)| {
+                (rank == best_rank).then_some(piece_move)
+            })
+            .collect::<Vec<_>>();
+
+        (!result.is_empty()).then_some(result)
     }
 
     /// In order to allow the quiescence search to stabilize, we need to be able to stop searching without necessarily searching all available captures.
@@ -2167,6 +2276,9 @@ mod tests {
             wins: 3,
             draws: 4,
             losses: 1,
+            root_probes: 0,
+            root_dtz_hits: 0,
+            root_wdl_hits: 0,
         };
 
         engine.new_game();
@@ -2175,32 +2287,205 @@ mod tests {
         assert_eq!(TablebaseStats::default(), *engine.get_tablebase_stats());
     }
 
+    // #[test]
+    // #[ignore = "requires SYZYGY_PATH pointing at a directory containing the required WDL tables"]
+    // fn check_search_uses_syzygy_tablebase() {
+    //     let _guard = crate::syzygy::FATHOM_TEST_MUTEX.lock().unwrap();
+    //     let path = std::env::var("SYZYGY_PATH")
+    //         .expect("SYZYGY_PATH must point at the Syzygy tablebase directory");
+    //
+    //     let syzygy = Arc::new(
+    //         Syzygy::open(path).expect("failed to initialize Syzygy tablebases")
+    //     );
+    //
+    //     let mut move_list =
+    //         MoveList::from_fen("4k3/8/8/8/8/8/4r3/3QK3 w - - 0 1");
+    //     let mut engine =
+    //         Engine::with_evaluator_and_capacity(MockMaterialEvaluator {}, 1024);
+    //     let search_control = SearchControl::new(None, None);
+    //
+    //     engine.set_syzygy(Some(syzygy));
+    //     assert!(engine.has_syzygy());
+    //
+    //     engine.search(&mut move_list, 2, &search_control, None);
+    //
+    //     let stats = *engine.get_tablebase_stats();
+    //     println!("{:?}", stats);
+    //     assert!(stats.probes > 0);
+    //     assert!(stats.hits > 0);
+    //     assert!(stats.hits <= stats.probes);
+    // }
+
     #[test]
     #[ignore = "requires SYZYGY_PATH pointing at a directory containing the required WDL tables"]
-    fn check_search_uses_syzygy_tablebase() {
+    fn check_search_uses_syzygy_wdl() {
         let _guard = crate::syzygy::FATHOM_TEST_MUTEX.lock().unwrap();
+
         let path = std::env::var("SYZYGY_PATH")
             .expect("SYZYGY_PATH must point at the Syzygy tablebase directory");
 
         let syzygy = Arc::new(
-            Syzygy::open(path).expect("failed to initialize Syzygy tablebases")
+            Syzygy::open(path)
+                .expect("failed to initialize Syzygy tablebases")
         );
 
         let mut move_list =
             MoveList::from_fen("4k3/8/8/8/8/8/4r3/3QK3 w - - 0 1");
+
+        let board = *move_list.get_board();
+
         let mut engine =
-            Engine::with_evaluator_and_capacity(MockMaterialEvaluator {}, 1024);
+            Engine::with_evaluator_and_capacity(
+                MockMaterialEvaluator {},
+                1024,
+            );
+
         let search_control = SearchControl::new(None, None);
 
         engine.set_syzygy(Some(syzygy));
         assert!(engine.has_syzygy());
 
-        engine.search(&mut move_list, 2, &search_control, None);
+        /*
+         * search_alpha_beta_pruning() only performs a WDL probe below
+         * the root:
+         *
+         *     ply_from_root > 0
+         *
+         * Pretend this position is one ply below the root so that this
+         * test exercises the internal WDL path directly, without invoking
+         * the DTZ root probe in Engine::search().
+         */
+        engine.current_ply = board.plies.saturating_sub(1);
+        engine.depth = 2;
+        engine.max_depth = 2;
+
+        let result = engine.search_alpha_beta_pruning(
+            &mut move_list,
+            2,
+            NEGATIVE_INFINITY,
+            POSITIVE_INFINITY,
+            &search_control,
+            None,
+        );
+
+        assert!(result.is_some());
 
         let stats = *engine.get_tablebase_stats();
+        println!("{:?}", stats);
+
         assert!(stats.probes > 0);
         assert!(stats.hits > 0);
         assert!(stats.hits <= stats.probes);
+
+        /*
+         * This test bypasses Engine::search(), therefore no root DTZ
+         * probe should have happened.
+         */
+        assert_eq!(0, stats.root_dtz_hits);
+    }
+
+    #[test]
+    #[ignore = "requires SYZYGY_PATH containing KQvK.rtbw and KQvK.rtbz"]
+    fn check_search_uses_syzygy_dtz() {
+        let _guard = crate::syzygy::FATHOM_TEST_MUTEX.lock().unwrap();
+
+        let path = std::env::var("SYZYGY_PATH")
+            .expect("SYZYGY_PATH must point at the Syzygy tablebase directory");
+
+        let syzygy = Arc::new(
+            Syzygy::open(path)
+                .expect("failed to initialize Syzygy tablebases")
+        );
+
+        let mut move_list =
+            MoveList::from_fen("8/8/8/8/8/8/4Q3/4K2k w - - 0 1");
+
+        let mut engine =
+            Engine::with_evaluator_and_capacity(
+                MockMaterialEvaluator {},
+                1024,
+            );
+
+        let search_control = SearchControl::new(None, None);
+
+        engine.set_syzygy(Some(syzygy));
+        assert!(engine.has_syzygy());
+
+        engine.search(
+            &mut move_list,
+            2,
+            &search_control,
+            None,
+        );
+
+        let stats = *engine.get_tablebase_stats();
+        println!("{:?}", stats);
+
+        assert_eq!(1, stats.root_probes);
+        assert_eq!(1, stats.root_dtz_hits);
+        assert_eq!(0, stats.root_wdl_hits);
+
+        assert!(
+            engine.try_get_best_move(move_list.get_board()).is_some()
+        );
+    }
+
+    #[test]
+    fn check_tablebase_root_move_conversion() {
+        let board = Board::from_fen(START_POSITION);
+
+        let tb_move = TbRootMove {
+            from: 11,
+            to: 27,
+            promotion: TbPromotion::None,
+            rank: 1000,
+            score: 0,
+        };
+
+        let actual =
+            Engine::<MockMaterialEvaluator>::tablebase_root_move_to_move(
+                &board,
+                &tb_move,
+            );
+
+        let expected =
+            Move::from_algebraic_notation("e2e4", &board);
+
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    #[ignore = "requires SYZYGY_PATH with KQvK.rtbw and KQvK.rtbz"]
+    fn check_syzygy_root_dtz_kqk() {
+        let path = std::env::var("SYZYGY_PATH")
+            .expect("SYZYGY_PATH must be set");
+
+        let syzygy = Syzygy::open(path).unwrap();
+
+        let board =
+            Board::from_fen("8/8/8/8/8/8/4Q3/4K2k w - - 0 1");
+
+        let position = TbPosition::from_board(&board);
+
+        let probe = syzygy
+            .probe_root(
+                &position,
+                false,
+                true,
+            )
+            .expect("KQvK root probe must succeed");
+
+        assert_eq!(RootProbeKind::Dtz, probe.kind);
+        assert!(!probe.moves.is_empty());
+
+        let best_rank = probe
+            .moves
+            .iter()
+            .map(|piece_move| piece_move.rank)
+            .max()
+            .unwrap();
+
+        assert!(best_rank > 0);
     }
 
 }
