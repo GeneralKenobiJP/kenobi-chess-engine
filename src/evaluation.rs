@@ -9,8 +9,15 @@ use num_traits::WrappingNeg;
 use crate::board::Board;
 
 // We omit the king
-pub const PIECE_WORTH: [i32; 5] = [100, 900, 500, 300, 300];
-pub const PROMOTION_MATERIAL_DIFFERENCE: [i32; 6] = [0, 0, 800, 400, 200, 200];
+pub const PIECE_WORTH: [i32; 5] = [100, 900, 500, 330, 320];
+pub const PROMOTION_MATERIAL_DIFFERENCE: [i32; 6] = [
+    0,
+    0,
+    PIECE_WORTH[1] - PIECE_WORTH[0],
+    PIECE_WORTH[2] - PIECE_WORTH[0],
+    PIECE_WORTH[3] - PIECE_WORTH[0],
+    PIECE_WORTH[4] - PIECE_WORTH[0]
+];
 pub const NEGATIVE_INFINITY: i32 = -1_000_000_000;
 pub const POSITIVE_INFINITY: i32 = 1_000_000_000;
 pub const POSITIVE_INFINITY_EPSILON_MARGIN: i32 = 900_000_000;
@@ -20,7 +27,16 @@ pub const TABLEBASE_WIN_SCORE_EPSILON_MARGIN: i32 = 80_000_000;
 pub const TABLEBASE_LOSS_SCORE: i32 = -100_000_000;
 pub const TABLEBASE_LOSS_SCORE_EPSILON_MARGIN: i32 = -80_000_000;
 pub const DRAW: i32 = 0;
-const TOTAL_START_VALUE: i32 = 2 * (8 * PIECE_WORTH[0] + 1 * PIECE_WORTH[1] + 2 * PIECE_WORTH[2] + 2 * PIECE_WORTH[3] + 2 * PIECE_WORTH[4]);
+
+// [PAWN, QUEEN, ROOK, BISHOP, KNIGHT]
+const PHASE_WEIGHT: [i32; 5] = [
+    0,
+    4,
+    2,
+    1,
+    1,
+];
+const TOTAL_START_VALUE: i32 = 2 * (8 * PHASE_WEIGHT[0] + 1 * PHASE_WEIGHT[1] + 2 * PHASE_WEIGHT[2] + 2 * PHASE_WEIGHT[3] + 2 * PHASE_WEIGHT[4]);
 
 // Piece-square tables
 // They are written from the white's perspective, but with reversed indexing.
@@ -342,7 +358,7 @@ pub fn compute_game_phase_factor(piece_count: &[u8; 12]) -> i32 {
     let mut factor: i32 = 0;
     for color in 0..2 {
         for piece in 1..6 {
-            factor += piece_count[piece + 6 * color] as i32 * PIECE_WORTH[piece - 1]
+            factor += piece_count[piece + 6 * color] as i32 * PHASE_WEIGHT[piece - 1]
         }
     }
     factor = (factor * 100) / TOTAL_START_VALUE;
