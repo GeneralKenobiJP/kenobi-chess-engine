@@ -394,7 +394,10 @@ mod tests {
         let fen = "r3k3/1Pr5/5pp1/3pPBPP/1b1P2Qq/2R2N2/P7/RK6 w q d6 1 25";
         board.read_fen(fen);
 
-        assert_eq!(600, count_material(&board));
+        assert_eq!(
+            1 * PIECE_WORTH[4] + 3 * PIECE_WORTH[0],
+            count_material(&board)
+        );
     }
 
     #[test]
@@ -456,7 +459,7 @@ mod tests {
         let fen = "r3k3/2n3n1/1p6/8/8/8/5PPP/3QKB2 w q - 0 1";
         board.read_fen(fen);
 
-        assert_eq!((1*PIECE_WORTH[1] + 1*PIECE_WORTH[3] + 1*PIECE_WORTH[2] + 4*PIECE_WORTH[0] + 2*PIECE_WORTH[4]) * 100 / TOTAL_START_VALUE,
+        assert_eq!((1*PHASE_WEIGHT[1] + 1*PHASE_WEIGHT[3] + 1*PHASE_WEIGHT[2] + 4*PHASE_WEIGHT[0] + 2*PHASE_WEIGHT[4]) * 100 / TOTAL_START_VALUE,
                    compute_game_phase_factor(&board.piece_counter));
         println!("{}", compute_game_phase_factor(&board.piece_counter));
     }
@@ -605,7 +608,8 @@ mod tests {
             evaluate_piece_position(1u64 << 7, 6*0 + 3, phase_factor) +
             evaluate_piece_position(1u64 << 6, 6*0 + 0, phase_factor);
 
-        assert_eq!(600 + expected_structure, MainEvaluator::evaluate(&board));
+        assert_eq!(1 * PIECE_WORTH[4] + 3 * PIECE_WORTH[0] + expected_structure,
+                   MainEvaluator::evaluate(&board));
     }
 
     #[test]
