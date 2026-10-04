@@ -254,6 +254,11 @@ impl Board {
         square_file + square_rank * 8
     }
 
+    /// Checks if the given square is empty on the given board.
+    pub fn is_square_empty(&self, square: u8) -> bool {
+        self.main_bitboard & (1u64 << square) == 0
+    }
+
     /// Outputs the piece occupying the given square.
     /// Returns an option of a Piece enum.
     /// If the square is empty, it returns None.
@@ -565,5 +570,19 @@ mod tests {
         assert_eq!(board.piece_counter[9], 2);
         assert_eq!(board.piece_counter[10], 2);
         assert_eq!(board.piece_counter[11], 2);
+    }
+
+    #[test]
+    fn check_tile_is_empty() {
+        let board = Board::from_fen(START_POSITION);
+        assert!(board.is_square_empty(16));
+        assert!(!board.is_square_empty(15));
+        assert!(!board.is_square_empty(0));
+        assert!(board.is_square_empty(31));
+        assert!(!board.is_square_empty(48));
+        assert!(board.is_square_empty(47));
+        assert!(!board.is_square_empty(63));
+        assert!(!board.is_square_empty(3));
+        assert!(!board.is_square_empty(60));
     }
 }

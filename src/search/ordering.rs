@@ -12,12 +12,12 @@ use crate::transposition_table::NodeType::EXACT;
 
 type OrderTable = HashMap<Move, i32>;
 
-const HASH_MOVE_PRIORITY: [i32; 3] = [512, 256, 128];
-const PV_NODE_PRIORITY: i32 = 192;
-const AGGRESSOR_PRIORITY: [i32; 6] = [0, 32, 4, 8, 16, 16];
-const VICTIM_PRIORITY: [i32; 6] = [4096, 16, 512, 128, 64, 64];
-const RECAPTURE_PRIORITY: i32 = 256;
-const KILLER_MOVES_PRIORITY: [i32; 2] = [256, 224];
+const HASH_MOVE_PRIORITY: [i32; 3] = [100_000, 9_000, 8_000];
+const CAPTURE_PRIORITY: i32 = 20_000;
+const AGGRESSOR_PRIORITY: [i32; 6] = [0, 5, 1, 2, 3, 4];
+const VICTIM_PRIORITY: [i32; 6] = [600, 100, 500, 400, 300, 290];
+const RECAPTURE_PRIORITY: i32 = 25;
+const KILLER_MOVES_PRIORITY: [i32; 2] = [10_000, 9_500];
 
 impl<T: Evaluator> Engine<T> {
     /// Orders moves in-place using order heuristics, given a move list.
@@ -68,19 +68,12 @@ impl<T: Evaluator> Engine<T> {
 
                 let mut index = 0;
 
-                // PV-Node
-                let mut pv_node = 0;
-                if transposition.node_type == EXACT {
-                    pv_node = PV_NODE_PRIORITY;
-                }
-
                 for entry in transposition.best_moves {
                     match entry {
                         None => { return; }
                         Some(piece_move) => {
-                            Self::update_move_priority(order_table, &piece_move, HASH_MOVE_PRIORITY[index] + pv_node);
+                            Self::update_move_priority(order_table, &piece_move, HASH_MOVE_PRIORITY[index]);
 
-                            pv_node = 0;
                             index += 1;
                         }
                     }
@@ -120,7 +113,7 @@ impl<T: Evaluator> Engine<T> {
             }
 
             let target_piece = board.get_piece_from_square_by_player(piece_move.target, board.inactive_player as usize).unwrap() as usize;
-            let mut priority = VICTIM_PRIORITY[target_piece] + AGGRESSOR_PRIORITY[piece_move.piece as usize];
+            let mut priority = CAPTURE_PRIORITY + VICTIM_PRIORITY[target_piece] + AGGRESSOR_PRIORITY[piece_move.piece as usize];
 
             // Check for whether this is a recapture
             if piece_move.target == recapture {
@@ -139,13 +132,12 @@ impl<T: Evaluator> Engine<T> {
     fn apply_mvv_lva(&self, order_table: &mut OrderTable, move_list: &MoveList) {
         let board = move_list.get_board();
         for piece_move in move_list.get_moves() {
-            // Efficient check for whether the target square is empty or not
-            if board.colour_bitboards[board.inactive_player as usize] & (1u64 << piece_move.target) == 0 {
+            if board.is_square_empty(piece_move.target) {
                 continue;
             }
 
             let target_piece = board.get_piece_from_square_by_player(piece_move.target, board.inactive_player as usize).unwrap() as usize;
-            let priority = VICTIM_PRIORITY[target_piece] + AGGRESSOR_PRIORITY[piece_move.piece as usize];
+            let priority = CAPTURE_PRIORITY + VICTIM_PRIORITY[target_piece] + AGGRESSOR_PRIORITY[piece_move.piece as usize];
 
             Self::update_move_priority(order_table, &piece_move, priority);
         }
@@ -173,7 +165,8 @@ impl<T: Evaluator> Engine<T> {
             }
             let killer_move = &self.killer_moves[idx][i].unwrap();
             if !order_table.contains_key(killer_move) {
-                return;
+                // killer move #1 may not be a legal move in this position.
+                continue;
             }
             Self::update_move_priority(order_table, killer_move, KILLER_MOVES_PRIORITY[i]);
         }
@@ -248,7 +241,7 @@ mod tests {
         let duration = time.elapsed();
         println!("apply_hash_move lasted for: {:?}", duration);
 
-        assert_eq!(HASH_MOVE_PRIORITY[0] + PV_NODE_PRIORITY, *order_table.get(&Move::new(1, 18, 0, KNIGHT)).unwrap());
+        assert_eq!(HASH_MOVE_PRIORITY[0], *order_table.get(&Move::new(1, 18, 0, KNIGHT)).unwrap());
         assert_eq!(HASH_MOVE_PRIORITY[1], *order_table.get(&Move::new(11, 27, 0, PAWN)).unwrap());
         assert_eq!(HASH_MOVE_PRIORITY[2], *order_table.get(&Move::new(8, 16, 0, PAWN)).unwrap());
     }
@@ -290,15 +283,15 @@ mod tests {
         let duration = time.elapsed();
         println!("apply_mvv_lva lasted for: {:?}", duration);
 
-        assert_eq!(VICTIM_PRIORITY[PAWN as usize] + AGGRESSOR_PRIORITY[BISHOP as usize],
+        assert_eq!(CAPTURE_PRIORITY + VICTIM_PRIORITY[PAWN as usize] + AGGRESSOR_PRIORITY[BISHOP as usize],
                    *order_table.get(&Move::new(29, 36, 0, BISHOP)).unwrap());
-        assert_eq!(VICTIM_PRIORITY[PAWN as usize] + AGGRESSOR_PRIORITY[PAWN as usize],
+        assert_eq!(CAPTURE_PRIORITY + VICTIM_PRIORITY[PAWN as usize] + AGGRESSOR_PRIORITY[PAWN as usize],
                    *order_table.get(&Move::new(27, 36, 0, PAWN)).unwrap());
-        assert_eq!(VICTIM_PRIORITY[PAWN as usize] + AGGRESSOR_PRIORITY[QUEEN as usize],
+        assert_eq!(CAPTURE_PRIORITY + VICTIM_PRIORITY[PAWN as usize] + AGGRESSOR_PRIORITY[QUEEN as usize],
                    *order_table.get(&Move::new(4, 28, 0, QUEEN)).unwrap());
-        assert_eq!(VICTIM_PRIORITY[KNIGHT as usize] + AGGRESSOR_PRIORITY[PAWN as usize],
+        assert_eq!(CAPTURE_PRIORITY + VICTIM_PRIORITY[KNIGHT as usize] + AGGRESSOR_PRIORITY[PAWN as usize],
                    *order_table.get(&Move::new(27, 34, 0, PAWN)).unwrap());
-        assert_eq!(VICTIM_PRIORITY[KNIGHT as usize] + AGGRESSOR_PRIORITY[KNIGHT as usize],
+        assert_eq!(CAPTURE_PRIORITY + VICTIM_PRIORITY[KNIGHT as usize] + AGGRESSOR_PRIORITY[KNIGHT as usize],
                    *order_table.get(&Move::new(17, 34, 0, KNIGHT)).unwrap());
     }
 
@@ -316,15 +309,15 @@ mod tests {
         let duration = time.elapsed();
         println!("apply_mvv_lva lasted for: {:?}", duration);
 
-        assert_eq!(VICTIM_PRIORITY[PAWN as usize] + AGGRESSOR_PRIORITY[BISHOP as usize],
+        assert_eq!(CAPTURE_PRIORITY + VICTIM_PRIORITY[PAWN as usize] + AGGRESSOR_PRIORITY[BISHOP as usize],
                    *order_table.get(&Move::new(29, 36, 0, BISHOP)).unwrap());
-        assert_eq!(VICTIM_PRIORITY[PAWN as usize] + AGGRESSOR_PRIORITY[PAWN as usize],
+        assert_eq!(CAPTURE_PRIORITY + VICTIM_PRIORITY[PAWN as usize] + AGGRESSOR_PRIORITY[PAWN as usize],
                    *order_table.get(&Move::new(27, 36, 0, PAWN)).unwrap());
-        assert_eq!(VICTIM_PRIORITY[PAWN as usize] + AGGRESSOR_PRIORITY[QUEEN as usize] + RECAPTURE_PRIORITY,
+        assert_eq!(CAPTURE_PRIORITY + VICTIM_PRIORITY[PAWN as usize] + AGGRESSOR_PRIORITY[QUEEN as usize] + RECAPTURE_PRIORITY,
                    *order_table.get(&Move::new(4, 28, 0, QUEEN)).unwrap());
-        assert_eq!(VICTIM_PRIORITY[KNIGHT as usize] + AGGRESSOR_PRIORITY[PAWN as usize],
+        assert_eq!(CAPTURE_PRIORITY + VICTIM_PRIORITY[KNIGHT as usize] + AGGRESSOR_PRIORITY[PAWN as usize],
                    *order_table.get(&Move::new(27, 34, 0, PAWN)).unwrap());
-        assert_eq!(VICTIM_PRIORITY[KNIGHT as usize] + AGGRESSOR_PRIORITY[KNIGHT as usize],
+        assert_eq!(CAPTURE_PRIORITY + VICTIM_PRIORITY[KNIGHT as usize] + AGGRESSOR_PRIORITY[KNIGHT as usize],
                    *order_table.get(&Move::new(17, 34, 0, KNIGHT)).unwrap());
     }
 
